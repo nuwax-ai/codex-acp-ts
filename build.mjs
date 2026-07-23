@@ -6,7 +6,7 @@ await build({
   platform: 'node',
   format: 'esm',
   outfile: 'dist/index.js',
-  external: ['@openai/codex'],
+  external: ['nuwax-codex'],
   // Polyfill `require` for CJS modules bundled into ESM output
   banner: {
     js: "import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);",

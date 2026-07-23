@@ -31,7 +31,7 @@ npm install -g @agentclientprotocol/codex-acp
 codex-acp --version
 ```
 
-The npm package includes a compatible `@openai/codex` dependency. Set `CODEX_PATH` only when you want the adapter to run a different Codex binary:
+The npm package includes a compatible `nuwax-codex` dependency. Set `CODEX_PATH` only when you want the adapter to run a different Codex binary:
 
 ```bash
 CODEX_PATH=/path/to/codex npx -y @agentclientprotocol/codex-acp

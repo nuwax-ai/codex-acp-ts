@@ -2,7 +2,7 @@
 name: run-codex
 description: Run real Codex with a prompt to test and verify code during development. Use when debugging event handling, understanding Codex responses, or validating implementation changes against real behavior.
 license: MIT
-compatibility: Requires Node.js, tsx, and @openai/codex package installed. Codex authentication required.
+compatibility: Requires Node.js, tsx, and nuwax-codex package installed. Codex authentication required.
 ---
 
 # Run Real Codex Test

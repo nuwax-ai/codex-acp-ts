@@ -1,3 +1,4 @@
+# Periodically check for new nuwax-codex releases and create a PR to update.
 name: Codex Update
 
 on:
@@ -6,11 +7,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  packages: read
+  contents: write
+  pull-requests: write
 
 env:
-  CODEX_PACKAGE: "@openai/codex"
+  CODEX_PACKAGE: "nuwax-codex"
   CODEX_UPDATE_LABEL: "codex-update"
   GITHUB_BOT_USERNAME: "github-actions[bot]"
 
@@ -31,7 +32,7 @@ jobs:
         run: |
           RAW=$(jq -r --arg pkg "$CODEX_PACKAGE" '.dependencies[$pkg]' package.json)
           CURRENT="${RAW#[\^~]}"
-          LATEST=$(npm view "$CODEX_PACKAGE" version)
+          LATEST=$(npm view "$CODEX_PACKAGE" version 2>/dev/null || npm view "$CODEX_PACKAGE" version --tag latest)
 
           if [ "$CURRENT" = "$LATEST" ]; then
             echo "Package is up to date ($CURRENT)"
@@ -57,16 +58,7 @@ jobs:
       BRANCH: ${{ needs.check.outputs.branch }}
       VERSION: ${{ needs.check.outputs.version }}
     steps:
-      - name: Generate GitHub token
-        uses: actions/create-github-app-token@v3
-        id: generate-token
-        with:
-          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
-          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v7
-        with:
-          token: ${{ steps.generate-token.outputs.token }}
 
       - name: Configure git user and prepare branch
         run: |
@@ -77,48 +69,32 @@ jobs:
       - name: Install new version of package and commit
         run: |
           npm install "$CODEX_PACKAGE@$VERSION"
-          npm run generate-types
-          git add package.json package-lock.json src/app-server
-          git commit -m "Update codex to $VERSION"
+          npm run generate-types 2>/dev/null || echo "Skipping generate-types (command not available)"
+          git add package.json package-lock.json src/app-server 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update nuwax-codex to $VERSION"
 
-      - name: Finalize update with Codex
-        id: codex-finalize
-        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          codex-version: ${{ env.VERSION }}
-          output-file: pr-body.md
-          codex-args: >-
-            -c sandbox_workspace_write.writable_roots=["${{ github.workspace }}/.git"]
-          prompt: >
-            Finalize the update using codex-update-compat skill.
-            Commit only tracked file changes, and never create an empty commit.
-            If there are changes, the commit message should mention that types or/and tests after the update were fixed.
-            When creating the final message do not mention:
-            * Validation run details.
-            * Commits.
-            * Hyperlinks.
-            Mention only previously failed tests with failure reasons, also what you changed and why.
-
-      - name: Push branch updates
-        run: |
-          git push -- origin "$BRANCH"
+      - name: Push branch
+        run: git push -- origin "$BRANCH"
 
       - name: Create PR
         env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo -e "[What's new](https://github.com/openai/codex/releases/tag/rust-v${VERSION})\n\n$(cat pr-body.md 2>/dev/null || true)" > pr-body.md
+          echo -e "[What's new](https://github.com/nuwax-ai/codex/releases/tag/v${VERSION})\n\nAutomated update of nuwax-codex dependency." > pr-body.md
 
           gh pr create \
             --base main \
-            --title "Update codex to $VERSION" \
+            --title "Update nuwax-codex to $VERSION" \
             --body-file pr-body.md \
             --label "$CODEX_UPDATE_LABEL"
 
       - name: Close obsolete PRs
         env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 

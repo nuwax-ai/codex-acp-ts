@@ -521,11 +521,11 @@ export class CodexEventHandler {
     static createMcpStartupUpdates(event: McpStartupCompleteEvent): UpdateSessionEvent[] {
         const failedUpdates = event.failed.map((server: McpStartupCompleteEvent["failed"][number]) => this.createMcpStartupToolCallUpdate(
             server.server,
-            `[codex-acp forwarded startup error] MCP server \`${server.server}\` failed to start: ${server.error}`
+            `[nuwax-codex-acp forwarded startup error] MCP server \`${server.server}\` failed to start: ${server.error}`
         ));
         const cancelledUpdates = event.cancelled.map((server: McpStartupCompleteEvent["cancelled"][number]) => this.createMcpStartupToolCallUpdate(
             server,
-            `[codex-acp forwarded startup error] MCP server \`${server}\` startup was cancelled.`
+            `[nuwax-codex-acp forwarded startup error] MCP server \`${server}\` startup was cancelled.`
         ));
 
         return [...failedUpdates, ...cancelledUpdates];

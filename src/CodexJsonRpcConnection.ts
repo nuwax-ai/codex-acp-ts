@@ -21,7 +21,7 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
             ? spawn(`"${codexPath}" app-server`, { shell: true, env: spawnEnv })
             : spawn(codexPath, ['app-server'], { env: spawnEnv });
     } else {
-        const bundledCodexPath = createRequire(import.meta.url).resolve("@openai/codex/bin/codex.js");
+        const bundledCodexPath = createRequire(import.meta.url).resolve("nuwax-codex/bin/nuwax-codex.js");
         codex = spawn(process.execPath, [bundledCodexPath, 'app-server'], {env: spawnEnv});
     }
 

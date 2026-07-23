@@ -46,24 +46,24 @@ function parseArgs(args: string[]): LoginOptions | null {
 
 function printHelp() {
     console.log(`
-codex-acp login - Initialize and login to Codex with client context
+    nuwax-codex-acp login - Initialize and login to Nuwax Codex with client context
 
-Usage:
-  codex-acp login [options]
+    Usage:
+      nuwax-codex-acp login [options]
 
-Options:
-  --client-name <name>       Client application name (default: "codex-acp")
-  --client-title <title>     Client application title (default: "Codex ACP")
-  --client-version <version> Client application version (default: "${packageJson.version}")
-  --help, -h                 Show this help message
+    Options:
+      --client-name <name>       Client application name (default: "nuwax-codex-acp")
+      --client-title <title>     Client application title (default: "Nuwax Codex ACP")
+      --client-version <version> Client application version (default: "${packageJson.version}")
+      --help, -h                 Show this help message
 
-Example:
-  codex-acp login --client-name="AIA Plugin" --client-title="AI Assistant" --client-version="1.0.0"
-`);
+    Example:
+      nuwax-codex-acp login --client-name="AIA Plugin" --client-title="AI Assistant" --client-version="1.0.0"
+    `);
 }
 
 async function login(options: LoginOptions): Promise<boolean> {
-    const codexPath = process.env["CODEX_PATH"] ?? "codex";
+    const codexPath = process.env["CODEX_PATH"] ?? "nuwax-codex";
 
     logger.log("Starting Codex connection...");
     const codexConnection = startCodexConnection(codexPath);
@@ -72,8 +72,8 @@ async function login(options: LoginOptions): Promise<boolean> {
 
     try {
         const clientInfo: ClientInfo = {
-            name: options.clientName ?? "codex-acp",
-            title: options.clientTitle ?? "Codex ACP",
+            name: options.clientName ?? "nuwax-codex-acp",
+                        title: options.clientTitle ?? "Nuwax Codex ACP",
             version: options.clientVersion ?? packageJson.version,
         };
 

@@ -1,5 +1,5 @@
 {
-  "name": "@agentclientprotocol/codex-acp",
+  "name": "nuwax-codex-acp",
   "publishConfig": {
     "access": "public"
   },
@@ -7,8 +7,8 @@
   "description": "",
   "main": "dist/index.js",
   "bin": {
-    "codex-acp": "dist/index.js"
-  },
+      "nuwax-codex-acp": "dist/index.js"
+    },
   "files": [
     "dist/index.js",
     "README.md",
@@ -35,7 +35,7 @@
     "start": "node --import tsx src/index.ts",
     "example:steering": "node --import tsx examples/steering.ts",
     "example:steering:multistep": "node --import tsx examples/steering.ts",
-    "generate-types": "./node_modules/.bin/codex app-server generate-ts --out src/app-server",
+    "generate-types": "./node_modules/.bin/nuwax-codex app-server generate-ts --out src/app-server",
     "test": "vitest run",
     "test:e2e": "npm run build && RUN_E2E_TESTS=true vitest run src/__tests__/CodexACPAgent/e2e",
     "test:watch": "vitest",
@@ -64,7 +64,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
-    "@openai/codex": "^0.145.0",
+    "nuwax-codex": "^0.16.1",
     "diff": "^9.0.0",
     "open": "^11.0.0",
     "vscode-jsonrpc": "^9.0.1",

@@ -170,9 +170,9 @@ export function createBaseTestFixture(config: ConnectionConfig): TestFixture {
  * Use for integration tests that need to interact with the actual Codex binary.
  */
 export function createTestFixture(): TestFixture {
-    const pathToCodex = path.resolve(process.cwd(), "node_modules", ".bin", process.platform === 'win32' ? "codex.cmd" : "codex");
+    const pathToCodex = path.resolve(process.cwd(), "node_modules", ".bin", process.platform === 'win32' ? "nuwax-codex.cmd" : "nuwax-codex");
     if (!fs.existsSync(pathToCodex)) {
-        throw new Error(`Codex binary not found at ${pathToCodex}. Did you run 'npm install'?`);
+        throw new Error(`Nuwax Codex binary not found at ${pathToCodex}. Did you run 'npm install'?`);
     }
 
     const codexHome = createTestCodexHome();

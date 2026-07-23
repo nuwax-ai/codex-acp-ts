@@ -1,43 +1,50 @@
+# Bump the version in package.json, create a tagged commit, and push.
+# The tag push triggers the corresponding release workflow (publish.yml
+# for stable, publish-beta.yml for beta).
 name: Version Bump
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Bump x.y.z (triggers release): patch=z, minor=y (resets z), major=x (resets y, z)'
+        description: 'Bump type'
         type: choice
         default: 'patch'
         options:
           - patch
           - minor
           - major
+      preid:
+        description: 'Pre-release identifier (e.g. beta). When set, bumps the prerelease segment instead of the main version.'
+        type: string
+        required: false
+        default: ''
 
-permissions: {}
+permissions:
+  contents: write
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate GitHub token
-        uses: actions/create-github-app-token@v3
-        id: generate-token
-        with:
-          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
-          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v7
-        with:
-          token: ${{ steps.generate-token.outputs.token }}
 
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Bumps the version, commits to main, and pushes a v* tag.
-      # The tag push triggers the Release workflow (publish.yml), which publishes to npm.
       - name: Bump version
-        run: npm version ${{ inputs.bump }} -m "Release v%s"
+        id: bump
+        env:
+          PREID: ${{ inputs.preid }}
+        run: |
+          if [ -n "$PREID" ]; then
+            npm version prerelease --preid="$PREID" -m "Release v%s"
+          else
+            npm version ${{ inputs.bump }} -m "Release v%s"
+          fi
+          echo "new_tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
         run: git push --follow-tags origin main

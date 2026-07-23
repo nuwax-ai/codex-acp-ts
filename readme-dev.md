@@ -1,11 +1,11 @@
-This package uses the bundled `@openai/codex` dependency by default.
+This package uses the bundled `nuwax-codex` dependency by default.
 Set `CODEX_PATH` to run a different Codex binary; versions other than the one specified in `package.json` may not be compatible.
 
 ### Runtime environment
 
 - `CODEX_API_KEY` - API key used when the API-key auth method is selected. Takes precedence over `OPENAI_API_KEY`.
 - `OPENAI_API_KEY` - fallback API key used when the API-key auth method is selected.
-- `CODEX_PATH` - run a specific Codex executable instead of the bundled package dependency.
+- `CODEX_PATH` - run a specific nuwax-codex executable instead of the bundled package dependency.
 - `CODEX_CONFIG` - JSON object merged into the Codex session config.
 - `MODEL_PROVIDER` - model provider to pass to Codex for new sessions.
 - `DEFAULT_AUTH_REQUEST` - ACP auth request JSON used when Codex requires authentication.
@@ -79,8 +79,8 @@ Package binaries into zip archives:
 npm run package:all
 ```
 
-### Update supported Codex version
+### Update supported Nuwax Codex version
 
-1. Update the `@openai/codex` version in `package.json` (under `dependencies`).
+1. Update the `nuwax-codex` version in `package.json` (under `dependencies`).
 2. Regenerate Codex types in `src/app-server/`: `npm run generate-types`
 3. Ensure there are no type errors or failed tests: `npm run typecheck` and `npm run test`

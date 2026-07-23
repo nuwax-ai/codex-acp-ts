@@ -26,6 +26,6 @@ function spawnCodexCli(codexPath: string | undefined, args: Array<string>): Chil
     if (codexPath) {
         return spawn(codexPath, args, {...options, shell: process.platform === "win32"});
     }
-    const bundledCodexPath = createRequire(import.meta.url).resolve("@openai/codex/bin/codex.js");
+    const bundledCodexPath = createRequire(import.meta.url).resolve("nuwax-codex/bin/nuwax-codex.js");
     return spawn(process.execPath, [bundledCodexPath, ...args], options);
 }
