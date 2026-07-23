@@ -1,12 +1,13 @@
 # Publish a stable release of nuwax-codex-acp to npm (latest dist-tag).
 # Triggered by pushing a non-beta v*.*.* tag (e.g. v1.1.8) or manually.
-# Beta tags (v*-beta*) are rejected; use publish-beta.yml for those.
+# tag patterns cannot reliably distinguish v1.1.7 from v1.1.7-beta.1.
+# The "Reject beta tags" step below is the guard.
 name: Release
 
 on:
   push:
     tags:
-      - 'v[0-9]*.[0-9]*.[0-9]'
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag_name:
