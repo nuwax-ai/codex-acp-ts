@@ -3,12 +3,12 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.1.7-beta.1",
+  "version": "1.1.7-beta.2",
   "description": "",
   "main": "dist/index.js",
   "bin": {
-      "nuwax-codex-acp": "dist/index.js"
-    },
+    "nuwax-codex-acp": "dist/index.js"
+  },
   "files": [
     "dist/index.js",
     "README.md",
