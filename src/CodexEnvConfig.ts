@@ -17,6 +17,10 @@ export const CODEX_BASE_URL_ENV_VAR = "CODEX_BASE_URL";
 export const CODEX_WIRE_API_ENV_VAR = "CODEX_WIRE_API";
 export const CODEX_MODEL_ENV_VAR = "CODEX_MODEL";
 export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
+export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
+export const CODEX_PROVIDER_NAME_ENV_VAR = "CODEX_PROVIDER_NAME";
+export const CODEX_DISABLE_THINKING_ENV_VAR = "CODEX_DISABLE_THINKING";
+export const CODEX_PERSONALITY_ENABLED_ENV_VAR = "CODEX_PERSONALITY_ENABLED";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,7 +64,9 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
         rawWireApi === "chat" || rawWireApi === "responses" ? rawWireApi : "responses";
 
     const providerName =
-        process.env[CODEX_MODEL_ENV_VAR]?.trim() || "Custom Gateway";
+        process.env[CODEX_PROVIDER_NAME_ENV_VAR]?.trim()
+        || process.env[CODEX_MODEL_ENV_VAR]?.trim()
+        || "Custom Gateway";
 
     const headers: Record<string, string> = {"X-Client-Feature-ID": "codex"};
 
@@ -74,7 +80,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     });
 
     return {
-        modelProvider: CUSTOM_GATEWAY_ID,
+        modelProvider: getEnvProviderId(),
         config: {
             name: providerName,
             base_url: baseUrl,
@@ -106,6 +112,27 @@ export function getEnvContextWindow(): number | undefined {
     if (!raw) return undefined;
     const n = parseInt(raw, 10);
     return isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Returns the custom provider id from env, or the default "custom-gateway". */
+export function getEnvProviderId(): string {
+    return process.env[CODEX_PROVIDER_ID_ENV_VAR]?.trim() || CUSTOM_GATEWAY_ID;
+}
+
+/** Returns true when CODEX_DISABLE_THINKING is set to a truthy value. */
+export function isThinkingDisabled(): boolean {
+    const raw = process.env[CODEX_DISABLE_THINKING_ENV_VAR]?.trim()?.toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
+}
+
+/**
+ * Returns true/false when CODEX_PERSONALITY_ENABLED is explicitly set,
+ * undefined when absent (let codex decide).
+ */
+export function isPersonalityEnabled(): boolean | undefined {
+    const raw = process.env[CODEX_PERSONALITY_ENABLED_ENV_VAR]?.trim()?.toLowerCase();
+    if (raw === undefined || raw === "") return undefined;
+    return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
 }
 
 // ---------------------------------------------------------------------------

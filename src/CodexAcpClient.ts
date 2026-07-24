@@ -1,5 +1,5 @@
 import {CODEX_API_KEY_ENV_VAR, GatewayAuthMethod, isCodexAuthRequest, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
-import {getEnvContextWindow, getEnvModel, readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {getEnvContextWindow, getEnvModel, isThinkingDisabled, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {EmbeddedResourceResource} from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {type McpServer, RequestError} from "@agentclientprotocol/sdk";
@@ -617,9 +617,12 @@ export class CodexAcpClient {
      * Falls back to model defaults if parameters are missing or unsupported.
      */
     createModelId(availableModels: Model[], modelId: string | null, reasoningEffort: ReasoningEffort | null): ModelId {
+        const effectiveEffort: ReasoningEffort | null =
+            isThinkingDisabled() ? "none" : reasoningEffort;
+
         const selectedModel = availableModels.find(m => m.id === modelId);
         if (selectedModel) {
-            return ModelId.create(selectedModel.id, reasoningEffort ?? selectedModel.defaultReasoningEffort);
+            return ModelId.create(selectedModel.id, effectiveEffort ?? selectedModel.defaultReasoningEffort);
         }
 
         // The configured model is not in Codex's advertised catalog. This is
@@ -632,7 +635,7 @@ export class CodexAcpClient {
         // every turn and makes requests to custom-provider endpoints fail with
         // "unknown model".
         if (modelId) {
-            return ModelId.create(modelId, reasoningEffort ?? "medium");
+            return ModelId.create(modelId, effectiveEffort ?? "medium");
         }
 
         const defaultModel = availableModels.find(m => m.isDefault);
@@ -640,7 +643,7 @@ export class CodexAcpClient {
             throw new Error(`Model selection failed: No model found for ID "${modelId}" and no default model is defined.`);
         }
 
-        return ModelId.create(defaultModel.id, reasoningEffort ?? defaultModel.defaultReasoningEffort);
+        return ModelId.create(defaultModel.id, effectiveEffort ?? defaultModel.defaultReasoningEffort);
     }
 
     async subscribeToSessionEvents(
