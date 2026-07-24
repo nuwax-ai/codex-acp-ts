@@ -38,7 +38,7 @@ const goalControlParamsParser = z.object({
 }).passthrough();
 
 if (process.argv.includes("--version") || process.argv.includes("-v") || process.argv.includes("-V")) {
-    console.log(`${packageJson.name} ${packageJson.version}`);
+    console.log(packageJson.version);
     process.exit(0);
 }
 
