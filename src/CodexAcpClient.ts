@@ -1,5 +1,5 @@
 import {CODEX_API_KEY_ENV_VAR, GatewayAuthMethod, isCodexAuthRequest, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
-import {readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {getEnvModel, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {EmbeddedResourceResource} from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {type McpServer, RequestError} from "@agentclientprotocol/sdk";
@@ -339,7 +339,7 @@ export class CodexAcpClient {
         });
         onSubscribed?.();
         const codexModels = await this.fetchAvailableModels();
-        const currentModelId = this.createModelId(codexModels, response.model, response.reasoningEffort).toString();
+        const currentModelId = this.createModelId(codexModels, this.effectiveModel(response.model), response.reasoningEffort).toString();
         return {
             sessionId: request.sessionId,
             currentModelId: currentModelId,
@@ -367,7 +367,7 @@ export class CodexAcpClient {
             includeTurns: true,
         });
         const codexModels = await this.fetchAvailableModels();
-        const currentModelId = this.createModelId(codexModels, response.model, response.reasoningEffort).toString();
+        const currentModelId = this.createModelId(codexModels, this.effectiveModel(response.model), response.reasoningEffort).toString();
         return {
             sessionId: request.sessionId,
             currentModelId: currentModelId,
@@ -394,7 +394,7 @@ export class CodexAcpClient {
         if (codexModels.length === 0) {
             throw new Error("Codex did not return any models");
         }
-        const currentModelId = this.createModelId(codexModels, response.model, response.reasoningEffort).toString();
+        const currentModelId = this.createModelId(codexModels, this.effectiveModel(response.model), response.reasoningEffort).toString();
         return {
             sessionId: response.thread.id,
             currentModelId: currentModelId,
@@ -540,6 +540,15 @@ export class CodexAcpClient {
 
     getModelProvider(): string | null {
         return this.gatewayConfig?.modelProvider ?? this.modelProvider;
+    }
+
+    /** When a custom gateway is active, prefer CODEX_MODEL env var over codex's default. */
+    private effectiveModel(codexModel: string | null): string | null {
+        if (this.gatewayConfig) {
+            const envModel = getEnvModel();
+            if (envModel) return envModel;
+        }
+        return codexModel;
     }
 
     private async getResumeModelProvider(): Promise<string> {

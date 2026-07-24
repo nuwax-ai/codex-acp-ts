@@ -87,6 +87,18 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 }
 
 // ---------------------------------------------------------------------------
+// Model override
+// ---------------------------------------------------------------------------
+
+/**
+ * If `CODEX_MODEL` is set in env, returns it. Used to override codex's
+ * default model selection when using a custom gateway.
+ */
+export function getEnvModel(): string | undefined {
+    return process.env[CODEX_MODEL_ENV_VAR]?.trim() || undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
