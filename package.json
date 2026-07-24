@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.1.7-beta.7",
+  "version": "1.1.7-beta.8",
   "description": "",
   "main": "dist/index.js",
   "bin": {
@@ -35,7 +35,7 @@
     "start": "node --import tsx src/index.ts",
     "example:steering": "node --import tsx examples/steering.ts",
     "example:steering:multistep": "node --import tsx examples/steering.ts",
-    "generate-types": "./node_modules/.bin/nuwax-codex app-server generate-ts --out src/app-server",
+    "generate-types": "nuwax-codex app-server generate-ts --out src/app-server",
     "test": "vitest run",
     "test:e2e": "npm run build && RUN_E2E_TESTS=true vitest run src/__tests__/CodexACPAgent/e2e",
     "test:watch": "vitest",
