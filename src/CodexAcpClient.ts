@@ -1,4 +1,5 @@
 import {CODEX_API_KEY_ENV_VAR, GatewayAuthMethod, isCodexAuthRequest, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
+import {readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {EmbeddedResourceResource} from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {type McpServer, RequestError} from "@agentclientprotocol/sdk";
@@ -80,7 +81,7 @@ export class CodexAcpClient {
         this.codexClient = codexClient;
         this.config = codexConfig ?? {};
         this.modelProvider = modelProvider ?? null;
-        this.gatewayConfig = null;
+        this.gatewayConfig = readGatewayConfigFromEnv();
     }
 
     private readonly defaultClientInfo: ClientInfo = {
@@ -976,7 +977,7 @@ function shouldDeduplicateMcpConflicts(): boolean {
     return !disabledByEnv;
 }
 
-type WireApi = "responses";
+type WireApi = "responses" | "chat";
 
 interface GatewayConfig {
     modelProvider: string;
