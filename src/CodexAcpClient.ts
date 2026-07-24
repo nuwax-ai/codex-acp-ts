@@ -334,6 +334,7 @@ export class CodexAcpClient {
         const response = await this.codexClient.threadResume({
             config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers ?? []),
             cwd: request.cwd,
+            model: this.effectiveModel(null),
             modelProvider: await this.getResumeModelProvider(),
             threadId: request.sessionId,
         });
@@ -358,6 +359,7 @@ export class CodexAcpClient {
         const response = await this.codexClient.threadResume({
             config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers ?? []),
             cwd: request.cwd,
+            model: this.effectiveModel(null),
             modelProvider: await this.getResumeModelProvider(),
             threadId: request.sessionId,
         });
@@ -386,6 +388,7 @@ export class CodexAcpClient {
 
         const response = await this.codexClient.threadStart({
             config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers),
+            model: this.effectiveModel(null),
             modelProvider: this.getModelProvider(),
             cwd: request.cwd,
         });
