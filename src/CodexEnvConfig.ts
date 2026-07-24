@@ -98,6 +98,17 @@ export function getEnvModel(): string | undefined {
     return process.env[CODEX_MODEL_ENV_VAR]?.trim() || undefined;
 }
 
+/**
+ * If `CODEX_MODEL_CONTEXT_WINDOW` is set, returns it parsed as a number.
+ * Used to inform codex of a custom model's context window size.
+ */
+export function getEnvContextWindow(): number | undefined {
+    const raw = process.env["CODEX_MODEL_CONTEXT_WINDOW"]?.trim();
+    if (!raw) return undefined;
+    const n = parseInt(raw, 10);
+    return isFinite(n) && n > 0 ? n : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

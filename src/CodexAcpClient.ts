@@ -1,5 +1,5 @@
 import {CODEX_API_KEY_ENV_VAR, GatewayAuthMethod, isCodexAuthRequest, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
-import {getEnvModel, readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {getEnvContextWindow, getEnvModel, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {EmbeddedResourceResource} from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {type McpServer, RequestError} from "@agentclientprotocol/sdk";
@@ -495,6 +495,7 @@ export class CodexAcpClient {
         const sessionRoots = [projectPath, ...additionalDirectories];
         const mergedConfig = {
             ...mergeGatewayConfig(this.config, this.gatewayConfig),
+            ...this.getEnvContextWindowConfig(),
             projects: Object.fromEntries(sessionRoots.map(root => [root, {
                 trust_level: "trusted",
             }])),
@@ -549,6 +550,14 @@ export class CodexAcpClient {
             if (envModel) return envModel;
         }
         return codexModel;
+    }
+
+    /** Inject CODEX_MODEL_CONTEXT_WINDOW into session config when using custom gateway. */
+    private getEnvContextWindowConfig(): JsonObject {
+        if (!this.gatewayConfig) return {};
+        const window = getEnvContextWindow();
+        if (window === undefined) return {};
+        return {model_context_window: window};
     }
 
     private async getResumeModelProvider(): Promise<string> {
