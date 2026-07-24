@@ -37,7 +37,7 @@ const goalControlParamsParser = z.object({
     action: z.enum(["pause", "clear"]),
 }).passthrough();
 
-if (process.argv.includes("--version")) {
+if (process.argv.includes("--version") || process.argv.includes("-v") || process.argv.includes("-V")) {
     console.log(`${packageJson.name} ${packageJson.version}`);
     process.exit(0);
 }
