@@ -9,7 +9,7 @@ class Logger {
     private readonly logFilePath: string | null;
 
     constructor() {
-        const logDir = process.env["APP_SERVER_LOGS"];
+        const logDir = process.env["APP_SERVER_LOGS"] || process.env["CODEX_LOG_DIR"];
         if (!logDir) {
             this.logFilePath = null;
             return;

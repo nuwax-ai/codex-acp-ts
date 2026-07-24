@@ -87,22 +87,6 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 }
 
 // ---------------------------------------------------------------------------
-// Log directory mapping
-// ---------------------------------------------------------------------------
-
-/**
- * Map `CODEX_LOG_DIR` → `APP_SERVER_LOGS` if the former is set and the
- * latter is not. Must be called **before** the Logger singleton is first
- * accessed (i.e. at the very top of `startAcpServer`).
- */
-export function applyCodexLogDir(): void {
-    const dir = process.env[CODEX_LOG_DIR_ENV_VAR];
-    if (dir && !process.env["APP_SERVER_LOGS"]) {
-        process.env["APP_SERVER_LOGS"] = dir;
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

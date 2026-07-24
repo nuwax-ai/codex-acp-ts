@@ -12,7 +12,6 @@ import packageJson from "../package.json";
 import {logger} from "./Logger";
 import {runLoginCommand} from "./login";
 import {runCodexCli} from "./CodexCli";
-import {applyCodexLogDir} from "./CodexEnvConfig";
 import {
     GOAL_CONTROL_METHOD, LEGACY_SET_SESSION_MODEL_METHOD,
     SESSION_STEERING_METHOD,
@@ -64,7 +63,6 @@ if (process.argv[2] === "login") {
 }
 
 function startAcpServer() {
-    applyCodexLogDir();
     const codexPath = process.env["CODEX_PATH"];
     const configString = process.env["CODEX_CONFIG"];
     const authRequestString = process.env["DEFAULT_AUTH_REQUEST"];
