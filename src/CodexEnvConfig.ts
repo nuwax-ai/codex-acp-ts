@@ -36,6 +36,7 @@ export interface EnvGatewayConfig {
         base_url: string;
         http_headers: Record<string, string>;
         wire_api: EnvWireApi;
+        experimental_bearer_token?: string;
     };
 }
 
@@ -64,9 +65,6 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     const headers: Record<string, string> = {"X-Client-Feature-ID": "codex"};
 
     const apiKey = readAnyApiKey();
-    if (apiKey) {
-        headers["Authorization"] = `Bearer ${apiKey}`;
-    }
 
     logger.log("Auto-configured gateway from env", {
         baseUrl,
@@ -82,6 +80,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
             base_url: baseUrl,
             http_headers: headers,
             wire_api: wireApi,
+            ...(apiKey ? {experimental_bearer_token: apiKey} : {}),
         },
     };
 }

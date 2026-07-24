@@ -1003,7 +1003,8 @@ interface GatewayConfig {
         name: string,
         base_url: string,
         http_headers: Record<string, string>,
-        wire_api: WireApi
+        wire_api: WireApi,
+        experimental_bearer_token?: string,
     }
 }
 
