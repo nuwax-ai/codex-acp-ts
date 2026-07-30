@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Postinstall script: pre-downloads the native `nuwax-codex` binary from
- * Alibaba Cloud OSS at install time.  After this completes, the ACP bridge
- * can spawn `nuwax-codex app-server` instantly without a lazy download on
- * first use.
+ * Alibaba Cloud OSS at install time and caches it under
+ * `node_modules/.cache/nuwax-codex/{version}/`.  Deleting node_modules
+ * cleans up the binary so users always have a predictable clean slate.
  */
 
 import { createRequire } from "node:module";
@@ -15,17 +15,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-// Resolve nuwax-codex package version — the binary version must match.
 let CODEX_VERSION;
 try {
   CODEX_VERSION = require("nuwax-codex/package.json").version;
 } catch {
-  process.exit(0); // nuwax-codex not installed — nothing to pre-download
+  process.exit(0);
 }
 
 const OSS_CDN_BASE =
@@ -69,16 +67,21 @@ function getBinaryName() {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Cache: node_modules/.cache/nuwax-codex/{version}/
 // ---------------------------------------------------------------------------
 
 function cacheDir() {
-  return join(homedir(), ".nuwax-codex-cache", CODEX_VERSION);
+  const pkgDir = dirname(require.resolve("nuwax-codex/package.json"));
+  return join(pkgDir, "..", ".cache", "nuwax-codex", CODEX_VERSION);
 }
 
 function cachedBinaryPath() {
   return join(cacheDir(), getBinaryName());
 }
+
+// ---------------------------------------------------------------------------
+// Download & extract
+// ---------------------------------------------------------------------------
 
 async function download(url, outPath) {
   mkdirSync(dirname(outPath), { recursive: true });
@@ -88,7 +91,6 @@ async function download(url, outPath) {
       `Download failed: HTTP ${res.status} ${res.statusText}\nURL: ${url}`,
     );
   }
-  // Use arrayBuffer for reliability; postinstall runs once so 98MB in memory is fine
   const total = parseInt(res.headers.get("content-length") || "0", 10);
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
@@ -124,29 +126,24 @@ async function main() {
   mkdirSync(dir, { recursive: true });
   const archivePath = join(dir, `nuwax-codex.${ext}`);
 
-  // 1. Download
   await download(url, archivePath);
 
-  // 2. Extract using system tools (reliable, no custom tar-parser bugs)
   process.stderr.write("  Extracting …\n");
   if (ext === "tar.gz") {
     execSync(`tar xzf "${archivePath}" -C "${dir}"`, { stdio: "inherit" });
   } else {
-    // Windows: use PowerShell Expand-Archive
     execSync(
       `powershell -NoProfile -Command "Expand-Archive -Force '${archivePath}' '${dir}'"`,
       { stdio: "inherit" },
     );
   }
 
-  // 3. Clean up archive
   try {
     unlinkSync(archivePath);
   } catch {
     /* best-effort */
   }
 
-  // 4. Ensure executable
   if (process.platform !== "win32") {
     chmodSync(cached, 0o755);
   }
@@ -163,5 +160,4 @@ async function main() {
 main().catch((err) => {
   process.stderr.write(`⚠ nuwax-codex pre-download skipped: ${err.message}\n`);
   process.stderr.write(`  The binary will be downloaded on first use instead.\n`);
-  // Never fail the install
 });

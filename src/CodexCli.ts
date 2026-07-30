@@ -1,6 +1,7 @@
 import type {ChildProcess, SpawnOptions} from "node:child_process";
 import {spawn} from "node:child_process";
-import {createRequire} from "node:module";
+
+import {resolveCodexBinaryPath} from "./resolveCodexBinary";
 
 export function runCodexCli(codexPath: string | undefined, args: Array<string>): Promise<number> {
     const child = spawnCodexCli(codexPath, args);
@@ -26,6 +27,5 @@ function spawnCodexCli(codexPath: string | undefined, args: Array<string>): Chil
     if (codexPath) {
         return spawn(codexPath, args, {...options, shell: process.platform === "win32"});
     }
-    const bundledCodexPath = createRequire(import.meta.url).resolve("nuwax-codex/bin/nuwax-codex.js");
-    return spawn(process.execPath, [bundledCodexPath, ...args], options);
+    return spawn(resolveCodexBinaryPath(), args, options);
 }
