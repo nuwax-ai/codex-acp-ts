@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "",
   "main": "dist/index.js",
   "bin": {
@@ -11,11 +11,13 @@
   },
   "files": [
     "dist/index.js",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE",
     "package.json"
   ],
   "scripts": {
+    "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm run build",
     "build": "node build.mjs",
     "bundle:all": "npm run bundle:linux-x64 && npm run bundle:linux-arm64 && npm run bundle:darwin-x64 && npm run bundle:darwin-arm64 && npm run bundle:win-x64 && npm run bundle:win-arm64",
