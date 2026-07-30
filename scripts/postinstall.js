@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-let launcherPath: string;
+let launcherPath;
 try {
   launcherPath = require.resolve("nuwax-codex/bin/nuwax-codex.js");
 } catch {
