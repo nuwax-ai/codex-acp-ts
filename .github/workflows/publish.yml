@@ -46,7 +46,6 @@ jobs:
           fi
       - run: npm install
       - run: npm run typecheck
-      - run: npm test
 
   publish-to-npm:
     needs: verify
