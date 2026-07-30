@@ -88,29 +88,19 @@ async function download(url, outPath) {
       `Download failed: HTTP ${res.status} ${res.statusText}\nURL: ${url}`,
     );
   }
+  // Use arrayBuffer for reliability; postinstall runs once so 98MB in memory is fine
   const total = parseInt(res.headers.get("content-length") || "0", 10);
-  let downloaded = 0;
-  const reader = res.body.getReader();
-  const ws = createWriteStream(outPath);
-  const logInterval = setInterval(() => {
-    if (total > 0) {
-      process.stderr.write(
-        `\r  Downloading nuwax-codex ${CODEX_VERSION} … ${((downloaded / total) * 100).toFixed(0)}%`,
-      );
-    }
-  }, 500);
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      ws.write(value);
-      downloaded += value.length;
-    }
-  } finally {
-    clearInterval(logInterval);
-    ws.end();
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (total > 0 && buffer.length !== total) {
+    throw new Error(
+      `Download incomplete: got ${buffer.length} bytes, expected ${total}`,
+    );
   }
-  process.stderr.write("\n");
+  createWriteStream(outPath).end(buffer);
+  process.stderr.write(
+    `  Downloaded ${(buffer.length / 1024 / 1024).toFixed(0)} MB\n`,
+  );
 }
 
 async function main() {
