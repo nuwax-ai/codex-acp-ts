@@ -9,11 +9,11 @@
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import {
-  createWriteStream,
   existsSync,
   mkdirSync,
   chmodSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -97,7 +97,7 @@ async function download(url, outPath) {
       `Download incomplete: got ${buffer.length} bytes, expected ${total}`,
     );
   }
-  createWriteStream(outPath).end(buffer);
+  writeFileSync(outPath, buffer);
   process.stderr.write(
     `  Downloaded ${(buffer.length / 1024 / 1024).toFixed(0)} MB\n`,
   );
