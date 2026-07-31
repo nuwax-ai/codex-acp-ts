@@ -23,6 +23,7 @@ import {AgentMode} from "./AgentMode";
 import path from "node:path";
 import {logger} from "./Logger";
 import {sanitizeMcpServerName} from "./McpServerName";
+import {readMetaSystemPrompt} from "./SystemPromptMeta";
 import type {
     AccountLoginCompletedNotification,
     AccountUpdatedNotification,
@@ -337,6 +338,7 @@ export class CodexAcpClient {
             model: this.effectiveModel(null),
             modelProvider: await this.getResumeModelProvider(),
             threadId: request.sessionId,
+            developerInstructions: readMetaSystemPrompt(request._meta),
         });
         onSubscribed?.();
         const codexModels = await this.fetchAvailableModels();
@@ -362,6 +364,7 @@ export class CodexAcpClient {
             model: this.effectiveModel(null),
             modelProvider: await this.getResumeModelProvider(),
             threadId: request.sessionId,
+            developerInstructions: readMetaSystemPrompt(request._meta),
         });
         onSubscribed?.();
         const historyResponse = await this.codexClient.threadRead({
@@ -391,6 +394,7 @@ export class CodexAcpClient {
             model: this.effectiveModel(null),
             modelProvider: this.getModelProvider(),
             cwd: request.cwd,
+            developerInstructions: readMetaSystemPrompt(request._meta),
         });
 
         const codexModels = await this.fetchAvailableModels();
