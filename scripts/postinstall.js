@@ -47,6 +47,9 @@ function getTargetTriple() {
     return a === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
   }
   if (p === "linux") {
+    // codex ships only a static musl build for linux arm64; statically
+    // linked so it runs on both glibc and musl systems.
+    if (a === "arm64") return "aarch64-unknown-linux-musl";
     if (a !== "x64") throw new Error("Unsupported Linux arch: " + a);
     let family = "gnu";
     try {
