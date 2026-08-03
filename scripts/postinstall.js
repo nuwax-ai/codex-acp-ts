@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 /**
  * Postinstall script: pre-downloads the native `nuwax-codex` binary from
- * Alibaba Cloud OSS at install time and caches it under
- * `node_modules/.cache/nuwax-codex/{version}/`.  Deleting node_modules
+ * Alibaba Cloud OSS at install time and places it under this package's own
+ * `vendor/nuwax-codex/{version}/` directory.
+ *
+ * We keep it in a non-hidden `vendor/` dir (not `node_modules/.cache`) so that
+ * Electron packagers (electron-builder / @electron/osx-sign) discover and
+ * re-sign the Mach-O during app signing — a hidden `.cache` dir was being
+ * skipped, leaving the binary with only an ad-hoc signature and triggering
+ * macOS Gatekeeper's "unidentified developer" prompt. Deleting node_modules
  * cleans up the binary so users always have a predictable clean slate.
  */
 
@@ -16,6 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -67,12 +74,14 @@ function getBinaryName() {
 }
 
 // ---------------------------------------------------------------------------
-// Cache: node_modules/.cache/nuwax-codex/{version}/
+// Location: <pkg>/vendor/nuwax-codex/{version}/  (non-hidden so packagers re-sign)
 // ---------------------------------------------------------------------------
 
 function cacheDir() {
-  const pkgDir = dirname(require.resolve("nuwax-codex/package.json"));
-  return join(pkgDir, "..", ".cache", "nuwax-codex", CODEX_VERSION);
+  // This script ships at `scripts/postinstall.js`, so the package root is two
+  // levels up from the current file.
+  const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  return join(pkgRoot, "vendor", "nuwax-codex", CODEX_VERSION);
 }
 
 function cachedBinaryPath() {
