@@ -45,6 +45,20 @@ export class AgentMode {
         },
         "workspace-write"
     );
+    static readonly Plan = new AgentMode(
+        "plan",
+        "Plan",
+        "Plan before making changes (codex collaboration plan); edits and commands still follow the Agent approval policy.",
+        "on-request",
+        {
+            type: "workspaceWrite",
+            writableRoots: [],
+            networkAccess: false,
+            excludeTmpdirEnvVar: false,
+            excludeSlashTmp: false
+        },
+        "workspace-write"
+    );
     static readonly AgentFullAccess = new AgentMode(
         "agent-full-access",
         "Agent (full access)",
@@ -88,7 +102,7 @@ export class AgentMode {
     }
 
     static all(): AgentMode[] {
-        return [AgentMode.ReadOnly, AgentMode.Agent, AgentMode.AgentFullAccess];
+        return [AgentMode.ReadOnly, AgentMode.Agent, AgentMode.Plan, AgentMode.AgentFullAccess];
     }
 
     static find(modeId: string): AgentMode | null {

@@ -22,7 +22,9 @@ import {AgentMode, MODE_CONFIG_ID} from "./AgentMode";
 import {
     COLLABORATION_MODE_CONFIG_ID,
     createCollaborationModeConfigOption,
+    DEFAULT_COLLABORATION_MODE,
     parseCollaborationMode,
+    PLAN_COLLABORATION_MODE,
 } from "./CollaborationModeConfig";
 import type {ModeKind} from "./app-server/ModeKind";
 import {
@@ -729,6 +731,7 @@ export class CodexAcpServer {
         if (!sessionState) throw new Error(`Session ${_params.sessionId} not found`);
 
         this.applyModeChange(sessionState, _params.modeId);
+        await this.syncCollaborationWithSessionMode(sessionState);
         return {};
     }
 
@@ -754,6 +757,7 @@ export class CodexAcpServer {
                 break;
             case MODE_CONFIG_ID:
                 this.applyModeChange(sessionState, this.stringConfigValue(params));
+                await this.syncCollaborationWithSessionMode(sessionState);
                 break;
             case COLLABORATION_MODE_CONFIG_ID:
                 await this.applyCollaborationModeChange(sessionState, this.stringConfigValue(params));
@@ -794,6 +798,32 @@ export class CodexAcpServer {
             throw RequestError.invalidParams();
         }
         sessionState.agentMode = newMode;
+    }
+
+    /**
+     * plan 档 session mode 与 codex collaboration mode 联动：plan →
+     * collaboration plan（先规划后执行）；其余档恢复 default。best-effort：
+     * RPC 失败仅记日志，不让 set_mode 整体失败（审批/沙箱预设已生效）。
+     */
+    private async syncCollaborationWithSessionMode(sessionState: SessionState): Promise<void> {
+        const target = sessionState.agentMode.id === AgentMode.Plan.id
+            ? PLAN_COLLABORATION_MODE
+            : DEFAULT_COLLABORATION_MODE;
+        if (sessionState.collaborationMode === target) return;
+        try {
+            await this.codexAcpClient.setCollaborationMode(
+                sessionState.sessionId,
+                target,
+                sessionState.currentModelId,
+            );
+            sessionState.collaborationMode = target;
+        } catch (err) {
+            logger.log("Failed to sync collaboration mode with session mode", {
+                sessionId: sessionState.sessionId,
+                target,
+                error: String(err),
+            });
+        }
     }
 
     private async applyCollaborationModeChange(sessionState: SessionState, value: string): Promise<void> {
