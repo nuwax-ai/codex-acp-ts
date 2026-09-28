@@ -106,10 +106,12 @@ export interface UrlElicitationRequester {
 
 /**
  * ACP `LlmProtocol` values Codex can route through the custom gateway, mapped to
- * the Codex `wire_api`. Codex only supports the OpenAI Responses wire API here.
+ * the Codex `wire_api`. The fork's bridge accepts OpenAI Responses, Chat
+ * Completions, and Anthropic Messages wires for custom gateways.
  */
 const SUPPORTED_GATEWAY_PROTOCOLS: Record<acp.LlmProtocol, WireApi> = {
     openai: "responses",
+    anthropic: "anthropic",
 };
 
 /**
@@ -1332,7 +1334,7 @@ function shouldDeduplicateMcpConflicts(): boolean {
     return !disabledByEnv;
 }
 
-type WireApi = "responses" | "chat";
+type WireApi = "responses" | "chat" | "anthropic";
 
 type GatewayConfigSource = "authentication" | "acpProviders";
 

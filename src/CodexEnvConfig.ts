@@ -1,10 +1,10 @@
 /**
  * Environment-driven auto-configuration for the Nuwax Codex bridge.
  *
- * Reads custom env vars (CODEX_BASE_URL, CODEX_WIRE_API, CODEX_MODEL,
- * CODEX_LOG_DIR) and translates them into Codex gateway config or system
- * env overrides. All custom logic lives here to keep merge conflicts with
- * upstream codex-acp to a minimum.
+ * Reads custom env vars (CODEX_BASE_URL, CODEX_API_PROTOCOL, CODEX_WIRE_API,
+ * CODEX_MODEL, CODEX_LOG_DIR) and translates them into Codex gateway config or
+ * system env overrides. All custom logic lives here to keep merge conflicts
+ * with upstream codex-acp to a minimum.
  */
 import {CODEX_API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
 import {logger} from "./Logger";
@@ -14,6 +14,7 @@ import {logger} from "./Logger";
 // ---------------------------------------------------------------------------
 
 export const CODEX_BASE_URL_ENV_VAR = "CODEX_BASE_URL";
+export const CODEX_API_PROTOCOL_ENV_VAR = "CODEX_API_PROTOCOL";
 export const CODEX_WIRE_API_ENV_VAR = "CODEX_WIRE_API";
 export const CODEX_MODEL_ENV_VAR = "CODEX_MODEL";
 export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
@@ -26,8 +27,18 @@ export const CODEX_PERSONALITY_ENABLED_ENV_VAR = "CODEX_PERSONALITY_ENABLED";
 // Types
 // ---------------------------------------------------------------------------
 
-/** Codex wire-protocol variant. */
+/** API protocol family the gateway speaks. */
+export type EnvApiProtocol = "openai" | "anthropic";
+
+/**
+ * Codex wire-protocol variant within the OpenAI protocol family. The Anthropic
+ * family is selected via `CODEX_API_PROTOCOL` and maps to the `"anthropic"`
+ * wire on the gateway config.
+ */
 export type EnvWireApi = "responses" | "chat";
+
+/** Wire value written into the gateway (codex `wire_api`) config field. */
+export type GatewayWireApi = EnvWireApi | "anthropic";
 
 /** Well-known provider id used by the auto-configured gateway. */
 export const CUSTOM_GATEWAY_ID = "custom-gateway";
@@ -39,7 +50,7 @@ export interface EnvGatewayConfig {
         name: string;
         base_url: string;
         http_headers: Record<string, string>;
-        wire_api: EnvWireApi;
+        wire_api: GatewayWireApi;
         experimental_bearer_token?: string;
     };
 }
@@ -59,9 +70,16 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
         return null;
     }
 
+    const rawApiProtocol = process.env[CODEX_API_PROTOCOL_ENV_VAR]?.trim();
+    const apiProtocol = parseEnvApiProtocol(rawApiProtocol);
     const rawWireApi = process.env[CODEX_WIRE_API_ENV_VAR]?.trim();
-    const wireApi: EnvWireApi =
-        rawWireApi === "chat" || rawWireApi === "responses" ? rawWireApi : "responses";
+    const openAiWire = parseEnvWireApi(rawWireApi);
+    if (apiProtocol === "anthropic" && rawWireApi !== undefined && rawWireApi !== "") {
+        logger.log(
+            `${CODEX_WIRE_API_ENV_VAR}="${rawWireApi}" is ignored because ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic selects the Anthropic protocol family`,
+        );
+    }
+    const wireApi: GatewayWireApi = apiProtocol === "anthropic" ? "anthropic" : openAiWire;
 
     const providerName =
         process.env[CODEX_PROVIDER_NAME_ENV_VAR]?.trim()
@@ -74,6 +92,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 
     logger.log("Auto-configured gateway from env", {
         baseUrl,
+        apiProtocol,
         wireApi,
         providerName,
         hasApiKey: !!apiKey,
@@ -151,4 +170,37 @@ function readAnyApiKey(): string | undefined {
         }
     }
     return undefined;
+}
+
+/**
+ * Parses `CODEX_API_PROTOCOL`. Unset defaults to the OpenAI protocol family.
+ * An unknown value is fatal so a typo cannot silently select the wrong family.
+ */
+function parseEnvApiProtocol(raw: string | undefined): EnvApiProtocol {
+    if (raw === undefined || raw === "") {
+        return "openai";
+    }
+    if (raw === "openai" || raw === "anthropic") {
+        return raw;
+    }
+    throw new Error(
+        `Invalid ${CODEX_API_PROTOCOL_ENV_VAR} "${raw}"; expected "openai" or "anthropic".`,
+    );
+}
+
+/**
+ * Parses `CODEX_WIRE_API`, the wire variant within the OpenAI protocol family.
+ * Unset defaults to "responses"; an unknown value (including "anthropic") is
+ * fatal — select the Anthropic family with ${CODEX_API_PROTOCOL_ENV_VAR}.
+ */
+function parseEnvWireApi(raw: string | undefined): EnvWireApi {
+    if (raw === undefined || raw === "") {
+        return "responses";
+    }
+    if (raw === "responses" || raw === "chat") {
+        return raw;
+    }
+    throw new Error(
+        `Invalid ${CODEX_WIRE_API_ENV_VAR} "${raw}"; expected "responses" or "chat" within the OpenAI family, or set ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic for the Anthropic protocol.`,
+    );
 }

@@ -25,7 +25,7 @@ describe("Configurable LLM providers (providers/*)", () => {
             providers: [
                 {
                     providerId: OPENAI_PROVIDER_ID,
-                    supported: ["openai"],
+                    supported: ["openai", "anthropic"],
                     required: false,
                     current: {
                         apiType: "openai",
@@ -77,12 +77,28 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(JSON.stringify(provider)).not.toContain("super-secret");
     });
 
+    it("accepts the anthropic apiType and reflects it in list", () => {
+        const fixture = createCodexMockTestFixture();
+        const agent = fixture.getCodexAcpAgent();
+        agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "anthropic",
+            baseUrl: "https://llm-gateway.corp.example.com/anthropic",
+        });
+
+        const provider = agent.listProviders({}).providers[0]!;
+        expect(provider.current).toEqual({
+            apiType: "anthropic",
+            baseUrl: "https://llm-gateway.corp.example.com/anthropic",
+        });
+    });
+
     it("rejects an unsupported apiType with invalid_params", async () => {
         const fixture = createCodexMockTestFixture();
         const agent = fixture.getCodexAcpAgent();
         await expectInvalidParams(() => agent.setProvider({
             providerId: OPENAI_PROVIDER_ID,
-            apiType: "anthropic",
+            apiType: "vertex",
             baseUrl: "https://example.com",
         }));
     });
