@@ -35,6 +35,7 @@ export class TitleGenerator {
         private readonly mainThreadId: string,
         private readonly cwd: string,
         private readonly getSessionTitleSource: () => string,
+        private readonly getModelRouting: () => { provider: string | null; model: string },
     ) {}
 
     /**
@@ -108,11 +109,19 @@ export class TitleGenerator {
     private async generateAndPersist(userPromptText: string): Promise<void> {
         if (!userPromptText.trim()) return;
 
+        // Capture routing before starting the hidden thread: a model switch
+        // while thread/start is in flight must not change this title request.
+        const { provider, model: activeModel } = this.getModelRouting();
+        const model = provider === null || provider === "openai" ||
+            provider === "amazon-bedrock" || provider === "amazon-bedrock-runtime"
+            ? TITLE_MODEL : activeModel;
+
         // Ephemeral thread: not persisted to disk, not visible in thread list,
         // but goes through the same auth layer as the main session.
         const { thread: epThread } = await this.client.threadStart({
             cwd: this.cwd,
             ephemeral: true,
+            modelProvider: provider,
         });
 
         const turnResult = await this.client.runTurn({
@@ -123,7 +132,7 @@ export class TitleGenerator {
                 text_elements: [],
             }],
             outputSchema: TITLE_OUTPUT_SCHEMA,
-            model: TITLE_MODEL,
+            model,
         });
 
         const title = extractTitle(turnResult.turn);

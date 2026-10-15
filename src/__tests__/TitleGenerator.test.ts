@@ -11,7 +11,7 @@ function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void} {
 }
 
 function createGenerator(client: Partial<CodexAppServerClient>) {
-    return new TitleGenerator(client as CodexAppServerClient, "thread-id", "/test/cwd", () => "unset");
+    return new TitleGenerator(client as CodexAppServerClient, "thread-id", "/test/cwd", () => "unset", () => ({provider: "openai", model: "gpt-6-sol"}));
 }
 
 describe("TitleGenerator.waitForIdle", () => {
@@ -76,4 +76,32 @@ describe("TitleGenerator.waitForIdle", () => {
 
         await expect(generator.waitForIdle(5_000)).resolves.toBeUndefined();
     });
+});
+
+
+describe("TitleGenerator provider routing", () => {
+    it.each([null, "openai", "amazon-bedrock", "amazon-bedrock-runtime", "vendor"])(
+        "captures the title model for provider %s before async thread creation",
+        async provider => {
+            const thread = deferred<{thread: {id: string}}>();
+            const threadStart = vi.fn().mockReturnValue(thread.promise);
+            const runTurn = vi.fn().mockResolvedValue({turn: {items: []}});
+            let activeModel = "vendor-active-model";
+            const generator = new TitleGenerator({
+                threadStart,
+                runTurn,
+            } as unknown as CodexAppServerClient, "main", "/test/cwd", () => "unset",
+            () => ({provider, model: activeModel}));
+            generator.onTurnCompleted("Review provider routing");
+            activeModel = "switched-while-thread-starting";
+            thread.resolve({thread: {id: "ephemeral"}});
+            await generator.waitForIdle(1_000);
+            expect(threadStart).toHaveBeenCalledWith({cwd: "/test/cwd", ephemeral: true, modelProvider: provider});
+            expect(runTurn).toHaveBeenCalledWith(expect.objectContaining({
+                threadId: "ephemeral",
+                model: provider === "vendor" ? "vendor-active-model" : "gpt-5.6-luna",
+                outputSchema: expect.objectContaining({required: ["title"]}),
+            }));
+        },
+    );
 });

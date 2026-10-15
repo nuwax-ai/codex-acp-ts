@@ -730,6 +730,7 @@ export class CodexAcpServer {
             sessionId,
             sessionState.cwd,
             () => sessionState.sessionTitleSource,
+            () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
         );
         this.installSessionState(sessionState);
         resumeSubscribed = false;
@@ -1996,6 +1997,7 @@ export class CodexAcpServer {
             sessionId,
             sessionState.cwd,
             () => sessionState.sessionTitleSource,
+            () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
         );
         this.installSessionState(sessionState);
         subscribed = false;
