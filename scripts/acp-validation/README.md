@@ -23,7 +23,7 @@ solid-red PNG from `shot-server.mjs`.
 | Step | Contract |
 |---|---|
 | S1 | session bootstrap with an MCP screenshot server |
-| S2 | the named env var reaches the model request (Authorization header), the configured model id is used, and a full turn completes |
+| S2 | the named env var reaches the model request (Authorization header), the configured model id is used for both the primary turn and automatic title request, and a full turn completes |
 | S3 | the MCP image tool's output reaches the next model request as typed `image_url` content (data URL), after the tool actually ran |
 | S4 | `session/cancel` mid-stream resolves the prompt with `stopReason: "cancelled"` |
 | S5 | `/compact` then a continuation turn on the same session |
@@ -50,29 +50,51 @@ real vendor serves these requests, and it cannot prove vision: the S3 model
 answer is scripted. Real-vendor and real-vision validation stays a separately
 authorized paid run (see the rig-production notes in the codex repo).
 
-## Open findings (2026-10-16, codex `e6ab13a18`)
+## Review corrections (2026-10-16)
 
-The archived runner currently surfaces two product-side defects on the ACP →
-app-server path and is kept failing-fast on purpose until they are fixed:
+The initial report of two codex product defects was incorrect. Re-running the
+same binary with a corrected mock and driver passes all six scenarios:
 
-- **S3**: the request's `tools` list advertises `mcp__screenshots__take_screenshot`
-  and the MCP server reports `status=ready`, but executing the call returns
-  `unsupported call: mcp__screenshots__take_screenshot`. Reproduces with the
-  original tmp driver as well, against binaries `914a400d7` and `e6ab13a18`;
-  the round-10 paid MiMo run executed the same tool successfully, so this is
-  a regression window to bisect, not a fixture artifact.
-- **S5/S6**: after a cancelled turn, later prompts (`/compact`, follow-ups,
-  recall) never appear as user messages in the model request — the vendor
-  keeps receiving the cancelled turn's prompt as the last user message, so
-  compaction answers stream stale content and recall cannot succeed. The
-  recorded request bodies in the run artifacts show the stale last-user
-  message directly.
+- The mock treated the guardian review's quoted transcript as a new user tool
+  request, despite the review declaring no tools and requesting a structured
+  `{ "outcome": ... }` JSON object. Its fabricated screenshot call failed as
+  `unsupported call`; the main turn consequently reported invalid guardian
+  JSON. The mock now handles guardian and title schemas before main-turn
+  scripting, and issues a tool call only for an advertised tool.
+- Rig merges adjacent user messages into text parts. Concatenating these parts
+  re-matched the interrupted essay ahead of the **present** compaction or
+  continuation instruction. The mock now uses the latest text part and gives
+  compaction/continuation/recall priority over old screenshot history.
+- MCP completion notifications omit the start notification's title. The driver
+  now correlates tool names by `toolCallId`, rather than treating the id as the
+  tool name and reporting a false incomplete result.
 
-Reproduce with:
+The review did reveal one separate ACP product defect: automatic titles used
+`gpt-5.6-luna` against every custom provider. `TitleGenerator` now captures the
+active model for custom providers before awaiting ephemeral-thread creation;
+OpenAI and the two built-in Bedrock provider ids retain their existing
+preferred model. S2 asserts the title's actual outgoing HTTP model id.
+
+The mock records a `kind` per request and permits at most 48 requests per run,
+including guardian and title requests. The six-scenario contract proves
+transport and history behaviour, not vision quality or security decisions;
+its guardian answer is a deterministic fixture.
+
+Run its eight independent mock contracts and strict TypeScript checks with:
 
 ```bash
-scripts/acp-validation/run-acp-mock-validation.sh /path/to/codex
+npm run test:acp-validation
+npm run typecheck
+npx vitest run --no-file-parallelism src/__tests__/TitleGenerator.test.ts
 ```
 
-The per-request mock record (JSONL under the validation root) plus the
-app-server log are the primary evidence for both findings.
+The root TypeScript project includes `src` explicitly; the validation driver has
+its own strict `tsconfig.json`, also checked by `npm run typecheck`, so archiving
+scripts outside `src` does not break the production root directory contract.
+
+Review receipt before the final codex rebuild: all six scenarios passed with
+9 recorded model HTTP requests; codex binary SHA-256
+`7fba393f9cf5549dbcd14a78d85636dc8d3e2da13f4ad7d45a841bc3f6635d75`.
+The binary hash is the identity under test, not a claim that a rebuilt final
+source commit was exercised. Use the runner's expected-hash argument when
+validating a newly built binary.

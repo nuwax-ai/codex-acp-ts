@@ -57,8 +57,10 @@ cleanup() {
 trap cleanup EXIT
 
 # Wait for the mock to accept connections before driving the agent.
+MOCK_READY=0
 for _ in $(seq 1 50); do
-    if curl -s -o /dev/null "http://127.0.0.1:${MOCK_PORT}/health" 2>/dev/null; then
+    if curl --fail -s -o /dev/null "http://127.0.0.1:${MOCK_PORT}/health" 2>/dev/null; then
+        MOCK_READY=1
         break
     fi
     if ! kill -0 "$MOCK_PID" 2>/dev/null; then
@@ -68,6 +70,11 @@ for _ in $(seq 1 50); do
     fi
     sleep 0.2
 done
+
+if [ "$MOCK_READY" -ne 1 ]; then
+    echo "mock vendor did not become ready" >&2
+    exit 4
+fi
 
 cd "$REPO"
 node --import tsx "$SCRIPT_DIR/acp-mock-validation-driver.ts"

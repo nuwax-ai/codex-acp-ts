@@ -27,5 +27,6 @@
     "noUncheckedSideEffectImports": true,
     "skipLibCheck": true,
   },
+  "include": ["src/**/*.ts"],
   "exclude": [".claude", "examples"]
 }

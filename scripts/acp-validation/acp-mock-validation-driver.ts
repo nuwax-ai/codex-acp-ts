@@ -40,20 +40,18 @@ import {
 } from "@agentclientprotocol/sdk";
 
 const REPO = path.resolve(import.meta.dirname, "..", "..");
-const CODEX_PATH = process.env["CODEX_PATH"];
-const VAL_MODEL = process.env["VAL_MODEL"] ?? "acp-val-mock-model";
-const VAL_BASE_URL = process.env["VAL_BASE_URL"];
-const VAL_ENV_KEY = process.env["VAL_ENV_KEY"] ?? "ACP_VAL_MOCK_API_KEY";
-const VAL_ENV_VALUE = process.env[VAL_ENV_KEY];
-const MOCK_RECORD_PATH = process.env["MOCK_RECORD_PATH"];
-const VAL_WIRE = process.env["VAL_WIRE"] ?? "chat";
-
-if (!CODEX_PATH || !VAL_BASE_URL || !VAL_ENV_VALUE || !MOCK_RECORD_PATH) {
-    console.error(
-        "missing CODEX_PATH / VAL_BASE_URL / MOCK_RECORD_PATH or the dummy key env var; use run-acp-mock-validation.sh",
-    );
-    process.exit(2);
+function requiredEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) throw new Error(`missing ${name}; use run-acp-mock-validation.sh`);
+    return value;
 }
+const CODEX_PATH = requiredEnv("CODEX_PATH");
+const VAL_MODEL = process.env["VAL_MODEL"] ?? "acp-val-mock-model";
+const VAL_BASE_URL = requiredEnv("VAL_BASE_URL");
+const VAL_ENV_KEY = process.env["VAL_ENV_KEY"] ?? "ACP_VAL_MOCK_API_KEY";
+const VAL_ENV_VALUE = requiredEnv(VAL_ENV_KEY);
+const MOCK_RECORD_PATH = requiredEnv("MOCK_RECORD_PATH");
+const VAL_WIRE = process.env["VAL_WIRE"] ?? "chat";
 
 const SESSION_TOKEN = "ACP-COLD-42";
 const RED_PNG_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
@@ -85,6 +83,7 @@ fs.writeFileSync(
 interface RecordedRequest {
     ts: string;
     auth: string | null;
+    kind?: string;
     body: string;
 }
 function readRecorded(): RecordedRequest[] {
@@ -110,18 +109,20 @@ interface TurnTrace {
     text: string;
     toolCalls: string[];
     completedTools: string[];
+    toolNames: Map<string, string>;
     updateKinds: Set<string>;
     compactionUpdates: number;
 }
-const newTrace = (): TurnTrace => ({ text: "", toolCalls: [], completedTools: [], updateKinds: new Set(), compactionUpdates: 0 });
+const newTrace = (): TurnTrace => ({ text: "", toolCalls: [], completedTools: [], toolNames: new Map(), updateKinds: new Set(), compactionUpdates: 0 });
 
 let trace = newTrace();
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    return Promise.race([
-        promise,
-        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
-    ]);
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
 interface AgentHandle {
@@ -130,7 +131,7 @@ interface AgentHandle {
 }
 
 function startAgent(): AgentHandle {
-    const child = spawn("npm", ["run", "--silent", "start"], {
+    const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
         cwd: REPO,
         env: {
             ...process.env,
@@ -150,7 +151,7 @@ function startAgent(): AgentHandle {
         Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
         Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>,
     );
-    const connection = acpClient({ name: "acp-validation", version: "1.0.0" })
+    const connection = acpClient({ name: "acp-validation" })
         .onNotification(methods.client.session.update, (ctx: any) => {
             const update = ctx.params?.update;
             if (!update) return;
@@ -159,7 +160,8 @@ function startAgent(): AgentHandle {
                 trace.text += update.content.text;
             }
             if (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") {
-                const name = update.title ?? update.toolCallId ?? "tool";
+                if (update.title) trace.toolNames.set(update.toolCallId, update.title);
+                const name = update.title ?? trace.toolNames.get(update.toolCallId) ?? update.toolCallId ?? "tool";
                 trace.toolCalls.push(name);
                 if (update.status === "completed") {
                     trace.completedTools.push(name);
@@ -255,7 +257,9 @@ async function main() {
             60_000,
             "session/new",
         );
-        sessionId = (session as any).sessionId;
+        const createdSessionId = (session as { sessionId?: string }).sessionId;
+        if (!createdSessionId) throw new Error("session/new returned no sessionId");
+        sessionId = createdSessionId;
         record("S1 bootstrap", Boolean(sessionId), `session ${sessionId}`);
 
         // ---- S2 env passthrough + first turn --------------------------------
@@ -265,21 +269,31 @@ async function main() {
             sessionId,
             `Remember the token ${SESSION_TOKEN} for later. Now reply with exactly the single word: pong`,
         );
+        // Automatic title generation is a second real model request. A
+        // custom provider must never receive the built-in Luna model id.
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            if (attempts(recordedBefore).delta.some((r) => r.kind === "title")) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
         const s2rec = attempts(recordedBefore);
+        const titleModelOk = s2rec.delta.some((r) =>
+            r.kind === "title" && r.auth === `Bearer ${VAL_ENV_VALUE}` &&
+            JSON.parse(r.body)["model"] === VAL_MODEL);
         const expectedAuth = `Bearer ${VAL_ENV_VALUE}`;
-        const authOk = s2rec.delta.some((r) => r.auth === expectedAuth);
-        const modelOk = s2rec.delta.some((r) => {
+        const mainRequests = s2rec.delta.filter((r) => r.kind === "ping");
+        const authOk = mainRequests.some((r) => r.auth === expectedAuth);
+        const modelOk = mainRequests.some((r) => {
             try {
                 return JSON.parse(r.body)["model"] === VAL_MODEL;
             } catch {
                 return false;
             }
         });
-        const s2ok = s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk;
+        const s2ok = s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk && titleModelOk;
         record(
             "S2 env passthrough + first turn",
             s2ok,
-            `stop=${s2.response?.stopReason} authOk=${authOk} modelOk=${modelOk} httpAttempts=${s2rec.delta.length} text="${s2.trace.text.slice(0, 60).replace(/\s+/g, " ")}"`,
+            `stop=${s2.response?.stopReason} authOk=${authOk} modelOk=${modelOk} titleModelOk=${titleModelOk} httpAttempts=${s2rec.delta.length} text="${s2.trace.text.slice(0, 60).replace(/\s+/g, " ")}"`,
         );
 
         // ---- S3 screenshot typed-image delivery ------------------------------
@@ -340,7 +354,7 @@ async function main() {
             .catch((e) => ({ error: String(e) }));
         const firstUpdate = new Promise<void>((resolve) => {
             const timer = setInterval(() => {
-                if (trace.updateKinds.size > 0) {
+                if (trace.text.includes("essay paragraph")) {
                     clearInterval(timer);
                     resolve();
                 }
@@ -353,21 +367,24 @@ async function main() {
         await firstUpdate;
         await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
         const s4 = await withTimeout(longPrompt, 120_000, "cancelled prompt resolution");
-        const s4ok = s4?.stopReason === "cancelled";
+        const s4ok = s4?.stopReason === "cancelled" && trace.text.includes("essay paragraph");
         record("S4 cancel", s4ok, `stop=${s4?.stopReason ?? s4?.error}`);
         // Let any in-flight/retried vendor stream drain so the next turn
         // starts from a settled session.
-        await new Promise((r) => setTimeout(r, 15_000));
+        await new Promise((r) => setTimeout(r, 500));
 
         // ---- S5 compaction ---------------------------------------------------
-        const s5c = await prompt(handle, sessionId, "/compact", 240_000);
-        const compacted = s5c.trace.compactionUpdates > 0 || s5c.response?.stopReason === "end_turn";
+        recordedBefore = readRecorded().length;
+        const s5c = await prompt(handle, sessionId, "/compact", 60_000);
+        const compactRequestSeen = attempts(recordedBefore).delta.some((r) =>
+            r.kind === "compaction" && r.body.includes("CONTEXT CHECKPOINT COMPACTION"));
+        const compacted = compactRequestSeen && s5c.response?.stopReason === "end_turn";
         const s5 = await prompt(handle, sessionId, "Reply with exactly: post-compact-ok");
         const s5ok = compacted && s5.response?.stopReason === "end_turn" && /post-compact-ok/i.test(s5.trace.text);
         record(
             "S5 compaction + continuation",
             s5ok,
-            `compactUpdates=${s5c.trace.compactionUpdates} compactStop=${s5c.response?.stopReason} followUp="${s5.trace.text.trim().slice(0, 40)}"`,
+            `compactRequestSeen=${compactRequestSeen} compactUpdates=${s5c.trace.compactionUpdates} compactStop=${s5c.response?.stopReason} followUp="${s5.trace.text.trim().slice(0, 40)}"`,
         );
 
         // ---- S6 cold resume ---------------------------------------------------
