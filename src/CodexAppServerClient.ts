@@ -65,6 +65,7 @@ import type {
     ThreadStartResponse,
     ThreadSetNameParams,
     ThreadSetNameResponse,
+    ThreadTokenUsageUpdatedNotification,
     ThreadUnsubscribeParams,
     ThreadUnsubscribeResponse,
     ToolRequestUserInputParams,
@@ -282,6 +283,7 @@ export class CodexAppServerClient {
         this.notificationHandlers.delete(threadId);
         this.approvalHandlers.delete(threadId);
         this.elicitationHandlers.delete(threadId);
+        this.pendingRestoredTokenUsage.delete(threadId);
     }
 
     async initialize(params: InitializeParams): Promise<InitializeResponse> {
@@ -815,6 +817,27 @@ export class CodexAppServerClient {
      */
     onServerNotification(sessionId: string, callback: (event: ServerNotification) => void) {
         this.notificationHandlers.set(sessionId, callback);
+        // A restored token usage snapshot buffered before this subscription
+        // (e.g. replayed by the app-server right after a resume response) still
+        // belongs to the session's stream; deliver it to the new handler.
+        const pendingUsage = this.pendingRestoredTokenUsage.get(sessionId);
+        if (pendingUsage !== undefined) {
+            this.pendingRestoredTokenUsage.delete(sessionId);
+            callback({method: "thread/tokenUsage/updated", params: pendingUsage});
+        }
+    }
+
+    /**
+     * Takes the restored token usage snapshot buffered for a thread that had no
+     * notification handler yet, so a session load can surface it.
+     */
+    takePendingRestoredTokenUsage(threadId: string): ThreadTokenUsageUpdatedNotification | null {
+        const pending = this.pendingRestoredTokenUsage.get(threadId);
+        if (pending !== undefined) {
+            this.pendingRestoredTokenUsage.delete(threadId);
+            return pending;
+        }
+        return null;
     }
 
     private codexEventHandlers: Array<(event: CodexConnectionEvent) => void> = [];
@@ -823,12 +846,20 @@ export class CodexAppServerClient {
     }
 
     private notificationHandlers = new Map<string, (event: ServerNotification) => void>();
+    private readonly pendingRestoredTokenUsage = new Map<string, ThreadTokenUsageUpdatedNotification>();
     private notify(notification: ServerNotification) {
         const threadId = extractThreadId(notification);
         if (threadId !== null) {
             const handler = this.notificationHandlers.get(threadId);
             if (handler) {
                 handler(notification);
+            } else if (notification.method === "thread/tokenUsage/updated") {
+                // The app-server replays the persisted token usage snapshot to
+                // the attaching connection right after a resume response,
+                // before any prompt subscribes the session's notifications.
+                // Buffer the latest snapshot so the session load can surface
+                // the restored usage.
+                this.pendingRestoredTokenUsage.set(threadId, notification.params);
             }
             return;
         }

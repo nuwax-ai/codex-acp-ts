@@ -54,7 +54,7 @@ import {
     REASONING_EFFORT_CONFIG_ID,
 } from "./ModelConfigOption";
 import type {TokenCount} from "./TokenCount";
-import {toPromptUsage} from "./TokenCount";
+import {toPromptUsage, toTokenCount} from "./TokenCount";
 import {CodexCommands, GOAL_CONTINUATION_PROMPT} from "./CodexCommands";
 import {SteeringQueue} from "./SteeringQueue";
 import type {QuotaMeta} from "./QuotaMeta";
@@ -2001,6 +2001,7 @@ export class CodexAcpServer {
         );
         this.installSessionState(sessionState);
         subscribed = false;
+        this.applyRestoredTokenUsage(sessionState);
 
         if (requestedMcpServers.length > 0 && mcpServerStartupVersion !== null) {
             this.pendingMcpStartupSessions.set(sessionId, {
@@ -2021,6 +2022,29 @@ export class CodexAcpServer {
             modeState: sessionModeState,
             thread: thread,
         };
+    }
+
+    /**
+     * The app-server replays the persisted token usage snapshot to the
+     * connection that resumed the thread, before any prompt subscribes the
+     * session's notifications. Apply the buffered snapshot so the client sees
+     * the restored cumulative usage as soon as the load response returns.
+     */
+    private applyRestoredTokenUsage(sessionState: SessionState): void {
+        const restored = this.codexAcpClient.appServerClient.takePendingRestoredTokenUsage(sessionState.sessionId);
+        if (restored === null) {
+            return;
+        }
+        sessionState.lastTokenUsage = toTokenCount(restored.tokenUsage.last);
+        sessionState.totalTokenUsage = toTokenCount(restored.tokenUsage.total);
+        sessionState.modelContextWindow = restored.tokenUsage.modelContextWindow;
+        const used = sessionState.lastTokenUsage?.totalTokens;
+        const size = sessionState.modelContextWindow;
+        if (used == null || size == null || size <= 0) {
+            return;
+        }
+        const session = new ACPSessionConnection(this.connection, sessionState.sessionId);
+        void session.update({sessionUpdate: "usage_update", used, size});
     }
 
     private async streamThreadHistory(sessionId: string, thread: Thread): Promise<void> {

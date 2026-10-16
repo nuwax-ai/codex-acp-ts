@@ -8,7 +8,8 @@ import type { UpdateSessionEvent } from "./ACPSessionConnection";
 import { stripShellPrefix } from "./CommandUtils";
 import type {
     FuzzyFileSearchSessionCompletedNotification,
-    FuzzyFileSearchSessionUpdatedNotification
+    FuzzyFileSearchSessionUpdatedNotification,
+    ImageGenerationFailure,
 } from "./app-server";
 import type {
     CollabAgentToolCallStatus,
@@ -805,19 +806,40 @@ function imageGenerationContent(
         content.push(createContent(image));
     }
 
+    if (item.failure !== null) {
+        content.push(createContent({
+            type: "text",
+            text: imageGenerationFailureText(item.failure),
+        }));
+    }
+
     return content;
+}
+
+function imageGenerationFailureText(failure: ImageGenerationFailure): string {
+    switch (failure.type) {
+        case "usageLimitExceeded": {
+            const resetsAt = failure.resetsAt === null
+                ? ""
+                : ` (resets at ${new Date(failure.resetsAt * 1000).toISOString()})`;
+            return `Image generation failed: usage limit exceeded for limit ${failure.limitId}${resetsAt}.`;
+        }
+    }
 }
 
 function imageGenerationRawOutput(
     item: ThreadItem & { type: "imageGeneration" }
-): Record<string, string | null> {
-    const output: Record<string, string | null> = {
+): Record<string, string | ImageGenerationFailure | null> {
+    const output: Record<string, string | ImageGenerationFailure | null> = {
         status: item.status,
         revisedPrompt: item.revisedPrompt,
         result: item.result,
     };
     if ("savedPath" in item) {
         output["savedPath"] = item.savedPath ?? null;
+    }
+    if (item.failure !== null) {
+        output["failure"] = item.failure;
     }
     return output;
 }
