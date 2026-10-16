@@ -39,8 +39,12 @@ fi
 
 VAL_ROOT="${VAL_ROOT:-$(mktemp -d /tmp/acp-val-mock.XXXXXX)}"
 MOCK_RECORD_PATH="$VAL_ROOT/mock-record.jsonl"
+# Fresh shot-server ground-truth file per run (same recorder the stress
+# harness uses; harmless for the six-scenario driver).
+SHOT_TRUTH_PATH="$VAL_ROOT/shot-truth.jsonl"
 : > "$MOCK_RECORD_PATH"
-export MOCK_RECORD_PATH
+: > "$SHOT_TRUTH_PATH"
+export MOCK_RECORD_PATH SHOT_TRUTH_PATH
 export MOCK_PORT="${MOCK_PORT:-47613}"
 export VAL_BASE_URL="http://127.0.0.1:${MOCK_PORT}/v1"
 export VAL_MODEL="acp-val-mock-model"

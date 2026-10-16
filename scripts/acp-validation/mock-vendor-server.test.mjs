@@ -4,12 +4,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { latestUserText, normalizeRequest, selectResponse, startMockServer, textResponse, toolCallResponse, wireForPath } from "./mock-vendor-server.mjs";
+import { classifyImageDataUrl, decodePng, latestUserText, normalizeRequest, selectResponse, startMockServer, textResponse, toolCallResponse, wireForPath } from "./mock-vendor-server.mjs";
+import { SHOT_PALETTE, pngBase64FromPixels, solidColorPngBase64 } from "./shot-server.mjs";
 
 const text = (value) => ({ type: "text", text: value });
 const user = (content) => ({ role: "user", content });
 const screenshotTool = { type: "function", function: { name: "mcp__screenshots__take_screenshot" } };
 const png = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
+// Real decodable fixtures from the shot server's synthesizer (the truncated
+// prefix above stays useful as a "mentioned as plain text" negative).
+const shotPngUrl = (color, marker) => `data:image/png;base64,${solidColorPngBase64(color, marker)}`;
 
 test("merged user parts select the latest instruction after cancellation", () => {
     assert.equal(latestUserText({ messages: [user([text("essay about ocean currents"), text("<turn_aborted/>"), text("Reply with exactly: post-compact-ok")])] }), "Reply with exactly: post-compact-ok");
@@ -40,8 +44,10 @@ test("compaction ignores the interrupted essay and retains only a present token"
     }
 });
 
-test("typed tool-image continuation recognizes its synthetic user label", () => {
-    assert.deepEqual(selectResponse({ messages: [user([text("Images returned by tool call call_val_1:"), { type: "image_url", image_url: { url: `data:image/png;base64,${png}` } }])] }), { kind: "image", text: "red" });
+test("typed tool-image continuation answers with the classified color", () => {
+    const answer = selectResponse({ messages: [user([text("Images returned by tool call call_val_1:"), { type: "image_url", image_url: { url: shotPngUrl("green", 0x0a0b01) } }])] });
+    assert.equal(answer.kind, "image");
+    assert.equal(answer.text, "green");
 });
 
 test("old screenshot history cannot override continuation or cold recall", () => {
@@ -59,6 +65,148 @@ test("screenshot call requires an advertised tool and has a finite retry budget"
     assert.equal(selectResponse({ messages }).kind, "missing-tool");
     assert.deepEqual(selectResponse({ messages, tools: [screenshotTool] }), { kind: "tool", name: screenshotTool.function.name });
     assert.equal(selectResponse({ messages, tools: [screenshotTool] }, 3).kind, "tool-budget");
+});
+
+// ---------------------------------------------------------------------------
+// Image-round verification (review item 6)
+// ---------------------------------------------------------------------------
+
+test("decoder classifies every palette color the shot server can serve", () => {
+    SHOT_PALETTE.forEach(([name], index) => {
+        assert.equal(classifyImageDataUrl(shotPngUrl(name, 0x010101 + index)), name);
+        // Anthropic-style raw base64 (no data-URL prefix) classifies too.
+        assert.equal(classifyImageDataUrl(solidColorPngBase64(name, 0x020202 + index)), name);
+    });
+});
+
+test("decoder round-trips pixels byte-exactly through every scanline filter", () => {
+    const width = 9;
+    const height = 7;
+    const pixels = Buffer.alloc(width * height * 4);
+    for (let i = 0; i < width * height; i += 1) {
+        pixels[i * 4] = (i * 7) & 0xff;
+        pixels[i * 4 + 1] = (i * 13 + 40) & 0xff;
+        pixels[i * 4 + 2] = (i * 29 + 90) & 0xff;
+        pixels[i * 4 + 3] = 255;
+    }
+    for (const filterType of [0, 1, 2, 3, 4]) {
+        const decoded = decodePng(pngBase64FromPixels(width, height, pixels, filterType));
+        assert.equal(decoded.width, width);
+        assert.equal(decoded.height, height);
+        assert.ok(decoded.pixels.equals(pixels), `filter ${filterType} must round-trip byte-exactly`);
+    }
+});
+
+/** Follow-up request shapes per wire: newest instruction, then this turn's
+ * tool call and result. `imagePart` is the typed image content of the tool
+ * result, or null when the client dropped the image. */
+const FORCE_PROMPT = "Force a real tool call: call the take_screenshot tool exactly once, wait for its output, then reply with ONLY the dominant color word.";
+
+function chatFollowUp(imagePart) {
+    const resultParts = [text("Images returned by tool call call_val_1:")];
+    if (imagePart) resultParts.push(imagePart);
+    return {
+        tools: [screenshotTool],
+        messages: [
+            user(FORCE_PROMPT),
+            { role: "assistant", content: null, tool_calls: [{ id: "call_val_1", type: "function", function: { name: screenshotTool.function.name, arguments: "{}" } }] },
+            user(resultParts),
+        ],
+    };
+}
+const chatImage = (url) => ({ type: "image_url", image_url: { url } });
+
+function responsesFollowUp(imagePart) {
+    const output = imagePart ? [imagePart] : [];
+    return {
+        tools: [{ type: "function", name: screenshotTool.function.name }],
+        input: [
+            { type: "message", role: "user", content: [{ type: "input_text", text: FORCE_PROMPT }] },
+            { type: "function_call", name: screenshotTool.function.name, call_id: "call_val_1", arguments: "{}" },
+            { type: "function_call_output", call_id: "call_val_1", output },
+            { type: "message", role: "user", content: [{ type: "input_text", text: "Images returned by tool call call_val_1:" }] },
+        ],
+    };
+}
+const responsesImage = (url) => ({ type: "input_image", image_url: url });
+
+function anthropicFollowUp(imagePart) {
+    const content = imagePart ? [imagePart] : [];
+    return {
+        tools: [{ name: screenshotTool.function.name }],
+        messages: [
+            user([{ type: "text", text: FORCE_PROMPT }]),
+            { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: screenshotTool.function.name, input: {} }] },
+            user([{ type: "tool_result", tool_use_id: "toolu_1", content }, { type: "text", text: "Images returned by tool call toolu_1:" }]),
+        ],
+    };
+}
+const anthropicImage = (url) => ({ type: "image", source: { type: "base64", media_type: "image/png", data: url.replace(/^data:image\/png;base64,/, "") } });
+
+test("current-tail typed images are extracted on every wire; history-only ones are not", () => {
+    const url = shotPngUrl("blue", 0x0c0d01);
+    for (const [body, wire] of [[chatFollowUp(chatImage(url)), "chat"], [responsesFollowUp(responsesImage(url)), "responses"], [anthropicFollowUp(anthropicImage(url)), "anthropic"]]) {
+        const view = normalizeRequest(body, wire);
+        assert.equal(view.tailImages.length, 1, `${wire}: exactly the current turn's image in the tail`);
+        assert.equal(classifyImageDataUrl(view.tailImages[0]), "blue");
+        assert.ok(view.hasImage, `${wire}: typed image detected`);
+    }
+    // The same image sitting BEFORE a newer instruction is history, not the
+    // current turn's tail.
+    const historyOnly = {
+        tools: [screenshotTool],
+        messages: [
+            user([text("Images returned by tool call call_old:"), { type: "image_url", image_url: { url } }]),
+            user("Force a real tool call: call the take_screenshot tool again now."),
+        ],
+    };
+    const view = normalizeRequest(historyOnly, "chat");
+    assert.equal(view.tailImages.length, 0);
+    assert.ok(view.hasImage, "history image still counts for hasImage");
+});
+
+test("screenshot follow-up whose tail lacks a typed image answers image-missing on every wire", () => {
+    // The label/result message is present, the typed image is not: the
+    // tool "completed" but the client dropped or flattened the image.
+    for (const [body, wire] of [[chatFollowUp(null), "chat"], [responsesFollowUp(null), "responses"], [anthropicFollowUp(null), "anthropic"]]) {
+        assert.deepEqual(selectResponse(body, 1, wire), { kind: "image-missing", text: "mock vendor: screenshot tool result carried no image" });
+    }
+});
+
+test("byte-identical image re-served by a later tool round answers image-stale; a same-round retry does not", () => {
+    const answeredImages = new Map();
+    const body = chatFollowUp(chatImage(shotPngUrl("magenta", 0x0e0f01)));
+    const first = selectResponse(body, 1, "chat", 3, answeredImages);
+    assert.equal(first.kind, "image");
+    assert.equal(first.text, "magenta");
+    answeredImages.set(first.imagePayload, 1); // the server records it on answer
+    // Plain retry of the same round (tool-call counter unchanged).
+    const retry = selectResponse(body, 1, "chat", 3, answeredImages);
+    assert.equal(retry.kind, "image");
+    assert.equal(retry.text, "magenta");
+    // A NEW forced round (counter advanced) presenting the same bytes.
+    assert.deepEqual(selectResponse(body, 2, "chat", 3, answeredImages), { kind: "image-stale", text: "mock vendor: old image re-served" });
+});
+
+test("typed image that is not a decodable PNG answers image-undecodable", () => {
+    const body = chatFollowUp(chatImage(`data:image/png;base64,${png}`)); // header-only, not a real PNG
+    const answer = selectResponse(body, 1, "chat");
+    assert.equal(answer.kind, "image-undecodable");
+    assert.match(answer.text, /undecodable/);
+});
+
+test("an image from an earlier round does not satisfy a new screenshot instruction", () => {
+    const url = shotPngUrl("cyan", 0x0a0e02);
+    const body = {
+        tools: [screenshotTool],
+        messages: [
+            user([text("Images returned by tool call call_old:"), { type: "image_url", image_url: { url } }]),
+            user("please take_screenshot again now"),
+        ],
+    };
+    const answer = selectResponse(body, 1, "chat");
+    assert.equal(answer.kind, "tool", `old-history image must force a fresh tool round, got ${answer.kind}`);
+    assert.equal(answer.name, screenshotTool.function.name);
 });
 
 test("mock HTTP dispatch stops at its global request cap", async (t) => {
@@ -119,16 +267,19 @@ test("anthropic wire normalizes content blocks, output_config schema and tool na
 });
 
 test("typed image parts are detected on every wire, text mentions are not", () => {
-    const chatBody = { messages: [user([text("Images returned by tool call call_val_1:"), { type: "image_url", image_url: { url: `data:image/png;base64,${png}` } }])] };
-    const responsesBody = { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Images returned by tool call call_val_1:" }, { type: "input_image", image_url: `data:image/png;base64,${png}` }] }] };
-    const anthropicBody = { messages: [user([{ type: "text", text: "Images returned by tool call call_val_1:" }, { type: "image", source: { type: "base64", media_type: "image/png", data: png } }])] };
+    const url = shotPngUrl("red", 0x010203);
+    const chatBody = { messages: [user([text("Images returned by tool call call_val_1:"), { type: "image_url", image_url: { url } }])] };
+    const responsesBody = { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Images returned by tool call call_val_1:" }, { type: "input_image", image_url: url }] }] };
+    const anthropicBody = { messages: [user([{ type: "text", text: "Images returned by tool call call_val_1:" }, { type: "image", source: { type: "base64", media_type: "image/png", data: url.replace(/^data:image\/png;base64,/, "") } }])] };
     // The server derives the wire from the request path; chat and anthropic
     // bodies alone are ambiguous, so detection is asserted per named wire.
     assert.ok(normalizeRequest(chatBody, "chat").hasImage);
     assert.ok(normalizeRequest(responsesBody, "responses").hasImage);
     assert.ok(normalizeRequest(anthropicBody, "anthropic").hasImage);
     for (const [body, wire] of [[chatBody, "chat"], [responsesBody, "responses"], [anthropicBody, "anthropic"]]) {
-        assert.deepEqual(selectResponse(body, 0, wire), { kind: "image", text: "red" });
+        const answer = selectResponse(body, 0, wire);
+        assert.equal(answer.kind, "image");
+        assert.equal(answer.text, "red", `${wire}: classified color answer`);
     }
     const textOnly = { messages: [user(`the prefix ${png} as plain text`)] };
     assert.ok(!normalizeRequest(textOnly).hasImage);
@@ -148,15 +299,19 @@ test("responses namespace advertisement expands to the flat callback name", () =
 });
 
 test("anthropic tool_result image blocks count as typed images", () => {
+    const url = shotPngUrl("red", 0x030405);
     const body = {
         messages: [
             { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__screenshots__take_screenshot", input: {} }] },
-            { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }, { type: "text", text: "Images returned by tool call toolu_1:" }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: url.replace(/^data:image\/png;base64,/, "") } }] }, { type: "text", text: "Images returned by tool call toolu_1:" }] },
         ],
     };
     const view = normalizeRequest(body, "anthropic");
     assert.ok(view.hasImage, "nested tool_result image should be detected");
-    assert.deepEqual(selectResponse(body, 0, "anthropic"), { kind: "image", text: "red" });
+    assert.equal(view.tailImages.length, 1, "current-turn tail image extracted from the tool_result block");
+    const answer = selectResponse(body, 0, "anthropic");
+    assert.equal(answer.kind, "image");
+    assert.equal(answer.text, "red");
 });
 
 test("anthropic and responses emitters produce their native terminal shapes", () => {

@@ -16,13 +16,179 @@
 // index, so retries and extra attempts stay testable. Request bodies are
 // normalized to a wire-independent view first (see `normalizeRequest`), so
 // the scenario logic cannot accidentally depend on one vendor's field names.
+//
+// Screenshot rounds are verified, not assumed: the typed image carried by
+// the CURRENT turn's tail is extracted per wire, decoded (minimal PNG
+// decoder: base64 -> IHDR -> IDAT inflate -> unfilter filters 0-4, 8-bit
+// RGB/RGBA) and answered with the CLASSIFIED color name. A tail that lacks
+// a typed image answers kind image-missing; an undecodable image answers
+// image-undecodable; byte-identical re-use of an image already answered in
+// an earlier tool round answers image-stale. The stress driver fails the
+// round on any of those kinds, and cross-checks the color against
+// shot-server.mjs's ground-truth file — an "old image" or a dropped image
+// can no longer produce a green round.
 import http from "node:http";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
+import zlib from "node:zlib";
+import { crc32, SHOT_PALETTE } from "./shot-server.mjs";
 
 
 const SESSION_TOKEN = "ACP-COLD-42";
-const RED_PNG_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
+
+// ---------------------------------------------------------------------------
+// Minimal PNG decoder + palette classifier (review item 6)
+// ---------------------------------------------------------------------------
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** Strip an optional data-URL prefix; returns the raw base64 payload. */
+function base64Payload(input) {
+    const value = String(input);
+    const marker = ";base64,";
+    const at = value.indexOf(marker);
+    return at >= 0 ? value.slice(at + marker.length) : value;
+}
+
+function paethPredictor(a, b, c) {
+    const p = a + b - c;
+    const pa = Math.abs(p - a);
+    const pb = Math.abs(p - b);
+    const pc = Math.abs(p - c);
+    if (pa <= pb && pa <= pc) return a;
+    if (pb <= pc) return b;
+    return c;
+}
+
+/**
+ * Decode a base64/data-URL PNG (8-bit, color type 2 RGB or 6 RGBA,
+ * non-interlaced, any scanline filter 0-4). Returns
+ * {width, height, channels, pixels} where pixels is a Buffer of
+ * width*height*channels bytes. Throws on anything else — the caller turns
+ * the error into an image-undecodable answer, so a mangled or foreign
+ * image can never fake a green round.
+ */
+export function decodePng(input) {
+    const buffer = Buffer.from(base64Payload(input), "base64");
+    if (buffer.length < 8 || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) {
+        throw new Error("not a PNG (bad signature)");
+    }
+    let width = 0;
+    let height = 0;
+    let bitDepth = 0;
+    let colorType = -1;
+    let interlace = -1;
+    const idatChunks = [];
+    let sawIend = false;
+    let offset = 8;
+    while (offset + 12 <= buffer.length) {
+        const length = buffer.readUInt32BE(offset);
+        const type = buffer.toString("ascii", offset + 4, offset + 8);
+        const data = buffer.subarray(offset + 8, offset + 8 + length);
+        if (data.length !== length) throw new Error(`truncated ${type} chunk`);
+        if (crc32(Buffer.concat([buffer.subarray(offset + 4, offset + 8), data])) !== buffer.readUInt32BE(offset + 8 + length)) {
+            throw new Error(`CRC mismatch in ${type} chunk`);
+        }
+        if (type === "IHDR") {
+            if (length !== 13) throw new Error("malformed IHDR");
+            width = data.readUInt32BE(0);
+            height = data.readUInt32BE(4);
+            bitDepth = data[8];
+            colorType = data[9];
+            interlace = data[12];
+        } else if (type === "IDAT") {
+            idatChunks.push(data);
+        } else if (type === "IEND") {
+            sawIend = true;
+            break;
+        }
+        offset += 12 + length;
+    }
+    if (!width || !height) throw new Error("missing IHDR");
+    if (!sawIend) throw new Error("missing IEND");
+    if (bitDepth !== 8) throw new Error(`unsupported bit depth ${bitDepth}`);
+    if (colorType !== 2 && colorType !== 6) throw new Error(`unsupported color type ${colorType}`);
+    if (interlace !== 0) throw new Error("interlaced PNG not supported");
+    if (width * height <= 0) throw new Error("empty pixel area");
+    const channels = colorType === 6 ? 4 : 3;
+    const stride = width * channels;
+    const raw = zlib.inflateSync(Buffer.concat(idatChunks));
+    if (raw.length < (stride + 1) * height) throw new Error("IDAT shorter than image size");
+    const pixels = Buffer.alloc(stride * height);
+    const zeros = Buffer.alloc(stride);
+    let previous = zeros;
+    for (let y = 0; y < height; y += 1) {
+        const lineStart = y * (stride + 1);
+        const filterType = raw[lineStart];
+        const line = raw.subarray(lineStart + 1, lineStart + 1 + stride);
+        const outStart = y * stride;
+        switch (filterType) {
+            case 0:
+                line.copy(pixels, outStart);
+                break;
+            case 1:
+                for (let i = 0; i < stride; i += 1) {
+                    pixels[outStart + i] = (line[i] + (i >= channels ? pixels[outStart + i - channels] : 0)) & 0xff;
+                }
+                break;
+            case 2:
+                for (let i = 0; i < stride; i += 1) {
+                    pixels[outStart + i] = (line[i] + previous[i]) & 0xff;
+                }
+                break;
+            case 3:
+                for (let i = 0; i < stride; i += 1) {
+                    pixels[outStart + i] = (line[i] + (((i >= channels ? pixels[outStart + i - channels] : 0) + previous[i]) >> 1)) & 0xff;
+                }
+                break;
+            case 4:
+                for (let i = 0; i < stride; i += 1) {
+                    const a = i >= channels ? pixels[outStart + i - channels] : 0;
+                    const b = i >= channels ? previous[i - channels] : 0;
+                    pixels[outStart + i] = (line[i] + paethPredictor(a, previous[i], b)) & 0xff;
+                }
+                break;
+            default:
+                throw new Error(`unsupported scanline filter type ${filterType}`);
+        }
+        previous = pixels.subarray(outStart, outStart + stride);
+    }
+    return { width, height, channels, pixels };
+}
+
+/** Average the RGB channels and return the nearest palette color name. */
+export function classifyPng(image) {
+    const { width, height, channels, pixels } = image;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const count = width * height;
+    for (let i = 0; i < count; i += 1) {
+        r += pixels[i * channels];
+        g += pixels[i * channels + 1];
+        b += pixels[i * channels + 2];
+    }
+    r /= count;
+    g /= count;
+    b /= count;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const [name, [pr, pg, pb]] of SHOT_PALETTE) {
+        const distance = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = name;
+        }
+    }
+    if (!best) throw new Error("no palette color to classify against");
+    return best;
+}
+
+/** Decode + classify a base64 or data-URL PNG in one step. */
+export function classifyImageDataUrl(input) {
+    return classifyPng(decodePng(input));
+}
+
 
 const sseHeaders = {
     "content-type": "text/event-stream",
@@ -49,7 +215,16 @@ export function wireForPath(pathname) {
  *   allText   — stringified full payload for substring recall checks
  *   schema    — structured-output schema when present (title/guardian)
  *   toolNames — advertised function tool names
- *   hasImage  — the synthetic red PNG arrived as a typed image part
+ *   hasImage  — a typed image part arrived ANYWHERE in the request
+ *               (history included); scenario answers never rely on this
+ *               alone — see tailImages
+ *   tailImages — base64 payloads of the typed image parts in the CURRENT
+ *               turn's tail (everything after the newest real instruction),
+ *               in request order. This is what distinguishes "this round's
+ *               fresh screenshot result" from "an image somewhere in
+ *               history": responses `function_call_output.output[]`
+ *               input_image parts, anthropic `tool_result` nested image
+ *               blocks, chat `image_url` parts of tail messages.
  * When the wire is known from the request path it is passed explicitly; the
  * body-only inference below is a fallback for direct unit-test callers
  * (chat and anthropic bodies are ambiguous once output_config is absent).
@@ -73,6 +248,7 @@ export function normalizeRequest(parsed, wireHint) {
      * whether the CURRENT turn already carries a screenshot tool result
      * (history from earlier turns must not suppress a forced tool call). */
     let tailAfterLastUser = "";
+    const tailImages = [];
 
     if (wire === "responses") {
         const items = parsed.input;
@@ -88,14 +264,38 @@ export function normalizeRequest(parsed, wireHint) {
             if (hasInstruction) { lastUser = i; break; }
         }
         tailAfterLastUser = JSON.stringify(items.slice(lastUser + 1));
+        // Typed images of the current turn: function_call_output items carry
+        // the tool's structured result (output[] with input_image parts);
+        // label messages may also hold input_image content parts.
+        const collectResponsesImages = (parts) => {
+            for (const part of parts) {
+                if (part?.type === "input_image" && typeof part.image_url === "string") {
+                    tailImages.push(base64Payload(part.image_url));
+                }
+            }
+        };
+        for (const item of items.slice(lastUser + 1)) {
+            if (item?.type === "function_call_output") {
+                if (Array.isArray(item.output)) collectResponsesImages(item.output);
+            } else if (item?.type === "message" && Array.isArray(item.content)) {
+                collectResponsesImages(item.content);
+            }
+        }
         for (const item of items) {
+            if (item?.type === "function_call_output") {
+                // Tool results carry typed images in their output array.
+                for (const part of Array.isArray(item.output) ? item.output : []) {
+                    if (part?.type === "input_image" && typeof part.image_url === "string") hasImage = true;
+                }
+                continue;
+            }
             if (item?.type !== "message") continue;
             const content = Array.isArray(item.content) ? item.content : [];
             const parts = content.map((part) => {
                 if (part?.type === "input_text" || part?.type === "output_text" || part?.type === "text") {
                     return { type: "text", text: part.text ?? "" };
                 }
-                if (part?.type === "input_image" && typeof part.image_url === "string" && part.image_url.includes(RED_PNG_PREFIX)) {
+                if (part?.type === "input_image" && typeof part.image_url === "string") {
                     hasImage = true;
                 }
                 return part;
@@ -133,17 +333,49 @@ export function normalizeRequest(parsed, wireHint) {
                     part?.type === "text" && part.text && !/^Images returned by tool call/.test(part.text));
             if (hasInstruction) { lastUser = i; break; }
         }
-        tailAfterLastUser = JSON.stringify(messages.slice(lastUser + 1));
+        const tailMessages = messages.slice(lastUser + 1);
+        tailAfterLastUser = JSON.stringify(tailMessages);
+        if (wire === "anthropic") {
+            // Typed images of the current turn: image blocks (including
+            // blocks nested in tool_result content) of tail messages.
+            const collectAnthropicImages = (blocks) => {
+                for (const block of blocks) {
+                    if (block?.type === "image" && typeof block.source?.data === "string") {
+                        tailImages.push(base64Payload(block.source.data));
+                    }
+                }
+            };
+            for (const m of tailMessages) {
+                const content = Array.isArray(m?.content) ? m.content
+                    : m?.content && typeof m.content === "object" ? [m.content] : [];
+                for (const block of content) {
+                    collectAnthropicImages([block]);
+                    if (block?.type === "tool_result") {
+                        const nested = Array.isArray(block.content) ? block.content
+                            : block.content && typeof block.content === "object" ? [block.content] : [];
+                        collectAnthropicImages(nested);
+                    }
+                }
+            }
+        } else {
+            for (const m of tailMessages) {
+                for (const part of Array.isArray(m?.content) ? m.content : []) {
+                    if (part?.type === "image_url" && typeof part?.image_url?.url === "string") {
+                        tailImages.push(base64Payload(part.image_url.url));
+                    }
+                }
+            }
+        }
         allText = JSON.stringify(parsed.messages ?? []);
         if (wire === "anthropic") {
             schema = parsed.output_config?.format?.schema;
             toolNames = (parsed.tools ?? []).map((tool) => tool?.name).filter(Boolean);
             for (const message of messages) {
                 for (const block of Array.isArray(message?.content) ? message.content : []) {
-                    const isImage = block?.type === "image" && block?.source?.data?.includes(RED_PNG_PREFIX);
+                    const isImage = block?.type === "image" && typeof block.source?.data === "string";
                     // Images ride inside tool_result content arrays as well.
                     const nestedImage = Array.isArray(block?.content)
-                        && block.content.some((part) => part?.type === "image" && part?.source?.data?.includes(RED_PNG_PREFIX));
+                        && block.content.some((part) => part?.type === "image" && typeof part?.source?.data === "string");
                     if (isImage || nestedImage) hasImage = true;
                 }
             }
@@ -152,7 +384,7 @@ export function normalizeRequest(parsed, wireHint) {
             toolNames = (parsed.tools ?? []).map((tool) => tool?.function?.name).filter(Boolean);
             for (const message of messages) {
                 for (const part of Array.isArray(message?.content) ? message.content : []) {
-                    if (part?.type === "image_url" && part?.image_url?.url?.includes(RED_PNG_PREFIX)) hasImage = true;
+                    if (part?.type === "image_url" && typeof part?.image_url?.url === "string") hasImage = true;
                 }
             }
         }
@@ -163,6 +395,7 @@ export function normalizeRequest(parsed, wireHint) {
         messages,
         allText,
         tailAfterLastUser,
+        tailImages,
         schema,
         toolNames,
         hasImage,
@@ -188,7 +421,18 @@ export function latestUserText(view) {
     return "";
 }
 
-export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBudget = 3) {
+/**
+ * Pick the scripted response for a request.
+ *
+ * `answeredImages` (optional Map base64 -> screenshotToolCalls-at-answer)
+ * carries per-run freshness state: an image answered during tool round N
+ * and re-presented verbatim once the counter has advanced past N is an old
+ * image being re-served, answered as kind image-stale. Re-presenting it
+ * with an UNCHANGED counter is a plain retry of the same round and is
+ * answered normally. The mock server passes one persistent Map; direct
+ * unit-test callers get a fresh one per call.
+ */
+export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBudget = 3, answeredImages = new Map()) {
     const view = normalizeRequest(parsed, wireHint);
     const schema = view.schema;
     if (schema?.properties?.outcome?.enum?.includes("allow")) {
@@ -213,8 +457,32 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
         return { kind: "recall", text: allText.includes(SESSION_TOKEN)
             ? SESSION_TOKEN : "The remembered token was absent from the input." };
     }
-    if (/Images returned by tool call/i.test(userText) && allText.includes(RED_PNG_PREFIX)) {
-        return { kind: "image", text: "red" };
+    // Screenshot follow-up: the newest user text is codex's generated label,
+    // or the original take_screenshot instruction with this turn's tool
+    // call/result already in the tail. Either way the answer must come from
+    // the typed image of the CURRENT turn's tail — an image that exists only
+    // in older history never satisfies this path.
+    const screenshotInCurrentTail = view.tailAfterLastUser.includes("take_screenshot");
+    if (/Images returned by tool call/i.test(userText) || (/take_screenshot/i.test(userText) && screenshotInCurrentTail)) {
+        if (view.tailImages.length === 0) {
+            return { kind: "image-missing", text: "mock vendor: screenshot tool result carried no image" };
+        }
+        const stalePayload = view.tailImages.find((payload) => {
+            const answeredAt = answeredImages.get(payload);
+            return answeredAt !== undefined && answeredAt !== screenshotToolCalls;
+        });
+        if (stalePayload !== undefined) {
+            return { kind: "image-stale", text: "mock vendor: old image re-served" };
+        }
+        try {
+            // Answer with the CLASSIFIED color of the newest tail image —
+            // the stress driver cross-checks this against shot-server's
+            // ground-truth record for the round.
+            const payload = view.tailImages[view.tailImages.length - 1];
+            return { kind: "image", text: classifyImageDataUrl(payload), imagePayload: payload };
+        } catch (error) {
+            return { kind: "image-undecodable", text: `mock vendor: typed image undecodable (${String(error?.message ?? error)})` };
+        }
     }
     if (/essay about ocean currents/i.test(userText)) return { kind: "essay" };
     if (/hang before headers/i.test(userText)) {
@@ -224,15 +492,9 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
     }
     if (/take_screenshot/i.test(userText)) {
         // Stress rounds force a REAL tool execution even when an image from
-        // an earlier round already sits in history. The forced call applies
-        // only while the CURRENT turn has no screenshot result after the
-        // newest user message, so the follow-up request (which repeats the
-        // prompt plus the fresh tool result) answers immediately instead of
-        // looping.
-        const forceTool = /force/i.test(userText);
-        const screenshotInCurrentTail = view.tailAfterLastUser.includes("take_screenshot");
-        if (forceTool && screenshotInCurrentTail) return { kind: "image", text: "red" };
-        if (!forceTool && allText.includes(RED_PNG_PREFIX)) return { kind: "image", text: "red" };
+        // an earlier round already sits in history; the forced call repeats
+        // until the follow-up request carries this round's result in its
+        // tail (handled above).
         const name = view.toolNames.find((tool) => tool === "mcp__screenshots__take_screenshot");
         if (!name) return { kind: "missing-tool", text: "mock vendor: screenshot tool is not advertised" };
         if (screenshotToolCalls >= toolBudget) {
@@ -389,6 +651,11 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
     let screenshotToolCalls = 0;
     let requests = 0;
     let openSockets = 0;
+    // Per-run freshness state: base64 payload -> screenshotToolCalls at the
+    // time it was answered. A later tool round presenting the same bytes is
+    // an old image re-served (image-stale); an unchanged counter means a
+    // retry of the same round and answers normally.
+    const answeredImages = new Map();
     const server = http.createServer((req, res) => {
         if (req.method === "GET" && req.url === "/health") {
             res.writeHead(200).end("ok");
@@ -420,7 +687,7 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             let parsed;
             try { parsed = JSON.parse(body); }
             catch { res.writeHead(400).end("invalid JSON"); return; }
-            const response = selectResponse(parsed, screenshotToolCalls, wire, toolBudget);
+            const response = selectResponse(parsed, screenshotToolCalls, wire, toolBudget, answeredImages);
             fs.appendFileSync(recordPath, `${JSON.stringify({
                 ts: new Date().toISOString(), wire, auth: req.headers.authorization ?? null,
                 xApi: req.headers["x-api-key"] ?? null,
@@ -428,14 +695,21 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             })}\n`);
             if (response.kind === "essay") { streamEssay(wire, res); return; }
             if (response.kind === "hang") {
-                // Never answer; release only when the client cancels.
+                // Never answer; release only when the client cancels. The
+                // record above IS the arrival signal the stress driver
+                // awaits before cancelling a before-headers round.
                 return;
             }
             res.writeHead(200, sseHeaders);
             if (response.kind === "tool") {
                 screenshotToolCalls += 1;
                 res.end(toolCallResponse(wire, response.name, "{}"));
-            } else res.end(textResponse(wire, response.text));
+            } else {
+                if (response.kind === "image" && response.imagePayload) {
+                    answeredImages.set(response.imagePayload, screenshotToolCalls);
+                }
+                res.end(textResponse(wire, response.text));
+            }
         });
     });
     server.on("connection", (socket) => {

@@ -188,6 +188,13 @@ function startAgent(): AgentHandle {
             ...process.env,
             CODEX_HOME: codexHome,
             APP_SERVER_LOGS: logsDir,
+            // Fresh CODEX_HOME has no codex account; hand the wrapper its
+            // supported default-auth request with the same dummy key the
+            // mock provider uses (local-only, no network, no credential).
+            DEFAULT_AUTH_REQUEST: JSON.stringify({
+                methodId: "api-key",
+                _meta: { "api-key": { apiKey: VAL_ENV_VALUE } },
+            }),
         },
         stdio: ["pipe", "pipe", "pipe"],
     });

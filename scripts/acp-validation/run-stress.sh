@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# 50-round stress validation (closure-plan item 7). Runs the fixed 17-round
-# table per wire (51 total) against one codex binary, one persistent
-# app-server per wire for non-cold rounds.
+# 54-round stress validation (closure-plan item 7, hardened per review
+# items 6 and 8). Runs the fixed 18-round table per wire (54 total:
+# 5 text, 4 tool-image, 2 cancel-before-headers, 2 cancel-mid-stream,
+# 1 cancel-during-tool, 2 compact, 2 cold-restart) against one codex
+# binary, one persistent app-server per wire for non-cold rounds.
+# Tool-image rounds are ground-truth verified against the shot server's
+# color palette; cancels must prove their precondition before cancelling;
+# probe failures and surviving tracked PIDs fail the run.
 #
 # Usage:
 #   scripts/acp-validation/run-stress.sh /path/to/codex [expected-sha256] [wire]
@@ -40,9 +45,14 @@ fi
 
 VAL_ROOT="${VAL_ROOT:-$(mktemp -d /tmp/acp-val-stress.XXXXXX)}"
 MOCK_RECORD_PATH="$VAL_ROOT/mock-record.jsonl"
+# Fresh ground-truth file per run: shot-server appends
+# {ts, mcpCallId, color, event:start|complete} records the driver verifies
+# tool-image rounds against.
+SHOT_TRUTH_PATH="$VAL_ROOT/shot-truth.jsonl"
 MOCK_PORT="${MOCK_PORT:-47713}"
-export MOCK_RECORD_PATH MOCK_PORT
+export MOCK_RECORD_PATH MOCK_PORT SHOT_TRUTH_PATH
 : > "$MOCK_RECORD_PATH"
+: > "$SHOT_TRUTH_PATH"
 export VAL_ROOT
 export VAL_BASE_URL="http://127.0.0.1:${MOCK_PORT}/v1"
 export VAL_MODEL="acp-val-mock-model"

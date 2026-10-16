@@ -1,21 +1,44 @@
 /**
- * 50-round offline stress validation for the ACP dev -> codex app-server ->
- * mock vendor main path (closure-plan item 7).
+ * 54-round offline stress validation for the ACP dev -> codex app-server ->
+ * mock vendor main path (closure-plan item 7; tool-image rounds verified
+ * per review item 6).
  *
  * Run per wire via scripts/acp-validation/run-stress.sh; each invocation
  * keeps ONE app-server alive for its wire's non-cold rounds. The round
- * table is fixed (deterministic seed): per wire 17 rounds = 4 text, 4
- * tool-image, 2 cancel-before-headers, 2 cancel-mid-stream, 1
- * cancel-during-tool, 2 compact+continuation, 2 cold-restart; three wires
- * give 51 rounds with 15 cancels, 12 tool-image rounds, 6 compactions and
- * 6 client cold-restarts. Per-round receipts: duration, model HTTP delta,
- * mock open sockets, RSS/FD counts of the agent + app-server (+ tool
- * subprocess) via /proc on Linux. After shutdown the run asserts the mock
- * holds no open connections, no shot-server processes remain, and the
- * app-server exited.
+ * table is fixed (deterministic, recorded in the summary artifact): per
+ * wire 18 rounds = 5 text, 4 tool-image, 2 cancel-before-headers, 2
+ * cancel-mid-stream, 1 cancel-during-tool, 2 compact+continuation, 2
+ * cold-restart; three wires give 54 rounds with 15 cancels, 12 tool-image
+ * rounds (>= 4 per wire), 6 compactions and 6 client cold-restarts.
  *
- * Credential-free: same dummy key and synthetic red PNG as the six-scenario
- * driver; no real vendor, no real screenshots.
+ * Tool-image rounds are VERIFIED end to end (review item 6):
+ * shot-server.mjs serves a different solid-color PNG per call and appends
+ * ground truth {ts, mcpCallId, color, event} to $SHOT_TRUTH_PATH; the mock
+ * vendor decodes the typed image carried by the CURRENT turn's tail and
+ * answers with the classified color name; this driver asserts the agent's
+ * final message EQUALS the ground-truth color (case-insensitive). Rounds
+ * where the mock answered image-missing / image-stale / image-undecodable
+ * fail with that reason, and only verified rounds count toward
+ * verifiedImageRounds (floor: >= 4 per wire). Cancel-during-tool rounds
+ * never count.
+ *
+ * Cancel stages prove their precondition before cancelling: before-headers
+ * waits until the mock has RECORDED the hang request (an arrival signal —
+ * the hang kind never answers), mid-stream waits for an actual stream
+ * delta, during-tool waits for the shot-server "start" truth record (the
+ * tool subprocess really began). A precondition wait that times out FAILS
+ * the round instead of silently cancelling. After each cancel, no
+ * additional MAIN model request may arrive for that turn; auxiliary
+ * requests (title/guardian, identified by their recorded kind) are counted
+ * explicitly in auxRequestCounts instead of being silently tolerated.
+ *
+ * Per-round receipts: duration, model HTTP delta, mock open sockets,
+ * RSS/FD counts of the agent + app-server (+ tool subprocess) via /proc on
+ * Linux. After shutdown the run asserts the mock holds no open
+ * connections, no shot-server processes remain, and the app-server exited.
+ *
+ * Credential-free: same dummy key and synthetic palette PNGs as the
+ * six-scenario driver; no real vendor, no real screenshots.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
@@ -45,6 +68,7 @@ const VAL_ENV_KEY = process.env["VAL_ENV_KEY"] ?? "ACP_VAL_MOCK_API_KEY";
 const VAL_ENV_VALUE = requiredEnv(VAL_ENV_KEY);
 const MOCK_RECORD_PATH = requiredEnv("MOCK_RECORD_PATH");
 const MOCK_STATS_URL = requiredEnv("MOCK_STATS_URL");
+const SHOT_TRUTH_PATH = requiredEnv("SHOT_TRUTH_PATH");
 const VAL_WIRE = process.env["VAL_WIRE"] ?? "chat";
 const SHOT_TAKE_MS = process.env["SHOT_TAKE_MS"] ?? "5000";
 
@@ -86,6 +110,55 @@ function readRecorded(): RecordedRequest[] {
         .filter((l) => l.trim())
         .map((l) => JSON.parse(l) as RecordedRequest);
 }
+/** Ground-truth records appended by shot-server.mjs. */
+interface TruthRecord {
+    ts: string;
+    mcpCallId: unknown;
+    color?: string;
+    event?: string;
+}
+function readTruth(): TruthRecord[] {
+    if (!fs.existsSync(SHOT_TRUTH_PATH)) return [];
+    return fs
+        .readFileSync(SHOT_TRUTH_PATH, "utf8")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as TruthRecord);
+}
+
+/** Poll a predicate; resolves false on timeout (callers FAIL the round). */
+function waitFor(predicate: () => boolean, timeoutMs: number, intervalMs = 100): Promise<boolean> {
+    return new Promise((resolve) => {
+        const started = Date.now();
+        const timer = setInterval(() => {
+            if (predicate()) {
+                clearInterval(timer);
+                resolve(true);
+            } else if (Date.now() - started >= timeoutMs) {
+                clearInterval(timer);
+                resolve(false);
+            }
+        }, intervalMs);
+    });
+}
+
+interface AuxCounts {
+    title: number;
+    guardian: number;
+}
+/** Split recorded requests into main-turn requests and auxiliary ones
+ * (title/guardian are identifiable by their recorded kind marker). */
+function classifyRequests(records: RecordedRequest[]): { main: RecordedRequest[]; aux: AuxCounts } {
+    const aux: AuxCounts = { title: 0, guardian: 0 };
+    const main: RecordedRequest[] = [];
+    for (const record of records) {
+        if (record.kind === "title") aux.title += 1;
+        else if (record.kind === "guardian") aux.guardian += 1;
+        else main.push(record);
+    }
+    return { main, aux };
+}
+
 function mockStats(): Promise<{ openSockets: number; requests: number }> {
     // agent:false — a pooled keep-alive connection would itself show up in
     // the open-socket count and fake a leak.
@@ -155,7 +228,21 @@ let traceText = "";
 function startAgent(): AgentHandle {
     const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
         cwd: REPO,
-        env: { ...process.env, CODEX_HOME: codexHome, APP_SERVER_LOGS: logsDir },
+        env: {
+            ...process.env,
+            CODEX_HOME: codexHome,
+            APP_SERVER_LOGS: logsDir,
+            // The wrapper's checkAuthorization() asks the app-server for an
+            // account; a fresh CODEX_HOME has none, so give the wrapper its
+            // supported default-auth escape hatch with the SAME dummy key
+            // the mock vendor's config.toml provider uses (stored locally
+            // in the throwaway CODEX_HOME; no real credential, no network
+            // login).
+            DEFAULT_AUTH_REQUEST: JSON.stringify({
+                methodId: "api-key",
+                _meta: { "api-key": { apiKey: VAL_ENV_VALUE } },
+            }),
+        },
         stdio: ["pipe", "pipe", "pipe"],
     });
     const stderrTail: string[] = [];
@@ -228,7 +315,12 @@ type RoundKind =
     | "compact"
     | "cold-restart";
 
-/** Fixed round table (deterministic): 17 rounds per wire. */
+/**
+ * Fixed round table (deterministic): 18 rounds per wire, including FOUR
+ * tool-image rounds (>= 4 per wire, >= 12 across the three wires) and one
+ * cancel-during-tool round whose image round never counts. The table is
+ * recorded verbatim in the summary artifact.
+ */
 const ROUND_TABLE: RoundKind[] = [
     "text", // seed the token first
     "tool-image",
@@ -245,9 +337,11 @@ const ROUND_TABLE: RoundKind[] = [
     "compact",
     "cancel-mid-stream",
     "text",
+    "tool-image",
     "cancel-during-tool",
     "cold-restart",
 ];
+const MIN_VERIFIED_IMAGE_ROUNDS_PER_WIRE = 4;
 
 async function roundSnapshot(): Promise<Record<string, unknown>> {
     const stats = await mockStats().catch(() => ({ openSockets: -1, requests: -1 }));
@@ -266,8 +360,13 @@ async function runRound(
     traceText = "";
     const before = await roundSnapshot();
     const metricsBefore = { agent: procMetrics(handle.child.pid), children: childPids(handle.child.pid ?? 0).map(procMetrics) };
+    const recordBefore = readRecorded();
+    const auxRequestCounts: AuxCounts = { title: 0, guardian: 0 };
     let stopReason: string | undefined;
     let error: string | undefined;
+    let verifiedImage: boolean | undefined;
+    let groundTruthColor: string | undefined;
+    let postCancelMainRequests: number | undefined;
     const prompt = (text: string) =>
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
@@ -286,6 +385,7 @@ async function runRound(
                 error = `text round unexpected: stop=${response?.stopReason ?? response?.error} text="${traceText.slice(0, 60)}"`;
             }
         } else if (kind === "tool-image") {
+            const truthBefore = readTruth().length;
             const response = await withTimeout(
                 prompt("Force a real tool call: call the take_screenshot tool exactly once, wait for its output, then reply with ONLY the dominant color word."),
                 120_000,
@@ -293,8 +393,20 @@ async function runRound(
             );
             stopReason = response?.stopReason;
             const toolDone = traceToolCompleted.some((t) => /screenshot/i.test(t));
-            if (response?.stopReason !== "end_turn" || !toolDone || !/red/i.test(traceText)) {
-                error = `tool-image round unexpected: stop=${response?.stopReason ?? response?.error} toolDone=${toolDone} answer="${traceText.trim().slice(0, 30)}"`;
+            // Ground truth: the NEWEST complete record of THIS round. Only a
+            // round whose final message equals the served color counts.
+            const truthDelta = readTruth().slice(truthBefore).filter((t) => t.event === "complete");
+            groundTruthColor = truthDelta.at(-1)?.color?.toLowerCase();
+            const answer = traceText.trim().toLowerCase().replace(/[^a-z]/g, "");
+            const badKinds = readRecorded()
+                .slice(recordBefore.length)
+                .map((r) => r.kind ?? "?")
+                .filter((k) => k === "image-missing" || k === "image-stale" || k === "image-undecodable");
+            verifiedImage = response?.stopReason === "end_turn" && toolDone && groundTruthColor !== undefined && answer === groundTruthColor;
+            if (!verifiedImage) {
+                error = `tool-image round unverified: stop=${response?.stopReason ?? response?.error} toolDone=${toolDone} groundTruth=${groundTruthColor ?? "none"} answer="${traceText.trim().slice(0, 40)}"`;
+                if (badKinds.length > 0) error += ` mockKinds=${badKinds.join(",")}`;
+                else if (groundTruthColor !== undefined && answer !== groundTruthColor && toolDone) error += " (agent answer did not match the served image color)";
             }
         } else if (kind === "cancel-headers" || kind === "cancel-mid-stream") {
             const pending = prompt(
@@ -302,57 +414,75 @@ async function runRound(
                     ? "hang before headers: never answer this"
                     : "Write a very detailed 3000-word essay about ocean currents. Do not summarize.",
             );
+            let precondition = true;
             if (kind === "cancel-mid-stream") {
-                await new Promise<void>((resolve) => {
-                    const timer = setInterval(() => {
-                        if (traceText.includes("essay paragraph")) {
-                            clearInterval(timer);
-                            resolve();
-                        }
-                    }, 100);
-                    setTimeout(() => {
-                        clearInterval(timer);
-                        resolve();
-                    }, 20_000).unref();
-                });
+                // A delta must actually arrive before cancelling — otherwise
+                // the cancel "succeeds" against a request that never streamed.
+                precondition = await waitFor(() => traceText.includes("essay paragraph"), 20_000, 100);
             } else {
-                await new Promise((r) => setTimeout(r, 1500));
+                // The hang request must actually ARRIVE at the mock (it is
+                // recorded the moment its body lands; it never answers).
+                precondition = await waitFor(
+                    () => readRecorded().slice(recordBefore.length).some((r) => r.kind === "hang"),
+                    15_000,
+                    100,
+                );
             }
             await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
             const response = await withTimeout(pending, 120_000, "cancel round resolution");
             stopReason = response?.stopReason;
-            if (response?.stopReason !== "cancelled") {
+            if (!precondition) {
+                error = `cancel round precondition failed: ${kind === "cancel-headers" ? "hang request never arrived at the mock" : "no stream delta observed before cancel"}`;
+            } else if (response?.stopReason !== "cancelled") {
                 error = `cancel round not cancelled: stop=${response?.stopReason ?? response?.error}`;
             }
-            // The cancelled turn must not keep paying for model attempts.
+            // The cancelled turn must not keep paying for MAIN model
+            // attempts; auxiliary (title/guardian) requests are classified
+            // and counted, not silently tolerated.
             const afterCancel = readRecorded().length;
             await new Promise((r) => setTimeout(r, 1500));
-            const drained = readRecorded().length;
-            if (drained - afterCancel > 1) {
-                error = `${error ?? ""} [post-cancel requests kept arriving: +${drained - afterCancel}]`;
+            const { main, aux: cancelAux } = classifyRequests(readRecorded().slice(afterCancel));
+            postCancelMainRequests = main.length;
+            if (auxRequestCounts) {
+                auxRequestCounts.title += cancelAux.title;
+                auxRequestCounts.guardian += cancelAux.guardian;
+            }
+            if (main.length > 0) {
+                const kinds = main.map((m) => m.kind ?? "?").join(",");
+                error = `${error ?? ""} [post-cancel MAIN model requests kept arriving: +${main.length} (${kinds})]`;
             }
         } else if (kind === "cancel-during-tool") {
+            const truthBefore = readTruth().length;
             const pending = prompt(
                 "Force a real tool call: call the take_screenshot tool exactly once (it is slow), wait for its output, then reply with ONLY the dominant color word.",
             );
-            await new Promise<void>((resolve) => {
-                const timer = setInterval(() => {
-                    if (traceToolCalls.some((t) => /screenshot/i.test(t))) {
-                        clearInterval(timer);
-                        resolve();
-                    }
-                }, 100);
-                setTimeout(() => {
-                    clearInterval(timer);
-                    resolve();
-                }, 20_000).unref();
-            });
+            // The tool must actually START (shot-server appends a start
+            // record before its SHOT_TAKE_MS delay) before cancelling.
+            const startedOk = await waitFor(
+                () => readTruth().slice(truthBefore).some((t) => t.event === "start"),
+                20_000,
+                100,
+            );
             await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
             const response = await withTimeout(pending, 120_000, "tool-cancel resolution");
             stopReason = response?.stopReason;
             const toolDone = traceToolCompleted.some((t) => /screenshot/i.test(t));
-            if (response?.stopReason !== "cancelled" || toolDone) {
+            if (!startedOk) {
+                error = `cancel-during-tool precondition failed: tool never started (no start truth record) before cancel`;
+            } else if (response?.stopReason !== "cancelled" || toolDone) {
                 error = `cancel-during-tool unexpected: stop=${response?.stopReason ?? response?.error} toolCompleted=${toolDone}`;
+            }
+            const afterCancel = readRecorded().length;
+            await new Promise((r) => setTimeout(r, 1500));
+            const { main, aux: cancelAux } = classifyRequests(readRecorded().slice(afterCancel));
+            postCancelMainRequests = main.length;
+            if (auxRequestCounts) {
+                auxRequestCounts.title += cancelAux.title;
+                auxRequestCounts.guardian += cancelAux.guardian;
+            }
+            if (main.length > 0) {
+                const kinds = main.map((m) => m.kind ?? "?").join(",");
+                error = `${error ?? ""} [post-cancel MAIN model requests kept arriving: +${main.length} (${kinds})]`;
             }
         } else if (kind === "compact") {
             const compact = await withTimeout(prompt("/compact"), 90_000, "compact round");
@@ -369,7 +499,10 @@ async function runRound(
     }
     const after = await roundSnapshot();
     const metricsAfter = { agent: procMetrics(handle.child.pid), children: childPids(handle.child.pid ?? 0).map(procMetrics) };
-    return {
+    const roundAux = classifyRequests(readRecorded().slice(recordBefore.length)).aux;
+    auxRequestCounts.title += roundAux.title;
+    auxRequestCounts.guardian += roundAux.guardian;
+    const receipt: Record<string, unknown> = {
         round: roundIndex,
         kind,
         pass: !error,
@@ -377,10 +510,15 @@ async function runRound(
         stopReason,
         ms: Date.now() - started,
         httpDelta: (after.httpTotal as number) - (before.httpTotal as number),
+        auxRequestCounts,
         openSockets: after.openSockets,
         metricsBefore,
         metricsAfter,
     };
+    if (verifiedImage !== undefined) receipt["verifiedImage"] = verifiedImage;
+    if (groundTruthColor !== undefined) receipt["groundTruthColor"] = groundTruthColor;
+    if (postCancelMainRequests !== undefined) receipt["postCancelMainRequests"] = postCancelMainRequests;
+    return receipt;
 }
 
 async function main() {
@@ -408,7 +546,10 @@ async function main() {
                         name: "screenshots",
                         command: process.execPath,
                         args: [path.join(REPO, "scripts", "acp-validation", "shot-server.mjs")],
-                        env: [{ name: "SHOT_TAKE_MS", value: SHOT_TAKE_MS }],
+                        env: [
+                            { name: "SHOT_TAKE_MS", value: SHOT_TAKE_MS },
+                            { name: "SHOT_TRUTH_PATH", value: SHOT_TRUTH_PATH },
+                        ],
                         cwd: workspace,
                     },
                 ],
@@ -459,7 +600,10 @@ async function main() {
                                     name: "screenshots",
                                     command: process.execPath,
                                     args: [path.join(REPO, "scripts", "acp-validation", "shot-server.mjs")],
-                                    env: [{ name: "SHOT_TAKE_MS", value: SHOT_TAKE_MS }],
+                                    env: [
+                                        { name: "SHOT_TAKE_MS", value: SHOT_TAKE_MS },
+                                        { name: "SHOT_TRUTH_PATH", value: SHOT_TRUTH_PATH },
+                                    ],
                                     cwd: workspace,
                                 },
                             ],
@@ -499,8 +643,11 @@ async function main() {
             }
             const receipt = await runRound(handle!, sessionId, kind, index);
             results.push(receipt);
-            log(`round ${index} ${kind}: ${receipt.error ? "FAIL " + receipt.error : `pass (${receipt.ms}ms, http+${receipt.httpDelta})`}`);
-            if (receipt.error) failures.push(`round ${index} ${kind}: ${receipt.error}`);
+            const extra = receipt["kind"] === "tool-image"
+                ? ` verified=${receipt["verifiedImage"] ? "yes" : "NO"} color=${receipt["groundTruthColor"] ?? "?"}`
+                : "";
+            log(`round ${index} ${kind}: ${receipt.error ? "FAIL " + receipt.error : `pass (${receipt.ms}ms, http+${receipt.httpDelta})${extra}`}`);
+            if (receipt.error) failures.push(`round ${index} ${kind}: ${String(receipt.error)}`);
         }
     } catch (error) {
         failures.push(`driver: ${String(error)}`);
@@ -537,17 +684,38 @@ async function main() {
         const agentRss = results
             .map((r) => (r as any).metricsAfter?.agent?.rssKb)
             .filter((v: unknown): v is number => typeof v === "number");
+        const verifiedImageRounds = results.filter((r) => r["kind"] === "tool-image" && r["verifiedImage"] === true).length;
+        if (verifiedImageRounds < MIN_VERIFIED_IMAGE_ROUNDS_PER_WIRE) {
+            failures.push(
+                `verified tool-image rounds ${verifiedImageRounds} < required ${MIN_VERIFIED_IMAGE_ROUNDS_PER_WIRE} for wire ${VAL_WIRE} (3 wires x 4 = 12 total)`,
+            );
+        }
+        const auxTotals = results.reduce(
+            (acc: AuxCounts, r) => {
+                const aux = r["auxRequestCounts"] as AuxCounts | undefined;
+                if (aux) {
+                    acc.title += aux.title;
+                    acc.guardian += aux.guardian;
+                }
+                return acc;
+            },
+            { title: 0, guardian: 0 },
+        );
         const artifact = {
             codexPath: CODEX_PATH,
             codexSha256: sha256,
             valWire: VAL_WIRE,
+            roundTable: ROUND_TABLE,
             roundsPlanned: ROUND_TABLE.length,
             roundsRun: results.length,
             roundsPassed: results.filter((r) => r.pass).length,
             cancels: results.filter((r) => r.kind?.startsWith("cancel")).length,
             toolImageRounds: results.filter((r) => r.kind === "tool-image").length,
+            verifiedImageRounds,
+            minVerifiedImageRoundsPerWire: MIN_VERIFIED_IMAGE_ROUNDS_PER_WIRE,
             compactions: results.filter((r) => r.kind === "compact").length,
             coldRestarts: results.filter((r) => r.kind === "cold-restart").length,
+            auxRequestTotals: auxTotals,
             shutdownMs,
             mockOpenSocketsAfter: stats.openSockets,
             leftoverShotServers: leftoverTools,
@@ -558,7 +726,7 @@ async function main() {
         fs.writeFileSync(path.join(rootDir, "stress-results.json"), JSON.stringify(artifact, null, 2));
         log(`stress artifact: ${path.join(rootDir, "stress-results.json")}`);
         log(
-            `summary: ${artifact.roundsPassed}/${artifact.roundsRun} rounds passed (cancels=${artifact.cancels} toolImage=${artifact.toolImageRounds} compact=${artifact.compactions} cold=${artifact.coldRestarts}); mockOpenSocketsAfter=${stats.openSockets}; shutdown=${shutdownMs}ms`,
+            `summary: ${artifact.roundsPassed}/${artifact.roundsRun} rounds passed (cancels=${artifact.cancels} toolImage=${artifact.toolImageRounds} verifiedImage=${artifact.verifiedImageRounds} compact=${artifact.compactions} cold=${artifact.coldRestarts} auxRequests=${JSON.stringify(auxTotals)}); mockOpenSocketsAfter=${stats.openSockets}; shutdown=${shutdownMs}ms`,
         );
         process.exit(failures.length > 0 ? 1 : 0);
     }
