@@ -1,0 +1,36 @@
+{
+  "comment": "Machine-readable scenario table for the ACP dev -> codex app-server -> mock vendor validation. 6 scenarios x 3 wires = 18 executable rows. 'contract' is what PASS proves for that row; the driver records outcomes per (wire, scenario) in results.json.",
+  "wires": ["chat", "responses", "anthropic"],
+  "scenarios": [
+    {
+      "id": "S1",
+      "name": "bootstrap",
+      "contract": "ACP session/new over the real app-server with an MCP screenshot server registered; no model call is required or counted."
+    },
+    {
+      "id": "S2",
+      "name": "env-passthrough",
+      "contract": "The named env var reaches the model HTTP request with the wire's auth scheme (Bearer on chat/responses, x-api-key on anthropic); the configured model id is used by the main turn AND the automatic title request; a full turn completes; httpAttempts > 0."
+    },
+    {
+      "id": "S3",
+      "name": "typed-image-delivery",
+      "contract": "The MCP image tool actually runs (tool call completes) and its output reaches the next model request as typed image content (image_url / input_image / image+base64 source depending on wire), not flattened text; httpAttempts > 0."
+    },
+    {
+      "id": "S4",
+      "name": "cancel",
+      "contract": "session/cancel mid-stream resolves the prompt with stopReason=cancelled after content was observed; the essay request was actually received (httpAttempts > 0); no scripted failure is reported."
+    },
+    {
+      "id": "S5",
+      "name": "compaction-continuation",
+      "contract": "/compact sends a CONTEXT CHECKPOINT COMPACTION request derived from real history and completes; the follow-up prompt enters a NEW model request (post-compact-ok answer), not a replay of the cancelled essay."
+    },
+    {
+      "id": "S6",
+      "name": "cold-resume-recall",
+      "contract": "After killing the agent process and session/load on a fresh process, recall succeeds only when the token is genuinely present in the resumed request history (mock echoes only what it received); httpAttempts > 0."
+    }
+  ]
+}

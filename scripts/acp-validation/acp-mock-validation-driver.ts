@@ -9,12 +9,15 @@
  * is a dummy value this driver sets itself and the assertions only ever see
  * that dummy.
  *
- * Scenarios:
+ * Scenarios (see scenarios.json for the machine-readable table; each runs on
+ * three wires — chat, responses, anthropic — selected via VAL_WIRE):
  *   S1 session bootstrap with an MCP screenshot server
  *   S2 env passthrough: the named env var reaches the model HTTP request
- *      (Authorization header) and a full turn completes on the chat wire
+ *      with the wire's auth scheme (Bearer on chat/responses, x-api-key on
+ *      anthropic) and a full turn completes; the automatic title request
+ *      must use the active model id
  *   S3 screenshot delivery: the MCP image tool's output reaches the next
- *      model request as typed image content (data URL), not mangled text
+ *      model request as typed image content, not mangled text
  *   S4 cancel: session/cancel mid-stream resolves with stopReason cancelled
  *   S5 compaction: /compact then a continuation turn on the same session
  *   S6 cold resume: kill the agent, session/load on a fresh process, and the
@@ -56,7 +59,9 @@ const VAL_WIRE = process.env["VAL_WIRE"] ?? "chat";
 const SESSION_TOKEN = "ACP-COLD-42";
 const RED_PNG_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
 
-const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-val-mock-"));
+// The runner owns the artifact root (VAL_ROOT) so orchestrators can collect
+// per-wire results.json artifacts; standalone runs get their own temp dir.
+const rootDir = process.env["VAL_ROOT"] ?? fs.mkdtempSync(path.join(os.tmpdir(), "acp-val-mock-"));
 const codexHome = path.join(rootDir, "codex-home");
 const workspace = path.join(rootDir, "workspace");
 const logsDir = path.join(rootDir, "appserver-logs");
@@ -83,6 +88,9 @@ fs.writeFileSync(
 interface RecordedRequest {
     ts: string;
     auth: string | null;
+    /** x-api-key as sent on the anthropic wire (null elsewhere). */
+    xApi?: string | null;
+    wire?: string;
     kind?: string;
     body: string;
 }
@@ -93,6 +101,38 @@ function readRecorded(): RecordedRequest[] {
         .split("\n")
         .filter((l) => l.trim())
         .map((l) => JSON.parse(l) as RecordedRequest);
+}
+/** The wire's credential assertion: Bearer on chat/responses, the raw key in
+ * x-api-key on anthropic (the bridge translates bearer -> x-api-key). */
+function authOkForWire(request: RecordedRequest): boolean {
+    if (VAL_WIRE === "anthropic") return request.xApi === VAL_ENV_VALUE;
+    return request.auth === `Bearer ${VAL_ENV_VALUE}`;
+}
+/** Find the synthetic red PNG in a request as a TYPED image part of the
+ * wire's native shape (image_url / input_image / image+base64 source). */
+function typedImageInRequest(request: RecordedRequest): boolean {
+    let parsed: any;
+    try {
+        parsed = JSON.parse(request.body);
+    } catch {
+        return false;
+    }
+    const isImagePart = (part: any): boolean => {
+        if (!part || typeof part !== "object") return false;
+        if (VAL_WIRE === "anthropic") {
+            return part["type"] === "image" && String(part["source"]?.["data"] ?? "").includes(RED_PNG_PREFIX);
+        }
+        if (VAL_WIRE === "responses") {
+            return part["type"] === "input_image" && String(part["image_url"] ?? "").includes(RED_PNG_PREFIX);
+        }
+        return part["type"] === "image_url" && String(part["image_url"]?.["url"] ?? "").includes(RED_PNG_PREFIX);
+    };
+    const containers: any[] = Array.isArray(parsed?.messages) ? parsed.messages : Array.isArray(parsed?.input) ? parsed.input : [];
+    for (const message of containers) {
+        const content = message?.["content"];
+        if (Array.isArray(content) && content.some(isImagePart)) return true;
+    }
+    return false;
 }
 
 const results: Array<{ step: string; pass: boolean; detail: string }> = [];
@@ -277,11 +317,10 @@ async function main() {
         }
         const s2rec = attempts(recordedBefore);
         const titleModelOk = s2rec.delta.some((r) =>
-            r.kind === "title" && r.auth === `Bearer ${VAL_ENV_VALUE}` &&
+            r.kind === "title" && authOkForWire(r) &&
             JSON.parse(r.body)["model"] === VAL_MODEL);
-        const expectedAuth = `Bearer ${VAL_ENV_VALUE}`;
         const mainRequests = s2rec.delta.filter((r) => r.kind === "ping");
-        const authOk = mainRequests.some((r) => r.auth === expectedAuth);
+        const authOk = mainRequests.some(authOkForWire);
         const modelOk = mainRequests.some((r) => {
             try {
                 return JSON.parse(r.body)["model"] === VAL_MODEL;
@@ -289,7 +328,7 @@ async function main() {
                 return false;
             }
         });
-        const s2ok = s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk && titleModelOk;
+        const s2ok = s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk && titleModelOk && s2rec.delta.length > 0;
         record(
             "S2 env passthrough + first turn",
             s2ok,
@@ -311,27 +350,9 @@ async function main() {
         const s3rec = attempts(recordedBefore);
         const toolCompleted = s3.trace.completedTools.some((t) => /screenshot/i.test(t));
         // The follow-up model request must carry the PNG as typed image
-        // content (data URL), not as flattened text.
-        const imageDelivered = s3rec.delta.some((r) => {
-            try {
-                const parsed = JSON.parse(r.body);
-                const messages = parsed["messages"] ?? [];
-                for (const m of messages) {
-                    const content = m["content"];
-                    if (!Array.isArray(content)) continue;
-                    for (const part of content) {
-                        const url = part?.["image_url"]?.["url"] ?? "";
-                        if (part?.["type"] === "image_url" && typeof url === "string" && url.includes(RED_PNG_PREFIX)) {
-                            return true;
-                        }
-                    }
-                }
-            } catch {
-                /* not JSON */
-            }
-            return false;
-        });
-        const s3ok = s3.response?.stopReason === "end_turn" && toolCompleted && imageDelivered;
+        // content in the wire's native shape, not as flattened text.
+        const imageDelivered = s3rec.delta.some(typedImageInRequest);
+        const s3ok = s3.response?.stopReason === "end_turn" && toolCompleted && imageDelivered && s3rec.delta.length > 0;
         record(
             "S3 screenshot typed-image delivery",
             s3ok,
@@ -340,6 +361,7 @@ async function main() {
 
         // ---- S4 cancel -------------------------------------------------------
         trace = newTrace();
+        recordedBefore = readRecorded().length;
         const longPrompt = handle.agent
             .request(methods.agent.session.prompt as any, {
                 sessionId,
@@ -367,8 +389,9 @@ async function main() {
         await firstUpdate;
         await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
         const s4 = await withTimeout(longPrompt, 120_000, "cancelled prompt resolution");
-        const s4ok = s4?.stopReason === "cancelled" && trace.text.includes("essay paragraph");
-        record("S4 cancel", s4ok, `stop=${s4?.stopReason ?? s4?.error}`);
+        const essayRequests = attempts(recordedBefore).delta.filter((r) => r.kind === "essay");
+        const s4ok = s4?.stopReason === "cancelled" && trace.text.includes("essay paragraph") && essayRequests.length > 0;
+        record("S4 cancel", s4ok, `stop=${s4?.stopReason ?? s4?.error} essayRequests=${essayRequests.length}`);
         // Let any in-flight/retried vendor stream drain so the next turn
         // starts from a settled session.
         await new Promise((r) => setTimeout(r, 500));
@@ -441,6 +464,7 @@ async function main() {
             codexSha256: sha256,
             valModel: VAL_MODEL,
             valBaseUrl: VAL_BASE_URL,
+            valWire: VAL_WIRE,
             envKeyName: VAL_ENV_KEY,
             results,
         };

@@ -37,7 +37,7 @@ if [ -n "$EXPECT_SHA" ] && [ "$ACTUAL_SHA" != "$EXPECT_SHA" ]; then
     exit 3
 fi
 
-VAL_ROOT="$(mktemp -d /tmp/acp-val-mock.XXXXXX)"
+VAL_ROOT="${VAL_ROOT:-$(mktemp -d /tmp/acp-val-mock.XXXXXX)}"
 MOCK_RECORD_PATH="$VAL_ROOT/mock-record.jsonl"
 : > "$MOCK_RECORD_PATH"
 export MOCK_RECORD_PATH
@@ -46,7 +46,7 @@ export VAL_BASE_URL="http://127.0.0.1:${MOCK_PORT}/v1"
 export VAL_MODEL="acp-val-mock-model"
 export ACP_VAL_MOCK_API_KEY="acp-val-dummy-key-not-a-credential"
 export VAL_ENV_KEY="ACP_VAL_MOCK_API_KEY"
-export VAL_WIRE="chat"
+export VAL_WIRE="${VAL_WIRE:-chat}"
 export CODEX_PATH
 
 node "$SCRIPT_DIR/mock-vendor-server.mjs" > "$VAL_ROOT/mock-server.log" 2>&1 &

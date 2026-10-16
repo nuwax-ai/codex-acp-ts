@@ -8,15 +8,29 @@ credentials, account data, or captured screenshots are used: the API key is a
 dummy value the runner sets itself, and the only image is a synthetic
 solid-red PNG from `shot-server.mjs`.
 
+## Wires
+
+The same six scenarios run on all three provider wires — `chat`
+(OpenAI Chat-Completions), `responses` (OpenAI Responses passthrough) and
+`anthropic` (Anthropic Messages) — for 18 executable rows total. The mock
+serves all three on one port (`/v1/chat/completions`, `/v1/responses`,
+`/v1/messages`) and the wire's native SSE shapes; `scenarios.json` is the
+machine-readable scenario table the merged summary is checked against.
+
 ## Files
 
-- `mock-vendor-server.mjs` — OpenAI-chat-wire mock with a JSONL request
-  recorder. Answers are scripted; recall/compaction answers are derived from
-  the actual incoming request, so passing still proves codex sent the bytes.
+- `mock-vendor-server.mjs` — tri-wire mock vendor with a JSONL request
+  recorder (each record carries its wire, Authorization and x-api-key).
+  Answers are scripted; recall/compaction answers are derived from the
+  actual incoming request, so passing still proves codex sent the bytes.
 - `shot-server.mjs` — minimal MCP stdio server exposing `take_screenshot`.
 - `acp-mock-validation-driver.ts` — the six-scenario driver with assertions.
 - `run-acp-mock-validation.sh` — validates the binary receipt (sha256),
-  starts the mock, sets the dummy key, runs the driver.
+  starts the mock, sets the dummy key, runs the driver. `VAL_WIRE` selects
+  the wire (default `chat`); `VAL_ROOT` overrides the artifact directory.
+- `run-all-wires.sh` — runs all three wires against one binary and merges
+  the per-wire `results.json` plus `scenarios.json` into `summary-18.json`.
+- `scenarios.json` — machine-readable scenario/contract table.
 
 ## Scenarios
 
@@ -35,8 +49,10 @@ outcomes) and exits non-zero when any step fails.
 ## Run
 
 ```bash
-# Build the candidate first, then:
-scripts/acp-validation/run-acp-mock-validation.sh /path/to/codex [expected-sha256]
+# Build the candidate first, then all three wires (18 rows, merged summary):
+scripts/acp-validation/run-all-wires.sh /path/to/codex [expected-sha256]
+# Or a single wire:
+VAL_WIRE=anthropic scripts/acp-validation/run-acp-mock-validation.sh /path/to/codex [expected-sha256]
 ```
 
 `CODEX_PATH` is explicit — no silent default binary. Passing the expected
@@ -80,7 +96,8 @@ including guardian and title requests. The six-scenario contract proves
 transport and history behaviour, not vision quality or security decisions;
 its guardian answer is a deterministic fixture.
 
-Run its eight independent mock contracts and strict TypeScript checks with:
+Run its mock contracts (tri-wire normalization, SSE emitters, path routing,
+shared retry budget, error inputs) and strict TypeScript checks with:
 
 ```bash
 npm run test:acp-validation
