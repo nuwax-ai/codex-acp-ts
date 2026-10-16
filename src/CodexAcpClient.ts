@@ -552,8 +552,15 @@ export class CodexAcpClient {
      * and the original resume error is what the caller sees.
      */
     private async resumeThread(params: ThreadResumeParams): Promise<ResumedThread> {
+        // The app-server replays the persisted token usage snapshot right after
+        // the resume response — after any handler a previous prompt left
+        // registered. Arm a per-load capture so the replayed snapshot survives
+        // notification routing and the calling flow can apply it to the session
+        // state it installs.
+        this.codexClient.armRestoredTokenUsageCapture(params.threadId);
         try {
             const response = await this.codexClient.threadResume(params);
+            this.codexClient.settleRestoredTokenUsageCapture(params.threadId);
             return {
                 thread: response.thread,
                 model: response.model,
@@ -564,13 +571,20 @@ export class CodexAcpClient {
                 materialized: true,
             };
         } catch (err) {
-            if (!isMissingRolloutError(err)) throw err;
+            if (!isMissingRolloutError(err)) {
+                this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
+                throw err;
+            }
             let response;
             try {
                 response = await this.codexClient.threadRead({threadId: params.threadId});
             } catch {
+                this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
                 throw err;
             }
+            // `thread/read` does not replay usage, so nothing will arrive for
+            // this capture; drop it instead of leaving it armed.
+            this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
             logger.log("Thread has no rollout yet; resumed it from its live app-server state", {
                 threadId: params.threadId,
             });

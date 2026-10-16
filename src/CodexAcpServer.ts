@@ -1083,7 +1083,12 @@ export class CodexAcpServer {
                 throw new Error("Cannot restart Codex app-server before ACP initialization");
             }
             await replacement.initialize(this.initializeRequest);
+            const replacedClient = this.codexAcpClient;
             this.codexAcpClient = replacement;
+            // The replaced client's connection is gone; release its per-load
+            // restored-usage captures so nothing outlives the app-server it
+            // belonged to.
+            replacedClient.appServerClient.dispose();
             this.availableCommands = this.createAvailableCommands(replacement);
 
             const resumeErrors: unknown[] = [];
@@ -2026,9 +2031,12 @@ export class CodexAcpServer {
 
     /**
      * The app-server replays the persisted token usage snapshot to the
-     * connection that resumed the thread, before any prompt subscribes the
-     * session's notifications. Apply the buffered snapshot so the client sees
-     * the restored cumulative usage as soon as the load response returns.
+     * connection that resumed the thread right after the resume response —
+     * after any notification handler a previous prompt left registered. The
+     * load flow arms a per-load capture for the thread, so the snapshot
+     * survives routing regardless of pre-existing handlers; apply it to the
+     * freshly installed session state so the client sees the restored
+     * cumulative usage as soon as the load response returns.
      */
     private applyRestoredTokenUsage(sessionState: SessionState): void {
         const restored = this.codexAcpClient.appServerClient.takePendingRestoredTokenUsage(sessionState.sessionId);

@@ -1,4 +1,5 @@
 import {type MessageConnection, RequestType} from "vscode-jsonrpc/node";
+import {logger} from "./Logger";
 import type {
     ClientRequest,
     InitializeParams,
@@ -116,6 +117,19 @@ export type McpStartupResult = {
     cancelled: Array<string>;
 };
 
+/**
+ * A per-load capture of the restored `thread/tokenUsage/updated` replay.
+ * Entries exist only while a load armed them (see
+ * {@link CodexAppServerClient.armRestoredTokenUsageCapture}); handler-less
+ * threads never accumulate entries on their own.
+ */
+type RestoredTokenUsageCapture = {
+    /** Latest replayed snapshot; null until the notification arrives. */
+    snapshot: ThreadTokenUsageUpdatedNotification | null;
+    /** True while the resume request that armed this capture is still in flight. */
+    inFlight: boolean;
+};
+
 const CommandExecutionApprovalRequest = new RequestType<
     CommandExecutionRequestApprovalParams,
     CommandExecutionRequestApprovalResponse,
@@ -147,6 +161,12 @@ const ToolRequestUserInputRequest = new RequestType<
 >('item/tool/requestUserInput');
 
 const GOAL_RUNTIME_EFFECTS_GRACE_MS = 1_000;
+
+// Hard cap on restored-usage captures. Normal flow removes an entry as soon as
+// its load is consumed, fails, or the thread closes, so the map tracks in-flight
+// loads; the cap only bounds abnormal accumulation and never evicts an entry
+// whose load is still in flight.
+const RESTORED_TOKEN_USAGE_CAPTURE_CAP = 64;
 
 /**
  * A type-safe client over the Codex App Server's JSON-RPC API.
@@ -817,27 +837,67 @@ export class CodexAppServerClient {
      */
     onServerNotification(sessionId: string, callback: (event: ServerNotification) => void) {
         this.notificationHandlers.set(sessionId, callback);
-        // A restored token usage snapshot buffered before this subscription
-        // (e.g. replayed by the app-server right after a resume response) still
-        // belongs to the session's stream; deliver it to the new handler.
-        const pendingUsage = this.pendingRestoredTokenUsage.get(sessionId);
-        if (pendingUsage !== undefined) {
+        // A capture still armed for this thread ends its late window here: the
+        // live subscription supersedes it. Replay any snapshot the load never
+        // consumed into the new handler instead of losing it.
+        const pending = this.pendingRestoredTokenUsage.get(sessionId);
+        if (pending !== undefined) {
             this.pendingRestoredTokenUsage.delete(sessionId);
-            callback({method: "thread/tokenUsage/updated", params: pendingUsage});
+            if (pending.snapshot !== null) {
+                callback({method: "thread/tokenUsage/updated", params: pending.snapshot});
+            }
         }
     }
 
     /**
-     * Takes the restored token usage snapshot buffered for a thread that had no
-     * notification handler yet, so a session load can surface it.
+     * Arms a per-load capture of the restored `thread/tokenUsage/updated`
+     * replay for a thread. The app-server sends the replay right after the
+     * resume response — after any handler a previous prompt left registered —
+     * so the load flow arms before sending the resume request and consumes the
+     * captured snapshot once the fresh session state is installed. Entries are
+     * created only by this explicit arming, never passively.
+     */
+    armRestoredTokenUsageCapture(threadId: string): void {
+        this.pendingRestoredTokenUsage.set(threadId, {snapshot: null, inFlight: true});
+        this.evictSettledRestoredUsageCaptures();
+    }
+
+    /**
+     * Marks the resume request that armed this capture as settled. The entry
+     * stays armed for the late replay window (until consumed, cleared, or the
+     * thread unsubscribes) but becomes evictable under the global cap.
+     */
+    settleRestoredTokenUsageCapture(threadId: string): void {
+        const capture = this.pendingRestoredTokenUsage.get(threadId);
+        if (capture !== undefined) {
+            capture.inFlight = false;
+        }
+    }
+
+    /** Drops an armed capture without consuming it — the arming load did not complete. */
+    clearRestoredTokenUsageCapture(threadId: string): void {
+        this.pendingRestoredTokenUsage.delete(threadId);
+    }
+
+    /** Releases every per-load capture; call when this client is discarded. */
+    dispose(): void {
+        this.pendingRestoredTokenUsage.clear();
+    }
+
+    /**
+     * Takes the restored token usage snapshot captured for a load of this
+     * thread, so the session load can surface it. Consumes the capture whether
+     * or not the replay arrived: past the load's install point the entry is no
+     * longer needed — the app-server sends the replay before any response the
+     * remaining load steps await.
      */
     takePendingRestoredTokenUsage(threadId: string): ThreadTokenUsageUpdatedNotification | null {
         const pending = this.pendingRestoredTokenUsage.get(threadId);
-        if (pending !== undefined) {
-            this.pendingRestoredTokenUsage.delete(threadId);
-            return pending;
+        if (pending === undefined) {
+            return null;
         }
-        return null;
+        this.pendingRestoredTokenUsage.delete(threadId);
+        return pending.snapshot;
     }
 
     private codexEventHandlers: Array<(event: CodexConnectionEvent) => void> = [];
@@ -846,25 +906,49 @@ export class CodexAppServerClient {
     }
 
     private notificationHandlers = new Map<string, (event: ServerNotification) => void>();
-    private readonly pendingRestoredTokenUsage = new Map<string, ThreadTokenUsageUpdatedNotification>();
+    private readonly pendingRestoredTokenUsage = new Map<string, RestoredTokenUsageCapture>();
     private notify(notification: ServerNotification) {
         const threadId = extractThreadId(notification);
         if (threadId !== null) {
+            if (notification.method === "thread/tokenUsage/updated") {
+                const capture = this.pendingRestoredTokenUsage.get(threadId);
+                if (capture !== undefined) {
+                    // The load that armed this thread owns the restored
+                    // snapshot: it applies the snapshot to the session state it
+                    // installs. Suppress delivery so a handler registered before
+                    // the load cannot write the state it is about to replace or
+                    // emit a duplicate usage_update.
+                    capture.snapshot = notification.params;
+                    return;
+                }
+            }
             const handler = this.notificationHandlers.get(threadId);
             if (handler) {
                 handler(notification);
-            } else if (notification.method === "thread/tokenUsage/updated") {
-                // The app-server replays the persisted token usage snapshot to
-                // the attaching connection right after a resume response,
-                // before any prompt subscribes the session's notifications.
-                // Buffer the latest snapshot so the session load can surface
-                // the restored usage.
-                this.pendingRestoredTokenUsage.set(threadId, notification.params);
             }
             return;
         }
         for (const notificationHandler of this.notificationHandlers.values()) {
             notificationHandler(notification);
+        }
+    }
+
+    private evictSettledRestoredUsageCaptures(): void {
+        if (this.pendingRestoredTokenUsage.size <= RESTORED_TOKEN_USAGE_CAPTURE_CAP) {
+            return;
+        }
+        for (const [threadId, capture] of this.pendingRestoredTokenUsage) {
+            if (this.pendingRestoredTokenUsage.size <= RESTORED_TOKEN_USAGE_CAPTURE_CAP) {
+                return;
+            }
+            if (capture.inFlight) {
+                continue;
+            }
+            this.pendingRestoredTokenUsage.delete(threadId);
+            logger.log("Evicted a settled restored token usage capture over the capture cap", {
+                threadId,
+                captureCap: RESTORED_TOKEN_USAGE_CAPTURE_CAP,
+            });
         }
     }
 
