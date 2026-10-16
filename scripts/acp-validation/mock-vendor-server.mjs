@@ -87,7 +87,19 @@ export function normalizeRequest(parsed, wireHint) {
         }
         allText = JSON.stringify(parsed.input);
         schema = parsed.text?.format?.schema;
-        toolNames = (parsed.tools ?? []).map((tool) => tool?.name).filter(Boolean);
+        // Responses advertises MCP tools as namespaces: {type:"namespace",
+        // name:"mcp__srv", tools:[{name:"tool"}]}. The canonical callback is
+        // the flat `mcp__srv__tool` name (see codex flat_name_index), so
+        // nested tools are expanded into the flat form.
+        for (const tool of parsed.tools ?? []) {
+            if (tool?.type === "namespace") {
+                for (const nested of tool.tools ?? []) {
+                    if (nested?.name) toolNames.push(`${tool.name}__${nested.name}`);
+                }
+            } else if (tool?.name) {
+                toolNames.push(tool.name);
+            }
+        }
     } else {
         messages = parsed.messages ?? [];
         allText = JSON.stringify(parsed.messages ?? []);
@@ -96,7 +108,11 @@ export function normalizeRequest(parsed, wireHint) {
             toolNames = (parsed.tools ?? []).map((tool) => tool?.name).filter(Boolean);
             for (const message of messages) {
                 for (const block of Array.isArray(message?.content) ? message.content : []) {
-                    if (block?.type === "image" && block?.source?.data?.includes(RED_PNG_PREFIX)) hasImage = true;
+                    const isImage = block?.type === "image" && block?.source?.data?.includes(RED_PNG_PREFIX);
+                    // Images ride inside tool_result content arrays as well.
+                    const nestedImage = Array.isArray(block?.content)
+                        && block.content.some((part) => part?.type === "image" && part?.source?.data?.includes(RED_PNG_PREFIX));
+                    if (isImage || nestedImage) hasImage = true;
                 }
             }
         } else {
@@ -139,7 +155,7 @@ export function latestUserText(view) {
     return "";
 }
 
-export function selectResponse(parsed, screenshotToolCalls = 0, wireHint) {
+export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBudget = 3) {
     const view = normalizeRequest(parsed, wireHint);
     const schema = view.schema;
     if (schema?.properties?.outcome?.enum?.includes("allow")) {
@@ -168,11 +184,16 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint) {
         return { kind: "image", text: "red" };
     }
     if (/essay about ocean currents/i.test(userText)) return { kind: "essay" };
+    if (/hang before headers/i.test(userText)) {
+        // Stress-only: hold the connection open without ever answering; the
+        // client must cancel to release it.
+        return { kind: "hang" };
+    }
     if (/take_screenshot/i.test(userText)) {
         if (allText.includes(RED_PNG_PREFIX)) return { kind: "image", text: "red" };
         const name = view.toolNames.find((tool) => tool === "mcp__screenshots__take_screenshot");
         if (!name) return { kind: "missing-tool", text: "mock vendor: screenshot tool is not advertised" };
-        if (screenshotToolCalls >= 3) {
+        if (screenshotToolCalls >= toolBudget) {
             return { kind: "tool-budget", text: "mock vendor: screenshot tool never produced an image" };
         }
         return { kind: "tool", name };
@@ -322,12 +343,19 @@ export function streamEssay(wire, res) {
 // Server
 // ---------------------------------------------------------------------------
 
-export function startMockServer({ port, recordPath, maxRequests = 48 }) {
+export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget = 3 }) {
     let screenshotToolCalls = 0;
     let requests = 0;
+    let openSockets = 0;
     const server = http.createServer((req, res) => {
         if (req.method === "GET" && req.url === "/health") {
             res.writeHead(200).end("ok");
+            return;
+        }
+        if (req.method === "GET" && req.url === "/stats") {
+            res.writeHead(200, { "content-type": "application/json" }).end(
+                JSON.stringify({ openSockets, requests }),
+            );
             return;
         }
         const wire = req.method === "POST" ? wireForPath(new URL(req.url, "http://localhost").pathname) : null;
@@ -348,19 +376,27 @@ export function startMockServer({ port, recordPath, maxRequests = 48 }) {
             let parsed;
             try { parsed = JSON.parse(body); }
             catch { res.writeHead(400).end("invalid JSON"); return; }
-            const response = selectResponse(parsed, screenshotToolCalls, wire);
+            const response = selectResponse(parsed, screenshotToolCalls, wire, toolBudget);
             fs.appendFileSync(recordPath, `${JSON.stringify({
                 ts: new Date().toISOString(), wire, auth: req.headers.authorization ?? null,
                 xApi: req.headers["x-api-key"] ?? null,
                 kind: response.kind, body,
             })}\n`);
             if (response.kind === "essay") { streamEssay(wire, res); return; }
+            if (response.kind === "hang") {
+                // Never answer; release only when the client cancels.
+                return;
+            }
             res.writeHead(200, sseHeaders);
             if (response.kind === "tool") {
                 screenshotToolCalls += 1;
                 res.end(toolCallResponse(wire, response.name, "{}"));
             } else res.end(textResponse(wire, response.text));
         });
+    });
+    server.on("connection", (socket) => {
+        openSockets += 1;
+        socket.on("close", () => { openSockets -= 1; });
     });
     server.listen(port, "127.0.0.1", () => {
         console.log(`mock vendor listening on http://127.0.0.1:${server.address().port}`);
@@ -371,5 +407,10 @@ export function startMockServer({ port, recordPath, maxRequests = 48 }) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const recordPath = process.env["MOCK_RECORD_PATH"];
     if (!recordPath) { console.error("MOCK_RECORD_PATH is required"); process.exit(2); }
-    startMockServer({ port: Number(process.env["MOCK_PORT"] ?? 47613), recordPath });
+    startMockServer({
+        port: Number(process.env["MOCK_PORT"] ?? 47613),
+        recordPath,
+        maxRequests: Number(process.env["MOCK_MAX_REQUESTS"] ?? 48),
+        toolBudget: Number(process.env["MOCK_TOOL_BUDGET"] ?? 3),
+    });
 }

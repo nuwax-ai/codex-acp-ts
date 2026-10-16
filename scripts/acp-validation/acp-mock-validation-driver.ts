@@ -129,8 +129,19 @@ function typedImageInRequest(request: RecordedRequest): boolean {
     };
     const containers: any[] = Array.isArray(parsed?.messages) ? parsed.messages : Array.isArray(parsed?.input) ? parsed.input : [];
     for (const message of containers) {
-        const content = message?.["content"];
-        if (Array.isArray(content) && content.some(isImagePart)) return true;
+        // Responses message items carry `content`; function_call_output items
+        // carry their structured result (including typed images) in `output`.
+        const content = message?.["content"] ?? message?.["output"];
+        if (!Array.isArray(content)) continue;
+        // Top-level parts, plus Anthropic tool_result blocks whose nested
+        // content array carries the tool's image blocks.
+        const parts: any[] = [...content];
+        for (const part of content) {
+            if (part?.["type"] === "tool_result" && Array.isArray(part["content"])) {
+                parts.push(...part["content"]);
+            }
+        }
+        if (parts.some(isImagePart)) return true;
     }
     return false;
 }

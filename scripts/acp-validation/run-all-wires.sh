@@ -68,8 +68,8 @@ for (const wire of table.wires) {
     }
 }
 const summary = {
-    codexPath: results?.codexPath,
-    codexSha256: results?.codexSha256,
+    codexPath,
+    codexSha256,
     executed: rows.length,
     passed: rows.filter((r) => r.pass).length,
     rows,

@@ -134,6 +134,31 @@ test("typed image parts are detected on every wire, text mentions are not", () =
     assert.ok(!normalizeRequest(textOnly).hasImage);
 });
 
+test("responses namespace advertisement expands to the flat callback name", () => {
+    const body = {
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "please take_screenshot now" }] }],
+        tools: [
+            { type: "function", name: "exec_command" },
+            { type: "namespace", name: "mcp__screenshots", tools: [{ type: "function", name: "take_screenshot" }] },
+        ],
+    };
+    const view = normalizeRequest(body);
+    assert.ok(view.toolNames.includes("mcp__screenshots__take_screenshot"), `toolNames: ${view.toolNames.join(", ")}`);
+    assert.deepEqual(selectResponse(body), { kind: "tool", name: "mcp__screenshots__take_screenshot" });
+});
+
+test("anthropic tool_result image blocks count as typed images", () => {
+    const body = {
+        messages: [
+            { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__screenshots__take_screenshot", input: {} }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }, { type: "text", text: "Images returned by tool call toolu_1:" }] },
+        ],
+    };
+    const view = normalizeRequest(body, "anthropic");
+    assert.ok(view.hasImage, "nested tool_result image should be detected");
+    assert.deepEqual(selectResponse(body, 0, "anthropic"), { kind: "image", text: "red" });
+});
+
 test("anthropic and responses emitters produce their native terminal shapes", () => {
     const anthropic = textResponse("anthropic", "pong");
     assert.ok(anthropic.includes("event: message_start"));

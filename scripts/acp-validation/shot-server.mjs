@@ -1,11 +1,14 @@
 // Minimal MCP stdio server exposing one tool: take_screenshot.
 // Returns a fixed solid-red 64x64 PNG so vision checks have a
 // deterministic answer ("red"). Used only by the ACP validation driver.
+// SHOT_TAKE_MS (optional) delays the tools/call answer so stress runs can
+// cancel while the tool is still running.
 import readline from "node:readline";
 
 const RED_PNG_BASE64 =
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAl0lEQVR4nO3QMREAIAzAwIqof2V4ARk/kOH3XObs3p+NDtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QGuADtAaoAO0BugArQE6QHuR8THh/tK1hAAAAABJRU5ErkJggg==";
 
+const TAKE_MS = Number(process.env["SHOT_TAKE_MS"] ?? 0);
 const rl = readline.createInterface({ input: process.stdin });
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 
@@ -45,16 +48,19 @@ rl.on("line", (line) => {
             },
         });
     } else if (method === "tools/call") {
-        send({
-            jsonrpc: "2.0",
-            id,
-            result: {
-                content: [
-                    { type: "image", data: RED_PNG_BASE64, mimeType: "image/png" },
-                    { type: "text", text: "screenshot captured" },
-                ],
-            },
-        });
+        const answer = () =>
+            send({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                    content: [
+                        { type: "image", data: RED_PNG_BASE64, mimeType: "image/png" },
+                        { type: "text", text: "screenshot captured" },
+                    ],
+                },
+            });
+        if (TAKE_MS > 0) setTimeout(answer, TAKE_MS);
+        else answer();
     } else if (id !== undefined) {
         send({ jsonrpc: "2.0", id, error: { code: -32601, message: `unknown method ${method}` } });
     }
