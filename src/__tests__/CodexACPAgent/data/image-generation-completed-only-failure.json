@@ -1,0 +1,34 @@
+{
+  "method": "sessionUpdate",
+  "args": [
+    {
+      "sessionId": "test-session-id",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "image-generation-failure-completed-only",
+        "kind": "other",
+        "title": "Image generation",
+        "status": "failed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Image generation failed: usage limit exceeded for limit image_gen."
+            }
+          }
+        ],
+        "rawOutput": {
+          "status": "failed",
+          "revisedPrompt": null,
+          "result": "",
+          "failure": {
+            "type": "usageLimitExceeded",
+            "limitId": "image_gen",
+            "resetsAt": null
+          }
+        }
+      }
+    }
+  ]
+}

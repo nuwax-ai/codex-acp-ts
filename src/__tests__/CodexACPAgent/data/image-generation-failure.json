@@ -1,0 +1,57 @@
+{
+  "method": "sessionUpdate",
+  "args": [
+    {
+      "sessionId": "test-session-id",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "image-generation-failure",
+        "kind": "other",
+        "title": "Image generation",
+        "status": "in_progress",
+        "rawInput": {
+          "id": "image-generation-failure"
+        }
+      }
+    }
+  ]
+}
+{
+  "method": "sessionUpdate",
+  "args": [
+    {
+      "sessionId": "test-session-id",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "image-generation-failure",
+        "status": "failed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Revised prompt: A tiny blue square"
+            }
+          },
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Image generation failed: usage limit exceeded for limit image_gen (resets at 2025-10-09T08:53:20.000Z)."
+            }
+          }
+        ],
+        "rawOutput": {
+          "status": "failed",
+          "revisedPrompt": "A tiny blue square",
+          "result": "",
+          "failure": {
+            "type": "usageLimitExceeded",
+            "limitId": "image_gen",
+            "resetsAt": 1760000000
+          }
+        }
+      }
+    }
+  ]
+}

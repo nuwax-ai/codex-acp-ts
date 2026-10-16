@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ServerNotification } from '../../app-server';
-import { createCodexMockTestFixture, createTestSessionState, type CodexMockTestFixture } from '../acp-test-utils';
-import type { TokenUsageBreakdown } from '../../app-server/v2';
+import { createCodexMockTestFixture, createTestSessionState, createTestModel, type CodexMockTestFixture } from '../acp-test-utils';
+import type { Thread, TokenUsageBreakdown } from '../../app-server/v2';
+import { toTokenCount } from '../../TokenCount';
 
 function createTokenUsageNotification(
     sessionId: string,
@@ -252,6 +253,154 @@ describe('Token Usage Events', () => {
             ])();
 
             expect(events).toEqual([]);
+        });
+    });
+
+    describe('restored usage after loadSession', () => {
+        const restoredTotal: TokenUsageBreakdown = {
+            totalTokens: 5000,
+            inputTokens: 4000,
+            cachedInputTokens: 1000,
+            cacheWriteInputTokens: 0,
+            outputTokens: 900,
+            reasoningOutputTokens: 100,
+        };
+        const restoredLast: TokenUsageBreakdown = {
+            totalTokens: 2500,
+            inputTokens: 2000,
+            cachedInputTokens: 500,
+            cacheWriteInputTokens: 0,
+            outputTokens: 450,
+            reasoningOutputTokens: 50,
+        };
+
+        function setupLoadSessionWithRestoredUsage(
+            fixture: CodexMockTestFixture,
+            modelContextWindow: number | null,
+        ) {
+            const agent = fixture.getCodexAcpAgent();
+            const client = fixture.getCodexAcpClient();
+            const appServer = fixture.getCodexAppServerClient();
+
+            client.authRequired = vi.fn().mockResolvedValue(false);
+            client.getAccount = vi.fn().mockResolvedValue({
+                account: null,
+                requiresOpenaiAuth: false,
+            });
+            client.listSkills = vi.fn().mockResolvedValue({ data: [] });
+
+            const model = createTestModel();
+            appServer.listModels = vi.fn().mockResolvedValue({
+                data: [model],
+                nextCursor: null,
+            });
+
+            const thread: Thread = {
+                id: 'session-1',
+                sessionId: 'session-1',
+                parentThreadId: null,
+                threadSource: null,
+                originator: null,
+                forkedFromId: null,
+                preview: 'Hi',
+                ephemeral: false,
+                modelProvider: 'openai',
+                model: null,
+                reasoningEffort: null,
+                createdAt: 123,
+                updatedAt: 124,
+                recencyAt: null,
+                status: { type: 'idle' },
+                path: null,
+                cwd: '/test/project',
+                cliVersion: '0.0.0',
+                section: null,
+                sectionEnteredAt: null,
+                projectId: null,
+                historyMode: 'legacy',
+                source: 'cli',
+                agentNickname: null,
+                agentRole: null,
+                gitInfo: null,
+                name: null,
+                turns: [],
+            };
+            appServer.threadResume = vi.fn().mockImplementation(async () => {
+                // The app-server replays the persisted `thread/tokenUsage/updated`
+                // snapshot to the attaching connection right after the resume
+                // response, mirroring the wire's response-then-notification order.
+                queueMicrotask(() => {
+                    fixture.sendServerNotification(createTokenUsageNotification('session-1', {
+                        total: restoredTotal,
+                        last: restoredLast,
+                        modelContextWindow,
+                    }));
+                });
+                return {
+                    thread,
+                    model: model.id,
+                    modelProvider: 'openai',
+                    cwd: '/test/project',
+                    approvalPolicy: 'never',
+                    sandbox: { type: 'dangerFullAccess' },
+                    reasoningEffort: model.defaultReasoningEffort,
+                };
+            });
+            appServer.threadReadWithHistory = vi.fn().mockResolvedValue({ thread });
+
+            return agent;
+        }
+
+        it('should surface the restored usage replay as usage_update with total/last preserved', async () => {
+            const fixture = createCodexMockTestFixture();
+            const agent = setupLoadSessionWithRestoredUsage(fixture, 128000);
+
+            await agent.initialize({ protocolVersion: 1 });
+
+            await agent.loadSession({
+                sessionId: 'session-1',
+                cwd: '/test/project',
+                mcpServers: [],
+            });
+
+            // The restored cumulative usage must land in the session state.
+            const state = agent.getSessionState('session-1');
+            expect(state.totalTokenUsage).toEqual(toTokenCount(restoredTotal));
+            expect(state.lastTokenUsage).toEqual(toTokenCount(restoredLast));
+            expect(state.modelContextWindow).toBe(128000);
+
+            // And the client must receive the restored usage_update.
+            const usageUpdates = fixture.getAcpConnectionEvents([])
+                .filter((event) => event.method === 'sessionUpdate')
+                .map((event) => event.args[0]?.update)
+                .filter((update) => update?.sessionUpdate === 'usage_update');
+            expect(usageUpdates).toEqual([
+                { sessionUpdate: 'usage_update', used: 2500, size: 128000 },
+            ]);
+        });
+
+        it('should keep restored usage state even when usage_update cannot be derived', async () => {
+            const fixture = createCodexMockTestFixture();
+            const agent = setupLoadSessionWithRestoredUsage(fixture, null);
+
+            await agent.initialize({ protocolVersion: 1 });
+
+            await agent.loadSession({
+                sessionId: 'session-1',
+                cwd: '/test/project',
+                mcpServers: [],
+            });
+
+            const state = agent.getSessionState('session-1');
+            expect(state.totalTokenUsage).toEqual(toTokenCount(restoredTotal));
+            expect(state.lastTokenUsage).toEqual(toTokenCount(restoredLast));
+            expect(state.modelContextWindow).toBeNull();
+
+            const usageUpdates = fixture.getAcpConnectionEvents([])
+                .filter((event) => event.method === 'sessionUpdate')
+                .map((event) => event.args[0]?.update)
+                .filter((update) => update?.sessionUpdate === 'usage_update');
+            expect(usageUpdates).toEqual([]);
         });
     });
 });
