@@ -20,16 +20,16 @@ fi
 
 SUMMARY_ROOT="$(mktemp -d /tmp/acp-val-wires.XXXXXX)"
 echo "wires summary root: $SUMMARY_ROOT"
-declare -A WIRE_STATUS
 OVERALL=0
 for WIRE in chat responses anthropic; do
     WIRE_ROOT="$SUMMARY_ROOT/$WIRE"
     mkdir -p "$WIRE_ROOT"
     echo "=== wire: $WIRE ================================================"
     if VAL_ROOT="$WIRE_ROOT" VAL_WIRE="$WIRE" "$SCRIPT_DIR/run-acp-mock-validation.sh" "$CODEX_PATH" "$EXPECT_SHA"; then
-        WIRE_STATUS[$WIRE]=pass
+        echo "wire $WIRE: runner pass"
     else
-        WIRE_STATUS[$WIRE]="exit-$?"
+        rc=$?
+        echo "wire $WIRE: runner exit $rc" >&2
         OVERALL=1
     fi
 done

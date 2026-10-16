@@ -69,9 +69,26 @@ export function normalizeRequest(parsed, wireHint) {
     let schema;
     let toolNames = [];
     let hasImage = false;
+    /** Raw wire items that follow the newest user message — used to tell
+     * whether the CURRENT turn already carries a screenshot tool result
+     * (history from earlier turns must not suppress a forced tool call). */
+    let tailAfterLastUser = "";
 
     if (wire === "responses") {
-        for (const item of parsed.input) {
+        const items = parsed.input;
+        let lastUser = -1;
+        for (let i = items.length - 1; i >= 0; i -= 1) {
+            const item = items[i];
+            if (item?.type !== "message" || item.role !== "user") continue;
+            // Tool-result user items (and codex's generated image label) are
+            // not instructions; anchor on the newest real instruction.
+            const content = Array.isArray(item.content) ? item.content : [];
+            const hasInstruction = content.some((part) =>
+                part?.type === "input_text" && part.text && !/^Images returned by tool call/.test(part.text));
+            if (hasInstruction) { lastUser = i; break; }
+        }
+        tailAfterLastUser = JSON.stringify(items.slice(lastUser + 1));
+        for (const item of items) {
             if (item?.type !== "message") continue;
             const content = Array.isArray(item.content) ? item.content : [];
             const parts = content.map((part) => {
@@ -102,6 +119,21 @@ export function normalizeRequest(parsed, wireHint) {
         }
     } else {
         messages = parsed.messages ?? [];
+        let lastUser = -1;
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const m = messages[i];
+            if (m?.role !== "user") continue;
+            // Tool-result messages carry role "user" too; anchor on the
+            // newest message that actually holds an instruction (codex's
+            // generated image label is excluded).
+            const content = m.content;
+            const hasInstruction = typeof content === "string"
+                ? content.length > 0 && !/^Images returned by tool call/.test(content)
+                : Array.isArray(content) && content.some((part) =>
+                    part?.type === "text" && part.text && !/^Images returned by tool call/.test(part.text));
+            if (hasInstruction) { lastUser = i; break; }
+        }
+        tailAfterLastUser = JSON.stringify(messages.slice(lastUser + 1));
         allText = JSON.stringify(parsed.messages ?? []);
         if (wire === "anthropic") {
             schema = parsed.output_config?.format?.schema;
@@ -130,6 +162,7 @@ export function normalizeRequest(parsed, wireHint) {
         wire,
         messages,
         allText,
+        tailAfterLastUser,
         schema,
         toolNames,
         hasImage,
@@ -190,7 +223,16 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
         return { kind: "hang" };
     }
     if (/take_screenshot/i.test(userText)) {
-        if (allText.includes(RED_PNG_PREFIX)) return { kind: "image", text: "red" };
+        // Stress rounds force a REAL tool execution even when an image from
+        // an earlier round already sits in history. The forced call applies
+        // only while the CURRENT turn has no screenshot result after the
+        // newest user message, so the follow-up request (which repeats the
+        // prompt plus the fresh tool result) answers immediately instead of
+        // looping.
+        const forceTool = /force/i.test(userText);
+        const screenshotInCurrentTail = view.tailAfterLastUser.includes("take_screenshot");
+        if (forceTool && screenshotInCurrentTail) return { kind: "image", text: "red" };
+        if (!forceTool && allText.includes(RED_PNG_PREFIX)) return { kind: "image", text: "red" };
         const name = view.toolNames.find((tool) => tool === "mcp__screenshots__take_screenshot");
         if (!name) return { kind: "missing-tool", text: "mock vendor: screenshot tool is not advertised" };
         if (screenshotToolCalls >= toolBudget) {
@@ -353,8 +395,10 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             return;
         }
         if (req.method === "GET" && req.url === "/stats") {
+            // The stats probe's own connection is open while being served;
+            // exclude it so a lone reader never looks like a leak.
             res.writeHead(200, { "content-type": "application/json" }).end(
-                JSON.stringify({ openSockets, requests }),
+                JSON.stringify({ openSockets: Math.max(0, openSockets - 1), requests }),
             );
             return;
         }

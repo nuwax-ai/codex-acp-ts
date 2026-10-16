@@ -20,6 +20,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -85,9 +86,27 @@ function readRecorded(): RecordedRequest[] {
         .filter((l) => l.trim())
         .map((l) => JSON.parse(l) as RecordedRequest);
 }
-async function mockStats(): Promise<{ openSockets: number; requests: number }> {
-    const response = await fetch(MOCK_STATS_URL);
-    return (await response.json()) as { openSockets: number; requests: number };
+function mockStats(): Promise<{ openSockets: number; requests: number }> {
+    // agent:false — a pooled keep-alive connection would itself show up in
+    // the open-socket count and fake a leak.
+    const url = new URL(MOCK_STATS_URL);
+    return new Promise((resolve, reject) => {
+        const request = http.get(
+            { host: url.hostname, port: url.port, path: url.pathname, agent: false },
+            (response) => {
+                let body = "";
+                response.on("data", (chunk) => { body += chunk; });
+                response.on("end", () => {
+                    try {
+                        resolve(JSON.parse(body) as { openSockets: number; requests: number });
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            },
+        );
+        request.on("error", reject);
+    });
 }
 /** Best-effort process metrics (Linux /proc; null elsewhere). */
 function procMetrics(pid: number | undefined): { rssKb: number | null; fds: number | null } | null {
@@ -130,6 +149,7 @@ interface AgentHandle {
 }
 let traceToolCalls: string[] = [];
 let traceToolCompleted: string[] = [];
+let traceToolNames = new Map<string, string>();
 let traceText = "";
 
 function startAgent(): AgentHandle {
@@ -157,7 +177,9 @@ function startAgent(): AgentHandle {
                 traceText += update.content.text;
             }
             if (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") {
-                const name = update.title ?? update.toolCallId ?? "tool";
+                // The completion update may omit the title; correlate by id.
+                if (update.title) traceToolNames.set(update.toolCallId, update.title);
+                const name = update.title ?? traceToolNames.get(update.toolCallId) ?? update.toolCallId ?? "tool";
                 traceToolCalls.push(name);
                 if (update.status === "completed") traceToolCompleted.push(name);
             }
@@ -265,7 +287,7 @@ async function runRound(
             }
         } else if (kind === "tool-image") {
             const response = await withTimeout(
-                prompt("Call the take_screenshot tool exactly once, then reply with ONLY the dominant color word."),
+                prompt("Force a real tool call: call the take_screenshot tool exactly once, wait for its output, then reply with ONLY the dominant color word."),
                 120_000,
                 "tool-image round",
             );
@@ -311,7 +333,7 @@ async function runRound(
             }
         } else if (kind === "cancel-during-tool") {
             const pending = prompt(
-                "Call the take_screenshot tool exactly once (it is slow), then reply with ONLY the dominant color word.",
+                "Force a real tool call: call the take_screenshot tool exactly once (it is slow), wait for its output, then reply with ONLY the dominant color word.",
             );
             await new Promise<void>((resolve) => {
                 const timer = setInterval(() => {
@@ -429,7 +451,18 @@ async function main() {
                         handle.agent.request((methods.agent.session as any).load ?? "session/load", {
                             sessionId,
                             cwd: workspace,
-                            mcpServers: [],
+                            // Re-register the MCP server: later tool rounds in
+                            // the table must find take_screenshot advertised.
+                            mcpServers: [
+                                {
+                                    type: "stdio",
+                                    name: "screenshots",
+                                    command: process.execPath,
+                                    args: [path.join(REPO, "scripts", "acp-validation", "shot-server.mjs")],
+                                    env: [{ name: "SHOT_TAKE_MS", value: SHOT_TAKE_MS }],
+                                    cwd: workspace,
+                                },
+                            ],
                         }),
                         60_000,
                         "session/load",
@@ -480,12 +513,22 @@ async function main() {
         const stats = await mockStats().catch(() => ({ openSockets: -1, requests: -1 }));
         let leftoverTools = -1;
         if (process.platform === "linux") {
-            try {
-                leftoverTools = Number(
-                    execSync("pgrep -fc shot-server.mjs || true", { encoding: "utf8" }).trim() || 0,
-                );
-            } catch {
-                leftoverTools = -1;
+            // Children drain asynchronously after the SIGTERM chain; poll
+            // instead of snapshotting (a lone survivor at +1.5s that exits
+            // within the window is teardown, not a leak).
+            const countShotServers = () => {
+                try {
+                    // [.] keeps the pattern from matching this probe's own
+                    // /bin/sh -c wrapper (which contains the literal string).
+                    return Number(execSync('pgrep -fc "shot-server[.]mjs" || true', { encoding: "utf8" }).trim() || 0);
+                } catch {
+                    return -1;
+                }
+            };
+            for (let i = 0; i < 20; i += 1) {
+                leftoverTools = countShotServers();
+                if (leftoverTools === 0) break;
+                await new Promise((r) => setTimeout(r, 500));
             }
         }
         if (stats.openSockets > 0) failures.push(`mock still holds ${stats.openSockets} open sockets after shutdown`);

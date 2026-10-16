@@ -53,6 +53,10 @@ outcomes) and exits non-zero when any step fails.
 scripts/acp-validation/run-all-wires.sh /path/to/codex [expected-sha256]
 # Or a single wire:
 VAL_WIRE=anthropic scripts/acp-validation/run-acp-mock-validation.sh /path/to/codex [expected-sha256]
+# 51-round stress (17 fixed rounds per wire: cancels at three stages,
+# tool-image rounds, compactions, cold restarts; per-round HTTP/socket/RSS
+# receipts and post-shutdown leak assertions):
+scripts/acp-validation/run-stress.sh /path/to/codex [expected-sha256] ALL
 ```
 
 `CODEX_PATH` is explicit — no silent default binary. Passing the expected
