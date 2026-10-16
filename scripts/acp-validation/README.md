@@ -73,10 +73,53 @@ scripts/acp-validation/run-all-wires.sh /path/to/codex [expected-sha256]
 VAL_WIRE=anthropic scripts/acp-validation/run-acp-mock-validation.sh /path/to/codex [expected-sha256]
 # 54-round stress (18 fixed rounds per wire — 4 VERIFIED tool-image rounds
 # per wire (12 total), cancels at three stages with proven preconditions,
-# compactions, cold restarts; per-round HTTP/socket receipts,
+# compactions, cold restarts; per-round HTTP/socket/PID-tree receipts,
 # aux-request classification, and post-shutdown leak assertions):
 scripts/acp-validation/run-stress.sh /path/to/codex [expected-sha256] ALL
+# Negative self-check for the probe hardening (optional, NOT run by the
+# table run; the invocation must exit non-zero):
+STRESS_SIMULATE_PROBE_FAILURE=stats scripts/acp-validation/run-stress.sh /path/to/codex
 ```
+
+## Stress hardening (review items 6 and 8)
+
+`run-stress.sh` sets a fresh `SHOT_TRUTH_PATH` per run and per wire. The
+stress driver additionally:
+
+- **Verifies tool-image rounds end to end.** After each completed image
+  round it reads the newest `complete` ground-truth record and asserts the
+  agent's final message EQUALS that color (case-insensitive). Only
+  verified rounds count toward `verifiedImageRounds`; the run fails below
+  4 per wire (12 across the three wires). Cancel-during-tool rounds never
+  count. Mock answers `image-missing` / `image-stale` /
+  `image-undecodable` fail the round with that reason.
+- **Proves cancel preconditions.** before-headers waits until the mock has
+  recorded the hang request (arrival signal — the hang kind never
+  answers); mid-stream waits for an actual stream delta; during-tool waits
+  for the shot-server `start` truth record. A timed-out precondition
+  fails the round instead of silently cancelling. After each cancel no
+  additional MAIN model request may arrive for that turn; title/guardian
+  auxiliary requests are identified by their recorded kind and counted in
+  `auxRequestCounts`/`auxRequestTotals` instead of being tolerated.
+- **Fails loudly on unavailable probes.** Any `/stats` fetch error,
+  process-listing error, or (on Linux) unreadable `/proc` entry is listed
+  in `probeFailures` and fails the run — never a silent -1.
+- **Tracks the real process tree.** The driver knows the ACP wrapper PID
+  it spawned; the app-server child and any shot-server / other descendants
+  are resolved via `ps` and recorded per round with start times (`lstart`)
+  to guard against PID reuse. After every generation shutdown (cold
+  restarts and the final shutdown) all tracked PIDs must be gone within
+  10s or the run fails listing the survivors (`leftoverShotServers` counts
+  the shot-server role). Nothing the driver did not spawn is killed, and
+  no whole-machine `pgrep` is used as the residue check.
+- **Has a negative self-test.** `STRESS_SIMULATE_PROBE_FAILURE=stats|pgrep`
+  breaks a probe class on purpose; the run must then exit non-zero, which
+  is how the teeth above are proven on demand.
+
+`CODEX_PATH` is explicit — no silent default binary. Passing the expected
+sha256 (second arg or `EXPECT_CODEX_SHA256`) makes the run refuse to start on
+a receipt mismatch.
+
 ## Boundary
 
 This mock proves protocol/contract behaviour only. It does **not** prove a

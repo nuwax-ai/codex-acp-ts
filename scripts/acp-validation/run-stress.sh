@@ -11,6 +11,12 @@
 # Usage:
 #   scripts/acp-validation/run-stress.sh /path/to/codex [expected-sha256] [wire]
 # Wire defaults to chat; pass a wire or ALL to loop chat,responses,anthropic.
+#
+# Optional negative self-check (NOT run by default — proves the probe
+# hardening has teeth by breaking a probe class on purpose; the run MUST
+# exit non-zero):
+#   STRESS_SIMULATE_PROBE_FAILURE=stats scripts/acp-validation/run-stress.sh /path/to/codex
+#   STRESS_SIMULATE_PROBE_FAILURE=pgrep scripts/acp-validation/run-stress.sh /path/to/codex
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
