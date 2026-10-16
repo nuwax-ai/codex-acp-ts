@@ -2052,7 +2052,14 @@ export class CodexAcpServer {
             return;
         }
         const session = new ACPSessionConnection(this.connection, sessionState.sessionId);
-        void session.update({sessionUpdate: "usage_update", used, size});
+        // Best-effort, like every other post-install publish: a rejecting ACP
+        // transport must not fail the load (nor crash the process as an
+        // unhandled rejection) — the in-memory state above and the load
+        // response stay consistent either way.
+        void session.update({sessionUpdate: "usage_update", used, size})
+            .catch((err) => {
+                logger.error(`Failed to send restored usage_update for session ${sessionState.sessionId}`, err);
+            });
     }
 
     private async streamThreadHistory(sessionId: string, thread: Thread): Promise<void> {
