@@ -557,10 +557,10 @@ export class CodexAcpClient {
         // registered. Arm a per-load capture so the replayed snapshot survives
         // notification routing and the calling flow can apply it to the session
         // state it installs.
-        this.codexClient.armRestoredTokenUsageCapture(params.threadId);
+        const captureOwner = this.codexClient.armRestoredTokenUsageCapture(params.threadId);
         try {
             const response = await this.codexClient.threadResume(params);
-            this.codexClient.settleRestoredTokenUsageCapture(params.threadId);
+            this.codexClient.settleRestoredTokenUsageCapture(params.threadId, captureOwner);
             return {
                 thread: response.thread,
                 model: response.model,
@@ -572,19 +572,19 @@ export class CodexAcpClient {
             };
         } catch (err) {
             if (!isMissingRolloutError(err)) {
-                this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
+                this.codexClient.clearRestoredTokenUsageCapture(params.threadId, captureOwner);
                 throw err;
             }
             let response;
             try {
                 response = await this.codexClient.threadRead({threadId: params.threadId});
             } catch {
-                this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
+                this.codexClient.clearRestoredTokenUsageCapture(params.threadId, captureOwner);
                 throw err;
             }
             // `thread/read` does not replay usage, so nothing will arrive for
             // this capture; drop it instead of leaving it armed.
-            this.codexClient.clearRestoredTokenUsageCapture(params.threadId);
+            this.codexClient.clearRestoredTokenUsageCapture(params.threadId, captureOwner);
             logger.log("Thread has no rollout yet; resumed it from its live app-server state", {
                 threadId: params.threadId,
             });

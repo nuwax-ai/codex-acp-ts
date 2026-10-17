@@ -545,6 +545,93 @@ describe('Token Usage Events', () => {
             });
         }
 
+        it('resume after an existing prompt restores usage and keeps later live usage flowing', async () => {
+            const fixture = createCodexMockTestFixture();
+            const {agent} = setupReloadableSession(fixture);
+            mockPromptTurn(fixture, null);
+            await agent.initialize({protocolVersion: 1});
+            const request = {sessionId: 'session-1', cwd: '/test/project', mcpServers: []};
+            await agent.loadSession(request);
+            await agent.prompt({sessionId: 'session-1', prompt: [{type: 'text', text: 'First turn.'}]});
+
+            await agent.resumeSession(request);
+            expect(agent.getSessionState('session-1').totalTokenUsage).toEqual(toTokenCount(initialRestoredTotal));
+            const liveUsage = {
+                total: usageBreakdown(8000, 6500, 1500),
+                last: usageBreakdown(3000, 2500, 500),
+                modelContextWindow: 128000,
+            };
+            mockPromptTurn(fixture, liveUsage);
+            const response = await agent.prompt({sessionId: 'session-1', prompt: [{type: 'text', text: 'Second turn.'}]});
+            await fixture.getCodexAcpClient().waitForSessionNotifications('session-1');
+            expect(agent.getSessionState('session-1').totalTokenUsage).toEqual(toTokenCount(liveUsage.total));
+            expect(response.usage?.totalTokens).toBe(3000);
+        });
+
+        it('serializes concurrent loads and resume through history replay and state installation', async () => {
+            const fixture = createCodexMockTestFixture();
+            const {agent, appServer} = setupReloadableSession(fixture);
+            let releaseHistory: (value: {thread: Thread}) => void = () => {};
+            const history = new Promise<{thread: Thread}>(resolve => { releaseHistory = resolve; });
+            appServer.threadReadWithHistory = vi.fn()
+                .mockReturnValueOnce(history)
+                .mockResolvedValue({thread: createRestoredUsageThread()});
+            await agent.initialize({protocolVersion: 1});
+            const request = {sessionId: 'session-1', cwd: '/test/project', mcpServers: []};
+            const first = agent.loadSession(request);
+            await vi.waitFor(() => expect(appServer.threadReadWithHistory).toHaveBeenCalledTimes(1));
+            const second = agent.loadSession(request);
+            const third = agent.resumeSession(request);
+            await new Promise(resolve => setImmediate(resolve));
+            expect(appServer.threadResume).toHaveBeenCalledTimes(1);
+
+            releaseHistory({thread: createRestoredUsageThread()});
+            await first;
+            await second;
+            await third;
+            expect(appServer.threadResume).toHaveBeenCalledTimes(3);
+            expect(agent.getSessionState('session-1').totalTokenUsage).toEqual(toTokenCount(initialRestoredTotal));
+            expect(agent.getSessionState('session-1').lastTokenUsage).toEqual(toTokenCount(initialRestoredLast));
+            const usageUpdates = fixture.getAcpConnectionEvents([])
+                .filter(event => event.method === 'sessionUpdate')
+                .map(event => event.args[0]?.update)
+                .filter(update => update?.sessionUpdate === 'usage_update');
+            expect(usageUpdates).toEqual(Array.from({length: 3}, () => ({sessionUpdate: 'usage_update', used: 2500, size: 128000})));
+        });
+
+        it('releases the open queue and failed capture when resume fails before subscription', async () => {
+            const fixture = createCodexMockTestFixture();
+            const {agent, appServer} = setupReloadableSession(fixture);
+            vi.mocked(appServer.threadResume).mockRejectedValueOnce(new Error('resume request failed'));
+            await agent.initialize({protocolVersion: 1});
+            const request = {sessionId: 'session-1', cwd: '/test/project', mcpServers: []};
+            const results = await Promise.allSettled([agent.loadSession(request), agent.loadSession(request)]);
+            expect(results.map(result => result.status)).toEqual(['rejected', 'fulfilled']);
+            expect(results[0]).toMatchObject({reason: {message: 'resume request failed'}});
+            expect(agent.getSessionState('session-1').totalTokenUsage).toEqual(toTokenCount(initialRestoredTotal));
+            expect(appServer.takePendingRestoredTokenUsage('session-1')).toBeNull();
+        });
+
+        it('does not revive a closed session from an open queued behind an earlier load', async () => {
+            const fixture = createCodexMockTestFixture();
+            const {agent, appServer} = setupReloadableSession(fixture);
+            let releaseHistory: (value: {thread: Thread}) => void = () => {};
+            appServer.threadReadWithHistory = vi.fn().mockReturnValue(new Promise(resolve => { releaseHistory = resolve; }));
+            await agent.initialize({protocolVersion: 1});
+            const request = {sessionId: 'session-1', cwd: '/test/project', mcpServers: []};
+            const first = agent.loadSession(request);
+            await vi.waitFor(() => expect(appServer.threadReadWithHistory).toHaveBeenCalledTimes(1));
+            const second = agent.loadSession(request);
+            const results = Promise.allSettled([first, second]);
+            await agent.closeSession({sessionId: 'session-1'});
+            releaseHistory({thread: createRestoredUsageThread()});
+
+            expect((await results).map(result => result.status)).toEqual(['rejected', 'rejected']);
+            expect(appServer.threadResume).toHaveBeenCalledTimes(1);
+            expect(() => agent.getSessionState('session-1')).toThrow('Session session-1 not found');
+            expect(appServer.takePendingRestoredTokenUsage('session-1')).toBeNull();
+        });
+
         it('reload after a prompt restores usage into the newly installed state exactly once', async () => {
             const fixture = createCodexMockTestFixture();
             const {agent, appServer} = setupReloadableSession(fixture);

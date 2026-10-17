@@ -171,8 +171,8 @@ describe("CodexAppServerClient restored token usage capture", () => {
 
         client.armRestoredTokenUsageCapture("in-flight-load");
         for (let index = 0; index < 80; index++) {
-            client.armRestoredTokenUsageCapture(`settled-${index}`);
-            client.settleRestoredTokenUsageCapture(`settled-${index}`);
+            const owner = client.armRestoredTokenUsageCapture(`settled-${index}`);
+            client.settleRestoredTokenUsageCapture(`settled-${index}`, owner);
         }
 
         const captures = armedCaptures(client);
@@ -186,6 +186,29 @@ describe("CodexAppServerClient restored token usage capture", () => {
         send(createUsageNotification("in-flight-load"));
         const captured = client.takePendingRestoredTokenUsage("in-flight-load");
         expect(captured?.tokenUsage.total.totalTokens).toBe(100);
+    });
+
+    it("returns to the retention target as previously pinned requests settle", () => {
+        const {connection} = createMockConnection();
+        const client = new CodexAppServerClient(connection);
+        const owners = Array.from({length: 80}, (_, index) => client.armRestoredTokenUsageCapture(`in-flight-${index}`));
+        // In-flight requests are never discarded to meet a settled retention target.
+        expect(armedCaptures(client).size).toBe(80);
+        owners.forEach((owner, index) => client.settleRestoredTokenUsageCapture(`in-flight-${index}`, owner));
+        expect(armedCaptures(client).size).toBeLessThanOrEqual(64);
+    });
+
+    it("does not let a completed or failed older resume alter a reopened capture", () => {
+        const {connection, send} = createMockConnection();
+        const client = new CodexAppServerClient(connection);
+        const previous = client.armRestoredTokenUsageCapture("reopened-thread");
+        client.clearThreadHandlers("reopened-thread");
+        const current = client.armRestoredTokenUsageCapture("reopened-thread");
+        client.settleRestoredTokenUsageCapture("reopened-thread", previous);
+        client.clearRestoredTokenUsageCapture("reopened-thread", previous);
+        expect(armedCaptures(client).get("reopened-thread")).toMatchObject({owner: current, inFlight: true});
+        send(createUsageNotification("reopened-thread"));
+        expect(client.takePendingRestoredTokenUsage("reopened-thread")?.tokenUsage.total.totalTokens).toBe(100);
     });
 
     it("releases every capture on dispose", () => {

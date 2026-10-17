@@ -304,6 +304,7 @@ export class CodexAcpServer {
     private readonly closingSessions: Map<string, number>;
     private readonly sessionGenerations: Map<string, number>;
     private readonly sessionOpenGenerations: Map<string, number>;
+    private readonly sessionOpenQueues = new Map<string, {generation: number; completion: Promise<void>}>();
     private readonly goalControlGenerations: Map<string, number>;
     private readonly permissionLifecycleContexts: WeakMap<SessionState, PermissionLifecycleContext>;
     private readonly codexProcessState: CodexProcessState | null;
@@ -571,6 +572,35 @@ export class CodexAcpServer {
         return generation;
     }
 
+    /** Keep one resume replay and state installation in flight per session. */
+    private async serializeSessionOpen<T>(sessionId: string, open: () => Promise<T>): Promise<T> {
+        const generation = this.beginSessionOpen(sessionId);
+        const pending = this.sessionOpenQueues.get(sessionId);
+        const previous = pending?.generation === generation ? pending.completion : undefined;
+        let release: () => void = () => {};
+        const current = {
+            generation,
+            completion: new Promise<void>((resolve) => { release = resolve; }),
+        };
+        this.sessionOpenQueues.set(sessionId, current);
+        try {
+            if (previous !== undefined) {
+                await previous;
+            }
+            // A queued open predates this close. Do not revive the closed
+            // session when the preceding open eventually releases the queue.
+            if (!this.sessionOpenCanInstall(sessionId, generation)) {
+                throw RequestError.invalidRequest(`Session ${sessionId} is closing`);
+            }
+            return await open();
+        } finally {
+            release();
+            if (this.sessionOpenQueues.get(sessionId) === current) {
+                this.sessionOpenQueues.delete(sessionId);
+            }
+        }
+    }
+
     private sessionOpenCanInstall(sessionId: string, generation: number): boolean {
         return !this.sessionIsClosing(sessionId) && this.getSessionGeneration(sessionId) === generation;
     }
@@ -734,6 +764,9 @@ export class CodexAcpServer {
         );
         this.installSessionState(sessionState);
         resumeSubscribed = false;
+        if (operation === "resume") {
+            this.applyRestoredTokenUsage(sessionState);
+        }
 
         const canPublishSessionUpdates = operation !== "fork";
         if (canPublishSessionUpdates && requestedMcpServers.length > 0 && mcpServerStartupVersion !== null) {
@@ -809,53 +842,57 @@ export class CodexAcpServer {
         if (this.providerUpdate !== null) {
             await this.providerUpdate;
         }
-        logger.log("Loading session...", {sessionId: params.sessionId});
-        // Captured before the load installs a fresh SessionState: a title
-        // generation started by an earlier turn on this session belongs to the
-        // state being replaced, and has to settle before we answer.
-        const previousTitleGen = this.sessions.get(params.sessionId)?.titleGen;
-        const {
-            sessionId,
-            modelState,
-            modeState,
-            thread,
-        } = await this.getOrCreateSessionWithHistory(params);
+        return await this.serializeSessionOpen(params.sessionId, async () => {
+            logger.log("Loading session...", {sessionId: params.sessionId});
+            // Captured before the load installs a fresh SessionState: a title
+            // generation started by an earlier turn on this session belongs to the
+            // state being replaced, and has to settle before we answer.
+            const previousTitleGen = this.sessions.get(params.sessionId)?.titleGen;
+            const {
+                sessionId,
+                modelState,
+                modeState,
+                thread,
+            } = await this.getOrCreateSessionWithHistory(params);
 
-        await this.streamThreadHistory(sessionId, thread);
-        await this.getSessionState(sessionId).asyncTasks.reconcile();
-        // A load response means "the replay is complete"; a late rename echo
-        // from a still-running title generation would arrive after it.
-        await previousTitleGen?.waitForIdle(TITLE_GENERATION_SETTLE_TIMEOUT_MS);
+            await this.streamThreadHistory(sessionId, thread);
+            await this.getSessionState(sessionId).asyncTasks.reconcile();
+            // A load response means "the replay is complete"; a late rename echo
+            // from a still-running title generation would arrive after it.
+            await previousTitleGen?.waitForIdle(TITLE_GENERATION_SETTLE_TIMEOUT_MS);
 
-        logger.log("Session loaded", {
-            sessionId: sessionId,
-            modelId: modelState.currentModelId,
-            availableModelCount: modelState.availableModels.length
+            logger.log("Session loaded", {
+                sessionId: sessionId,
+                modelId: modelState.currentModelId,
+                availableModelCount: modelState.availableModels.length
+            });
+            return {
+                models: modelState,
+                modes: modeState,
+                ...this.createSessionConfigOptionsResponse(this.getSessionState(sessionId)),
+            };
         });
-        return {
-            models: modelState,
-            modes: modeState,
-            ...this.createSessionConfigOptionsResponse(this.getSessionState(sessionId)),
-        };
     }
 
     async resumeSession(params: acp.ResumeSessionRequest): Promise<LegacyResumeSessionResponse> {
         if (this.providerUpdate !== null) {
             await this.providerUpdate;
         }
-        logger.log("Resuming session...", {sessionId: params.sessionId});
-        const [sessionId, modelState, modeState] = await this.getOrCreateSession(params);
+        return await this.serializeSessionOpen(params.sessionId, async () => {
+            logger.log("Resuming session...", {sessionId: params.sessionId});
+            const [sessionId, modelState, modeState] = await this.getOrCreateSession(params);
 
-        logger.log("Session resumed", {
-            sessionId: sessionId,
-            modelId: modelState.currentModelId,
-            availableModelCount: modelState.availableModels.length
+            logger.log("Session resumed", {
+                sessionId: sessionId,
+                modelId: modelState.currentModelId,
+                availableModelCount: modelState.availableModels.length
+            });
+            return {
+                models: modelState,
+                modes: modeState,
+                ...this.createSessionConfigOptionsResponse(this.getSessionState(sessionId)),
+            };
         });
-        return {
-            models: modelState,
-            modes: modeState,
-            ...this.createSessionConfigOptionsResponse(this.getSessionState(sessionId)),
-        };
     }
 
     async forkSession(params: acp.ForkSessionRequest): Promise<acp.ForkSessionResponse> {

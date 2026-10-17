@@ -124,6 +124,7 @@ export type McpStartupResult = {
  * threads never accumulate entries on their own.
  */
 type RestoredTokenUsageCapture = {
+    readonly owner: symbol;
     /** Latest replayed snapshot; null until the notification arrives. */
     snapshot: ThreadTokenUsageUpdatedNotification | null;
     /** True while the resume request that armed this capture is still in flight. */
@@ -162,10 +163,9 @@ const ToolRequestUserInputRequest = new RequestType<
 
 const GOAL_RUNTIME_EFFECTS_GRACE_MS = 1_000;
 
-// Hard cap on restored-usage captures. Normal flow removes an entry as soon as
-// its load is consumed, fails, or the thread closes, so the map tracks in-flight
-// loads; the cap only bounds abnormal accumulation and never evicts an entry
-// whose load is still in flight.
+// Retention target for restored-usage captures. In-flight loads are pinned and
+// may temporarily exceed it; settling a request makes its entry evictable.
+// Normal load/resume installation consumes the capture immediately.
 const RESTORED_TOKEN_USAGE_CAPTURE_CAP = 64;
 
 /**
@@ -857,9 +857,11 @@ export class CodexAppServerClient {
      * captured snapshot once the fresh session state is installed. Entries are
      * created only by this explicit arming, never passively.
      */
-    armRestoredTokenUsageCapture(threadId: string): void {
-        this.pendingRestoredTokenUsage.set(threadId, {snapshot: null, inFlight: true});
+    armRestoredTokenUsageCapture(threadId: string): symbol {
+        const owner = Symbol("restored token usage capture");
+        this.pendingRestoredTokenUsage.set(threadId, {owner, snapshot: null, inFlight: true});
         this.evictSettledRestoredUsageCaptures();
+        return owner;
     }
 
     /**
@@ -867,16 +869,19 @@ export class CodexAppServerClient {
      * stays armed for the late replay window (until consumed, cleared, or the
      * thread unsubscribes) but becomes evictable under the global cap.
      */
-    settleRestoredTokenUsageCapture(threadId: string): void {
+    settleRestoredTokenUsageCapture(threadId: string, owner: symbol): void {
         const capture = this.pendingRestoredTokenUsage.get(threadId);
-        if (capture !== undefined) {
+        if (capture?.owner === owner) {
             capture.inFlight = false;
+            this.evictSettledRestoredUsageCaptures();
         }
     }
 
     /** Drops an armed capture without consuming it — the arming load did not complete. */
-    clearRestoredTokenUsageCapture(threadId: string): void {
-        this.pendingRestoredTokenUsage.delete(threadId);
+    clearRestoredTokenUsageCapture(threadId: string, owner: symbol): void {
+        if (this.pendingRestoredTokenUsage.get(threadId)?.owner === owner) {
+            this.pendingRestoredTokenUsage.delete(threadId);
+        }
     }
 
     /** Releases every per-load capture; call when this client is discarded. */
