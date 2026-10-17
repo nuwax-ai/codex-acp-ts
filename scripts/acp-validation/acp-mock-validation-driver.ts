@@ -186,8 +186,8 @@ function startAgent(): AgentHandle {
         cwd: REPO,
         env: {
             // Offline fixtures own provider routing; an inherited NUWAX
-            // environment must not bypass the mock's endpoint and budget.
-            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_"))),
+            // environment/provider/config must not bypass the mock endpoint and budget.
+            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_") && name !== "MODEL_PROVIDER" && name !== "CODEX_CONFIG")),
             CODEX_HOME: codexHome,
             APP_SERVER_LOGS: logsDir,
             // Fresh CODEX_HOME has no codex account; hand the wrapper its
