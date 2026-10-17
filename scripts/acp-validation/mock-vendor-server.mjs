@@ -259,8 +259,10 @@ export function normalizeRequest(parsed, wireHint) {
             // Tool-result user items (and codex's generated image label) are
             // not instructions; anchor on the newest real instruction.
             const content = Array.isArray(item.content) ? item.content : [];
+            const isAnchorable = (text) =>
+                text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
             const hasInstruction = content.some((part) =>
-                part?.type === "input_text" && part.text && !/^Images returned by tool call/.test(part.text));
+                part?.type === "input_text" && isAnchorable(part.text));
             if (hasInstruction) { lastUser = i; break; }
         }
         tailAfterLastUser = JSON.stringify(items.slice(lastUser + 1));
@@ -327,10 +329,17 @@ export function normalizeRequest(parsed, wireHint) {
             // newest message that actually holds an instruction (codex's
             // generated image label is excluded).
             const content = m.content;
+            // Codex injects <environment_context> (and its generated image
+            // label) as user text; neither is an instruction, and a date
+            // refresh can append the context to the very tool-result message
+            // the screenshot follow-up needs anchored. Anchor only on real
+            // instructions.
+            const isAnchorable = (text) =>
+                text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
             const hasInstruction = typeof content === "string"
-                ? content.length > 0 && !/^Images returned by tool call/.test(content)
+                ? isAnchorable(content)
                 : Array.isArray(content) && content.some((part) =>
-                    part?.type === "text" && part.text && !/^Images returned by tool call/.test(part.text));
+                    part?.type === "text" && isAnchorable(part.text));
             if (hasInstruction) { lastUser = i; break; }
         }
         const tailMessages = messages.slice(lastUser + 1);
@@ -408,14 +417,26 @@ export function normalizeRequest(parsed, wireHint) {
 // interrupted essay or a transcript quoted for the guardian reviewer.
 export function latestUserText(view) {
     const messages = view.__normalized ? view.messages : (view.messages ?? []);
+    // Codex injects <environment_context> and its generated image label as
+    // user text; neither is an instruction. Skip them so a date refresh
+    // appended to a tool-result message cannot shadow the real instruction.
+    const isInstruction = (text) =>
+        text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
     for (let i = messages.length - 1; i >= 0; i -= 1) {
         const m = messages[i];
         if (m["role"] !== "user") continue;
         const content = m["content"];
-        if (typeof content === "string") return content;
+        if (typeof content === "string") {
+            if (isInstruction(content)) return content;
+            continue;
+        }
         if (Array.isArray(content)) {
-            const text = content.filter((c) => c["type"] === "text").at(-1)?.["text"];
-            if (text) return text;
+            const texts = content
+                .filter((c) => c["type"] === "text")
+                .map((c) => c["text"]);
+            for (let t = texts.length - 1; t >= 0; t -= 1) {
+                if (isInstruction(texts[t])) return texts[t];
+            }
         }
     }
     return "";
@@ -462,8 +483,13 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
     // call/result already in the tail. Either way the answer must come from
     // the typed image of the CURRENT turn's tail — an image that exists only
     // in older history never satisfies this path.
-    const screenshotInCurrentTail = view.tailAfterLastUser.includes("take_screenshot");
-    if (/Images returned by tool call/i.test(userText) || (/take_screenshot/i.test(userText) && screenshotInCurrentTail)) {
+    const tailText = String(view.tailAfterLastUser ?? "");
+    const screenshotInCurrentTail = tailText.includes("take_screenshot");
+    // The generated image label may share the tool-result message (or follow
+    // it); anchoring skips label-only messages, so detect the label in the
+    // tail rather than in the anchored instruction text.
+    const labelInCurrentTail = /Images returned by tool call/i.test(tailText);
+    if (labelInCurrentTail || (/take_screenshot/i.test(userText) && screenshotInCurrentTail)) {
         if (view.tailImages.length === 0) {
             return { kind: "image-missing", text: "mock vendor: screenshot tool result carried no image" };
         }
