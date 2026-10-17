@@ -93,7 +93,7 @@ async function login(options: LoginOptions): Promise<boolean> {
         const loginResponse = await appServerClient.accountLogin({type: "chatgpt"});
 
         if (loginResponse.type === "chatgpt") {
-            logger.log("Opening browser for authentication...", {authUrl: loginResponse.authUrl});
+            logger.log("Opening browser for authentication...", {methodId: "chat-gpt"});
             await open(loginResponse.authUrl);
         } else {
             logger.error("Unexpected login response type", new Error(`Expected 'chatgpt', got '${loginResponse.type}'`));

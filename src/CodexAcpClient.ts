@@ -419,7 +419,7 @@ export class CodexAcpClient {
             providerId: OPENAI_PROVIDER_ID,
             overrideActive: gatewayConfig !== null,
             apiType: current.apiType,
-            baseUrl: current.baseUrl,
+            baseUrlConfigured: current.baseUrl.length > 0,
         });
         return [
             {
@@ -466,7 +466,7 @@ export class CodexAcpClient {
         logger.log("providers/set applied", {
             providerId: request.providerId,
             apiType: request.apiType,
-            baseUrl: request.baseUrl,
+            baseUrlConfigured: request.baseUrl.length > 0,
             headerNames: Object.keys(request.headers ?? {}),
         });
     }
@@ -493,7 +493,7 @@ export class CodexAcpClient {
             overrideWasActive,
             overrideActive: this.gatewayConfig !== null,
             restoredApiType: current.apiType,
-            restoredBaseUrl: current.baseUrl,
+            restoredBaseUrlConfigured: current.baseUrl.length > 0,
         });
     }
 
@@ -848,7 +848,7 @@ export class CodexAcpClient {
             overrideActive: this.gatewayConfig !== null,
             modelProvider: this.getModelProvider(),
             apiType: activeProvider.apiType,
-            baseUrl: activeProvider.baseUrl,
+            baseUrlConfigured: activeProvider.baseUrl.length > 0,
         });
         const mergedConfig = {
             ...forceGitRootTurnDiffPaths(mergeGatewayConfig(this.config, this.gatewayConfig)),

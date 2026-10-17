@@ -530,7 +530,7 @@ export class CodexAcpServer {
         if (authNeeded) {
             if (this.defaultAuthRequest) {
                 logger.log("Authenticating with default auth request...", {
-                    authRequest: this.defaultAuthRequest
+                    methodId: this.defaultAuthRequest.methodId
                 });
                 await this.authenticate(this.defaultAuthRequest)
                 logger.log("Authentication completed");

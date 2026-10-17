@@ -47,7 +47,7 @@ export function createJSONRPCReader(readable: Readable): MessageReader {
                             msg.jsonrpc = '2.0';
                         }
                         callback(msg);
-                    } catch {/* ignore malformed lines; they're still logged above */}
+                    } catch {/* ignore malformed lines */}
                 }
             };
             readable.on('data', onData);

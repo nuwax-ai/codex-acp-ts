@@ -89,9 +89,9 @@ function startAcpServer() {
         version: packageJson.version,
         codexPath: codexPath,
         modelProvider: modelProvider ?? null,
-        codexConfig: config ?? null,
-        authRequest: authRequestString ?? null,
-        defaultAuthRequest: defaultAuthRequest ?? null,
+        configKeys: Object.keys(config ?? {}),
+        defaultAuthConfigured: defaultAuthRequest !== undefined,
+        defaultAuthMethod: defaultAuthRequest?.methodId ?? null,
     });
 
     const codexProcessState: CodexProcessState = {

@@ -91,7 +91,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     const apiKey = readAnyApiKey();
 
     logger.log("Auto-configured gateway from env", {
-        baseUrl,
+        baseUrlConfigured: true,
         apiProtocol,
         wireApi,
         providerName,

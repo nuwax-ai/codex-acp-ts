@@ -41,15 +41,17 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
 function attachLogs(proc: ChildProcessWithoutNullStreams) {
     const originalWrite = proc.stdin.write.bind(proc.stdin);
     proc.stdin.write = (chunk: any, encoding?: any, callback?: any): boolean => {
-        logger.log(`[IN] ${chunk.toString()}`);
+        // Protocol payloads include account/login API keys and provider headers.
+        // Keep transport activity useful without persisting raw credentials.
+        logger.log("[IN]", {bytes: Buffer.byteLength(chunk)});
         return originalWrite(chunk, encoding, callback);
     };
 
     proc.stderr.on("data", (data) => {
-        logger.log(`[ERR] ${data.toString()}`);
+        logger.log("[ERR]", {bytes: data.length});
     });
     proc.stdout.on("data", (data: Buffer) => {
-        logger.log(`[OUT] ${data.toString()}`);
+        logger.log("[OUT]", {bytes: data.length});
     });
     proc.on("exit", (code) => {
         logger.log(`[EXIT] code: ${code?.toString()}`);
