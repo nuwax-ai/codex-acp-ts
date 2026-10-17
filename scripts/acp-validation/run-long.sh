@@ -34,7 +34,11 @@ while :; do
   batch=$((batch + 1))
   echo "=== batch $batch at +${elapsed}s remaining ${remaining}s rounds $total_rounds ===" | tee -a "$OUTDIR/driver.log"
   LOG="$OUTDIR/batch-$batch.log"
-  if bash "$SCRIPT_DIR/run-stress.sh" "$CODEX_PATH" "$EXPECT_SHA" ALL >"$LOG" 2>&1; then
+  # A fresh port per batch: the fixed default port intermittently fails to
+  # rebind while the previous batch's mock is still tearing down
+  # (EADDRINUSE observed after dozens of consecutive batches).
+  MOCK_PORT=$((20000 + (RANDOM % 20000)))
+  if MOCK_PORT="$MOCK_PORT" bash "$SCRIPT_DIR/run-stress.sh" "$CODEX_PATH" "$EXPECT_SHA" ALL >"$LOG" 2>&1; then
     # Each wire prints one "summary: P/R rounds passed" line; count the
     # run side of every wire summary in this batch.
     batch_rounds=$(grep -oE '[0-9]+/[0-9]+ rounds passed' "$LOG" | awk -F'[/ ]' '{s+=$2} END {print s+0}')
