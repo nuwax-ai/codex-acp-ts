@@ -308,19 +308,27 @@ function snapshotTree(handle: AgentHandle): TrackedProc[] {
 }
 
 /** A tracked process survives only if its PID is still listed with the SAME
- * start time — a recycled PID with a different lstart counts as gone. */
+ * start time — a recycled PID with a different lstart counts as gone.
+ *
+ * Update-check helpers (`git ... ls-remote` against the plugins repo) are
+ * bounded by the product's own 30s timeout (startup_sync.rs kills and waits
+ * on expiry), so they get a window past that bound; on egress-filtered hosts
+ * they visibly linger for up to 30s per app-server start. Everything else —
+ * the serving stack — must drain within 10s. */
 async function waitUntilGone(handle: AgentHandle): Promise<TrackedProc[]> {
-    const tracked = [...handle.tracked.values()];
-    const deadline = Date.now() + 10_000;
+    const isUpdateCheck = (proc: TrackedProc) =>
+        proc.command.includes("github.com") || /\bgit\b/.test(proc.command);
+    const SERVING_DEADLINE = Date.now() + 10_000;
+    const UPDATE_CHECK_DEADLINE = Date.now() + 35_000;
     for (;;) {
         const table = psTable();
-        const survivors = table
-            ? tracked.filter((proc) => {
-                const current = table.get(proc.pid);
-                return current !== undefined && current.lstart === proc.lstart;
-            })
-            : tracked;
-        if (survivors.length === 0 || Date.now() >= deadline) return survivors;
+        const survivors = ([...handle.tracked.values()] as TrackedProc[]).filter((proc) => {
+            const current = table?.get(proc.pid);
+            return current !== undefined && current.lstart === proc.lstart;
+        });
+        if (survivors.length === 0) return [];
+        const deadline = survivors.every(isUpdateCheck) ? UPDATE_CHECK_DEADLINE : SERVING_DEADLINE;
+        if (Date.now() >= deadline) return survivors;
         await new Promise((r) => setTimeout(r, 500));
     }
 }
