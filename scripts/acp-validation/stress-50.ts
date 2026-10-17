@@ -54,6 +54,7 @@
 import { spawn, execSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
+import { cancelAndObserve, waitForTrackedProcesses } from "./stress-contracts.js";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -316,47 +317,13 @@ function snapshotTree(handle: AgentHandle): TrackedProc[] {
  * they visibly linger for up to 30s per app-server start. Everything else —
  * the serving stack — must drain within 10s. */
 async function waitUntilGone(handle: AgentHandle): Promise<TrackedProc[]> {
-    const isUpdateCheck = (proc: TrackedProc) =>
-        proc.command.includes("github.com") || /\bgit\b/.test(proc.command);
-    const SERVING_DEADLINE = Date.now() + 10_000;
-    const UPDATE_CHECK_DEADLINE = Date.now() + 35_000;
-    for (;;) {
-        const table = psTable();
-        const survivors = ([...handle.tracked.values()] as TrackedProc[]).filter((proc) => {
-            const current = table?.get(proc.pid);
-            return current !== undefined && current.lstart === proc.lstart;
-        });
-        if (survivors.length === 0) return [];
-        const deadline = survivors.every(isUpdateCheck) ? UPDATE_CHECK_DEADLINE : SERVING_DEADLINE;
-        if (Date.now() >= deadline) {
-            if (survivors.every(isUpdateCheck)) {
-                // Round-owned update-check orphans: when the app-server is
-                // killed before its own 30s timeout fires, the git children
-                // lose the only process that would kill them and can hang on
-                // a black-holed network until the TCP stack gives up. They
-                // belong to THIS round's tree, so reap them here instead of
-                // waiting minutes.
-                for (const proc of survivors) {
-                    try {
-                        process.kill(proc.pid, "SIGKILL");
-                    } catch {
-                        // already gone
-                    }
-                }
-                await new Promise((r) => setTimeout(r, 1000));
-                const table2 = psTable();
-                const still = table2
-                    ? survivors.filter((proc) => {
-                        const current = table2.get(proc.pid);
-                        return current !== undefined && current.lstart === proc.lstart;
-                    })
-                    : [];
-                return still;
-            }
-            return survivors;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-    }
+    return waitForTrackedProcesses({
+        tracked: () => [...handle.tracked.values()],
+        table: psTable,
+        kill: (pid) => { process.kill(pid, "SIGKILL"); },
+        now: Date.now,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    });
 }
 
 async function killAgent(handle: AgentHandle | undefined): Promise<void> {
@@ -376,11 +343,12 @@ async function killAgent(handle: AgentHandle | undefined): Promise<void> {
 /** Kill a generation and assert its whole tracked tree drained. */
 async function shutdownGeneration(handle: AgentHandle | undefined, label: string): Promise<TrackedProc[]> {
     if (!handle) return [];
+    snapshotTree(handle);
     await killAgent(handle);
     const survivors = await waitUntilGone(handle);
     if (survivors.length > 0) {
         failures.push(
-            `${label}: tracked process(es) still alive after shutdown: ${survivors
+            `${label}: tracked process(es) alive at shutdown deadline (cleanup attempted): ${survivors
                 .map((s) => `${s.pid}(${s.role}, started ${s.lstart}, ${s.command.slice(0, 80)})`)
                 .join("; ")}`,
         );
@@ -687,8 +655,13 @@ async function runRound(
                     100,
                 );
             }
-            await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
-            const response = await withTimeout(pending, 120_000, "cancel round resolution");
+            const observed = await cancelAndObserve({
+                recorded: readRecorded,
+                notify: () => handle.agent.notify(methods.agent.session.cancel as any, { sessionId }),
+                response: () => withTimeout(pending, 120_000, "cancel round resolution"),
+                sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            });
+            const response = observed.response;
             stopReason = response?.stopReason;
             if (!precondition) {
                 error = `cancel round precondition failed: ${kind === "cancel-headers" ? "hang request never arrived at the mock" : "no stream delta observed before cancel"}`;
@@ -698,9 +671,7 @@ async function runRound(
             // The cancelled turn must not keep paying for MAIN model
             // attempts; auxiliary (title/guardian) requests are classified
             // and counted, not silently tolerated.
-            const afterCancel = readRecorded().length;
-            await new Promise((r) => setTimeout(r, 1500));
-            const { main } = classifyRequests(readRecorded().slice(afterCancel));
+            const { main } = classifyRequests(observed.afterCancel);
             postCancelMainRequests = main.length;
             if (main.length > 0) {
                 const kinds = main.map((m) => m.kind ?? "?").join(",");
@@ -718,8 +689,13 @@ async function runRound(
                 20_000,
                 100,
             );
-            await handle.agent.notify(methods.agent.session.cancel as any, { sessionId });
-            const response = await withTimeout(pending, 120_000, "tool-cancel resolution");
+            const observed = await cancelAndObserve({
+                recorded: readRecorded,
+                notify: () => handle.agent.notify(methods.agent.session.cancel as any, { sessionId }),
+                response: () => withTimeout(pending, 120_000, "tool-cancel resolution"),
+                sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            });
+            const response = observed.response;
             stopReason = response?.stopReason;
             const toolDone = traceToolCompleted.some((t) => /screenshot/i.test(t));
             if (!startedOk) {
@@ -727,9 +703,7 @@ async function runRound(
             } else if (response?.stopReason !== "cancelled" || toolDone) {
                 error = `cancel-during-tool unexpected: stop=${response?.stopReason ?? response?.error} toolCompleted=${toolDone}`;
             }
-            const afterCancel = readRecorded().length;
-            await new Promise((r) => setTimeout(r, 1500));
-            const { main } = classifyRequests(readRecorded().slice(afterCancel));
+            const { main } = classifyRequests(observed.afterCancel);
             postCancelMainRequests = main.length;
             if (main.length > 0) {
                 const kinds = main.map((m) => m.kind ?? "?").join(",");

@@ -109,12 +109,22 @@ stress driver additionally:
   are resolved via `ps` and recorded per round with start times (`lstart`)
   to guard against PID reuse. After every generation shutdown (cold
   restarts and the final shutdown) all tracked PIDs must be gone within
-  10s or the run fails listing the survivors (`leftoverShotServers` counts
-  the shot-server role). Nothing the driver did not spawn is killed, and
+  10s (35s only for the exact curated-plugin `git ls-remote` update check),
+  or the run fails listing the expired processes (`leftoverShotServers`
+  counts the shot-server role). Expired tracked processes are cleaned up
+  after saving the failed observation; successful cleanup never changes
+  that failure into a pass. PID identity is rechecked immediately before
+  cleanup. Nothing the driver did not spawn is killed, and
   no whole-machine `pgrep` is used as the residue check.
 - **Has a negative self-test.** `STRESS_SIMULATE_PROBE_FAILURE=stats|pgrep`
   breaks a probe class on purpose; the run must then exit non-zero, which
   is how the teeth above are proven on demand.
+
+Cancel counting starts before sending `session/cancel`, including additional
+requests arriving before its prompt acknowledgement. The local contract
+regressions run with `node --import tsx --test
+scripts/acp-validation/stress-contracts.test.mjs`. Real-model validation has a
+separate [shared request budget runner](../live-validation/README.md).
 
 `CODEX_PATH` is explicit — no silent default binary. Passing the expected
 sha256 (second arg or `EXPECT_CODEX_SHA256`) makes the run refuse to start on

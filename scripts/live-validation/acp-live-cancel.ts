@@ -6,6 +6,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { requireBudgetGateway } from "./gateway-contract.js";
 import { Readable, Writable } from "node:stream";
 import {
     PROTOCOL_VERSION,
@@ -31,6 +32,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 async function main() {
+    await requireBudgetGateway();
     const child: ChildProcess = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
         cwd: REPO,
         env: { ...process.env, CODEX_HOME: codexHome, CODEX_PATH },
@@ -126,4 +128,4 @@ async function main() {
     }
 }
 
-void main();
+void main().catch(() => { console.error("SMOKE-FAIL shared budget gateway is required"); process.exitCode = 1; });

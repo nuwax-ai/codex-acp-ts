@@ -13,6 +13,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { requireBudgetGateway } from "./gateway-contract.js";
+import { FinalAssistantText } from "./assistant-text.js";
 import { Readable, Writable } from "node:stream";
 import {
     PROTOCOL_VERSION,
@@ -33,6 +35,9 @@ const log = (line: string) => console.log(`[${new Date().toISOString()}] ${line}
 interface AgentHandle {
     child: ChildProcess;
     agent: ReturnType<ReturnType<typeof acpClient>["connect"]>["agent"];
+    text: () => string;
+    resetText: () => void;
+    stderrTail: () => string;
 }
 
 function startAgent(): AgentHandle {
@@ -51,9 +56,8 @@ function startAgent(): AgentHandle {
         while (stderrTail.length > 30) stderrTail.shift();
     });
     child.stdin?.on("error", () => {});
-    (child as unknown as { stderrTail: () => string }).stderrTail = () => stderrTail.join("\n");
 
-    let text = "";
+    const text = new FinalAssistantText();
     const stream = ndJsonStream(
         Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
         Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>,
@@ -61,9 +65,7 @@ function startAgent(): AgentHandle {
     const connection = acpClient({ name: "acp-live-smoke" })
         .onNotification(methods.client.session.update, (ctx: any) => {
             const update = ctx.params?.update;
-            if (update?.sessionUpdate === "agent_message_chunk" && update.content?.type === "text") {
-                text += update.content.text;
-            }
+            if (update) text.add(update);
         })
         .onRequest(methods.client.session.requestPermission, (ctx: any) => {
             const options = ctx.params?.options ?? [];
@@ -75,7 +77,7 @@ function startAgent(): AgentHandle {
         .onRequest(methods.client.fs.readTextFile, () => ({ content: "" }))
         .onRequest(methods.client.fs.writeTextFile, () => ({}))
         .connect(stream);
-    return { child, agent: connection.agent, ...({} as Record<string, never>) } as AgentHandle & { text: () => string };
+    return { child, agent: connection.agent, text: () => text.text(), resetText: () => text.reset(), stderrTail: () => stderrTail.join("\n") };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -86,19 +88,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
-async function prompt(handle: any, sessionId: string, text: string, timeoutMs = 180_000) {
+async function prompt(handle: AgentHandle, sessionId: string, text: string, timeoutMs = 180_000) {
     return withTimeout(
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
             prompt: [{ type: "text", text }],
-        }),
+        }).then((value) => value as { stopReason?: string }),
         timeoutMs,
         `prompt(${text.slice(0, 32)}…)`,
     );
 }
 
 async function main() {
-    const handle: any = startAgent();
+    await requireBudgetGateway();
+    const handle = startAgent();
     try {
         const initialized = await withTimeout(
             handle.agent.request(methods.agent.initialize as any, {
@@ -106,7 +109,7 @@ async function main() {
                 clientCapabilities: {
                     fs: { readTextFile: true, writeTextFile: true },
                     terminal: false,
-                    session: { compaction: {} },
+                    session: { compaction: {}, notices: {} },
                 },
             }),
             60_000,
@@ -118,7 +121,7 @@ async function main() {
             handle.agent.request(methods.agent.session.new as any, {
                 cwd: VAL_ROOT,
                 mcpServers: [],
-            }),
+            }).then((value) => value as { sessionId?: string }),
             60_000,
             "session/new",
         );
@@ -126,25 +129,32 @@ async function main() {
         if (!sessionId) throw new Error("session/new returned no sessionId");
         log(`session: ${sessionId}`);
 
+        handle.resetText();
         const first = await prompt(handle, sessionId, "Reply with exactly: live-ok");
         log(`first stopReason=${first?.stopReason}`);
+        const firstAnswer = handle.text();
+        log(`first final=${JSON.stringify(firstAnswer.slice(0, 512))}`);
 
+        handle.resetText();
         const compacted = await prompt(handle, sessionId, "/compact", 120_000);
         log(`compact stopReason=${compacted?.stopReason}`);
 
+        handle.resetText();
         const after = await prompt(handle, sessionId, "Reply with exactly: post-compact-ok");
         log(`post-compact stopReason=${after?.stopReason}`);
+        const afterAnswer = handle.text();
+        log(`post-compact final=${JSON.stringify(afterAnswer.slice(0, 512))}`);
 
         // Fresh adapter process reading the same session back (load path).
         handle.child.kill();
-        const reload: any = startAgent();
+        const reload = startAgent();
         await withTimeout(
             reload.agent.request(methods.agent.initialize as any, {
                 protocolVersion: PROTOCOL_VERSION,
                 clientCapabilities: {
                     fs: { readTextFile: true, writeTextFile: true },
                     terminal: false,
-                    session: { compaction: {} },
+                    session: { compaction: {}, notices: {} },
                 },
             }),
             60_000,
@@ -155,7 +165,7 @@ async function main() {
                 sessionId,
                 cwd: VAL_ROOT,
                 mcpServers: [],
-            }),
+            }).then((value) => value as { sessionId?: string; threadId?: string }),
             60_000,
             "session/load",
         );
@@ -163,12 +173,14 @@ async function main() {
         log(`load ok=${loadedOk}`);
         reload.child.kill();
 
-        const ok = first?.stopReason === "end_turn" && after?.stopReason === "end_turn" && loadedOk;
+        const ok = first?.stopReason === "end_turn" && firstAnswer === "live-ok"
+            && compacted?.stopReason === "end_turn"
+            && after?.stopReason === "end_turn" && afterAnswer === "post-compact-ok" && loadedOk;
         if (ok) {
             console.log(`SMOKE-PASS acp live: prompt+compact+continuation+load on ${sessionId}`);
             process.exit(0);
         }
-        throw new Error(`smoke did not pass: first=${first?.stopReason} after=${after?.stopReason} loaded=${loadedOk}`);
+        throw new Error(`smoke did not pass: first=${first?.stopReason} compact=${compacted?.stopReason} after=${after?.stopReason} loaded=${loadedOk}; firstAnswer=${JSON.stringify(firstAnswer.slice(0, 512))}; afterAnswer=${JSON.stringify(afterAnswer.slice(0, 512))}`);
     } catch (error) {
         console.error(`SMOKE-FAIL ${error}`);
         console.error(handle.stderrTail?.());
@@ -177,4 +189,4 @@ async function main() {
     }
 }
 
-void main();
+void main().catch(() => { console.error("SMOKE-FAIL shared budget gateway is required"); process.exitCode = 1; });

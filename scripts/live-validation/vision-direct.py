@@ -1,92 +1,49 @@
 #!/usr/bin/env python3
-"""Direct vision checks: synthesized images through codex exec + view_image.
-
-Each image costs 2 model attempts (view call + final answer). The prompt
-never names the color/digit/position; answers are scored against truth.json.
-Appends one line per attempt to the attempts file and prints a final
-`vision: PASS|FAIL ...` line.
-"""
+"""Check every synthesized image using final assistant text, through the shared gateway."""
 import json
 import os
-import pathlib
-import subprocess
+from pathlib import Path
+import re
 import sys
 
-root, env_file, exec_bin, max_out, attempts_file = sys.argv[1:6]
-vision_dir = pathlib.Path(root) / "vision"
-truth = json.loads((vision_dir / "truth.json").read_text())
+from live_support import ValidationError, ensure_vision_fixtures, exec_result, require_gateway_env, run_process, vision_prompt
 
 
-def env_field(name):
-    for line in pathlib.Path(env_file).read_text().splitlines():
-        if line.startswith(name + "="):
-            return line.split("=", 1)[1]
-    return ""
+def main():
+    require_gateway_env()
+    root, exec_bin = Path(sys.argv[1]), sys.argv[2]
+    vision_dir = root / "vision"
+    truth = ensure_vision_fixtures(Path(__file__).resolve().parent, vision_dir)
+    correct = 0
+    for index, image in enumerate(truth["images"]):
+        home, work = root / f"home-vision-{index}", root / f"work-vision-{index}"
+        home.mkdir(exist_ok=True)
+        work.mkdir(exist_ok=True)
+        (work / image["file"]).write_bytes((vision_dir / image["file"]).read_bytes())
+        env = {**os.environ, "CODEX_HOME": str(home)}
+        prompt = vision_prompt(image["file"])
+        result = run_process([exec_bin, "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--json", "-C", str(work), prompt], env, work)
+        (root / f"vision-{index}.jsonl").write_text(result.stdout)
+        (root / f"vision-{index}.err").write_text(result.stderr)
+        try:
+            parsed = exec_result(result.stdout, result.returncode)
+            match = re.fullmatch(r"digit\s*=\s*(\d)\s+color\s*=\s*([a-z]+)[.!]?", parsed["answer"].lower())
+            if match and match[1] == str(image["digit"]) and match[2] == image["color"]:
+                correct += 1
+                print(f"vision image {index}: CORRECT (final digit+color)")
+            else:
+                print(f"vision image {index}: WRONG final answer")
+        except ValidationError:
+            print(f"vision image {index}: FAILED exec contract")
+    total = len(truth["images"])
+    passed = total > 0 and correct == total
+    print(f"vision: {'PASS' if passed else 'FAIL'} {correct}/{total} correct (seed {truth['seed']})")
+    return 0 if passed else 1
 
 
-base = env_field("LIVE_GLM_ANTHROPIC_URL")
-model = env_field("LIVE_GLM_MODEL")
-key = env_field("LIVE_GLM_API_KEY")
-
-correct = 0
-total = 0
-for image in truth["images"]:
-    total += 1
-    home = pathlib.Path(root) / f"home-vision-{total}"
-    work = pathlib.Path(root) / f"work-vision-{total}"
-    home.mkdir(parents=True, exist_ok=True)
-    work.mkdir(parents=True, exist_ok=True)
-    (work / image["file"]).write_bytes((vision_dir / image["file"]).read_bytes())
-    env = {
-        **os.environ,
-        "CODEX_HOME": str(home),
-        "NUWAX_BASE_URL": base,
-        "NUWAX_MODEL": model,
-        "NUWAX_WIRE_API": "anthropic",
-        "NUWAX_API_KEY": key,
-        "NUWAX_MAX_OUTPUT_TOKENS": max_out,
-        "NUWAX_REQUEST_MAX_RETRIES": "1",
-        "NUWAX_STREAM_MAX_RETRIES": "1",
-        "NUWAX_STREAM_IDLE_TIMEOUT_MS": "120000",
-    }
-    # The ask is generic; nothing about color/digit/position is in the prompt.
-    prompt = (
-        f"Open {image['file']} with the view_image tool, look at it, and reply "
-        "in exactly this format: digit=<d> color=<c>"
-    )
-    for _ in range(2):  # 2 model attempts: view call + answer
-        with open(attempts_file, "a") as f:
-            f.write(json.dumps({"file": image["file"]}) + "\n")
-    result = subprocess.run(
-        [
-            exec_bin,
-            "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-            "-C",
-            str(work),
-            prompt,
-        ],
-        env=env,
-        cwd=str(work),
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    out_path = pathlib.Path(root) / f"vision-{total - 1}.jsonl"
-    out_path.write_text(result.stdout)
-    answer = result.stdout.lower()
-    digit_ok = f"digit={image['digit']}" in answer.replace(" ", "")
-    color_ok = image["color"] in answer
-    if result.returncode == 0 and digit_ok and color_ok:
-        correct += 1
-        print(f"vision image {image['file']}: CORRECT (digit+color)")
-    else:
-        print(
-            f"vision image {image['file']}: WRONG rc={result.returncode} "
-            f"want digit={image['digit']} color={image['color']}"
-        )
-
-verdict = "PASS" if correct >= 2 else "FAIL"
-print(f"vision: {verdict} {correct}/{total} correct (seed {truth['seed']})")
-sys.exit(0 if verdict == "PASS" else 1)
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (ValidationError, OSError, ValueError, IndexError) as error:
+        print(f"vision: FAIL {error}", file=sys.stderr)
+        sys.exit(1)
