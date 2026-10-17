@@ -762,10 +762,11 @@ export class CodexAcpServer {
             () => sessionState.sessionTitleSource,
             () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
         );
+        const replacedState = operation === "resume" ? this.sessions.get(sessionId) : undefined;
         this.installSessionState(sessionState);
         resumeSubscribed = false;
         if (operation === "resume") {
-            this.applyRestoredTokenUsage(sessionState);
+            this.applyRestoredTokenUsage(sessionState, replacedState);
         }
 
         const canPublishSessionUpdates = operation !== "fork";
@@ -2044,23 +2045,7 @@ export class CodexAcpServer {
         const replacedState = this.sessions.get(sessionId);
         this.installSessionState(sessionState);
         subscribed = false;
-        this.applyRestoredTokenUsage(sessionState);
-        if (
-            sessionState.lastTokenUsage === null &&
-            replacedState !== undefined &&
-            (replacedState.lastTokenUsage !== null || replacedState.totalTokenUsage !== null)
-        ) {
-            // A warm (same-process) resume is metadata-only on the app-server
-            // side, so no restored-snapshot replay arrives for it; the load
-            // still replaces the session state, and the client would lose the
-            // cumulative usage numbers. Inherit the replaced state's live
-            // ledger so the reload restores the same numbers a fresh-process
-            // load replays, and publish them with the same usage_update shape.
-            sessionState.lastTokenUsage = replacedState.lastTokenUsage;
-            sessionState.totalTokenUsage = replacedState.totalTokenUsage;
-            sessionState.modelContextWindow = replacedState.modelContextWindow;
-            this.publishSessionUsageUpdate(sessionState);
-        }
+        this.applyRestoredTokenUsage(sessionState, replacedState);
 
         if (requestedMcpServers.length > 0 && mcpServerStartupVersion !== null) {
             this.pendingMcpStartupSessions.set(sessionId, {
@@ -2092,14 +2077,22 @@ export class CodexAcpServer {
      * freshly installed session state so the client sees the restored
      * cumulative usage as soon as the load response returns.
      */
-    private applyRestoredTokenUsage(sessionState: SessionState): void {
+    private applyRestoredTokenUsage(sessionState: SessionState, replacedState?: SessionState): void {
         const restored = this.codexAcpClient.appServerClient.takePendingRestoredTokenUsage(sessionState.sessionId);
-        if (restored === null) {
-            return;
+        if (restored !== null) {
+            // A server snapshot is authoritative, including explicit zero usage
+            // and an unknown context window. Never replace either with old data.
+            sessionState.lastTokenUsage = toTokenCount(restored.tokenUsage.last);
+            sessionState.totalTokenUsage = toTokenCount(restored.tokenUsage.total);
+            sessionState.modelContextWindow = restored.tokenUsage.modelContextWindow;
+        } else if (replacedState !== undefined) {
+            // Both load and resume can be metadata-only for a resident thread.
+            // Its last-turn footprint and cumulative history survive replacing
+            // the adapter state, until a new server usage event supersedes them.
+            sessionState.lastTokenUsage = replacedState.lastTokenUsage;
+            sessionState.totalTokenUsage = replacedState.totalTokenUsage;
+            sessionState.modelContextWindow = replacedState.modelContextWindow;
         }
-        sessionState.lastTokenUsage = toTokenCount(restored.tokenUsage.last);
-        sessionState.totalTokenUsage = toTokenCount(restored.tokenUsage.total);
-        sessionState.modelContextWindow = restored.tokenUsage.modelContextWindow;
         this.publishSessionUsageUpdate(sessionState);
     }
 
