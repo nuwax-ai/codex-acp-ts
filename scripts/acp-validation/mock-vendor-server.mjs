@@ -510,6 +510,18 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
 // Wire-specific SSE emitters
 // ---------------------------------------------------------------------------
 
+/** Trailing usage-only chunk: codex requests stream_options.include_usage,
+ * so every scripted chat response ends with a deterministic usage frame
+ * (input 4 / output 1 / total 5) exactly like a compliant vendor. */
+function chatUsageChunk() {
+    return `data: ${JSON.stringify({
+        id: "mock-chatcmpl",
+        object: "chat.completion.chunk",
+        choices: [],
+        usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+    })}\n\n`;
+}
+
 /** One chat SSE response carrying the given assistant content. */
 function chatText(content) {
     const chunk = (delta, finish = null) =>
@@ -522,6 +534,7 @@ function chatText(content) {
         chunk({ role: "assistant", content: "" }) +
         chunk({ content }) +
         chunk({}, "stop") +
+        chatUsageChunk() +
         "data: [DONE]\n\n"
     );
 }
@@ -536,6 +549,7 @@ function chatToolCall(name, args) {
     return (
         chunk({ role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_val_1", type: "function", function: { name, arguments: args } }] }) +
         chunk({}, "tool_calls") +
+        chatUsageChunk() +
         "data: [DONE]\n\n"
     );
 }
@@ -635,6 +649,7 @@ export function streamEssay(wire, res) {
                 res.write(responsesFrame({ type: "response.output_item.done", item: { type: "message", role: "assistant", content: [{ type: "output_text", text: "essay complete" }], id: "msg_val_1" } }));
                 res.write(responsesFrame({ type: "response.completed", response: { id: "resp-val", usage: { input_tokens: 4, output_tokens: 1, total_tokens: 5 } } }));
             } else {
+                res.write(chatUsageChunk());
                 res.write("data: [DONE]\n\n");
             }
             res.end();
