@@ -186,3 +186,36 @@ Review receipt before the final codex rebuild: all six scenarios passed with
 The binary hash is the identity under test, not a claim that a rebuilt final
 source commit was exercised. Use the runner's expected-hash argument when
 validating a newly built binary.
+
+## Final-acceptance runner receipts
+
+The stress and restored-usage runners default to OS-reserved port `0` and
+read a readiness receipt written atomically by their own mock process. A
+different server answering `/health` cannot satisfy startup. Explicitly
+requesting an occupied port fails; it is not retried or silently replaced.
+Shutdown waits for the owned mock process to exit. With `VAL_ROOT` and wire
+`ALL`, each wire keeps its own subdirectory instead of overwriting receipts.
+
+`mock-ready.json` records the owning PID, actual port, mock source SHA-256 and
+request/tool budgets. `run-long.sh` saves its starting mock hash in
+`mock-source-sha256.txt` and requires each mock instance to match it. Editing
+or swapping the mock during a long run therefore fails startup rather than
+silently combining different versions. This pins the mock; it is not a
+replacement for the separate Codex binary receipt or full ACP source provenance.
+
+The historical 94-batch/5076-round receipt used mock `5869e00` without
+`0e0dcc3`; it does not prove the latest mock completed another four-hour run.
+Current midnight handling is checked deterministically by injecting the
+2026-10-18 environment-context shape into all three native request wires,
+both as a separate message and inside the image-result message. Negative
+cases preserve missing-image failures, reject ordinary tool output quoting
+an image label, and prevent historical screenshots answering a newer turn.
+No wall-clock change or four-hour rerun is needed to exercise those branches.
+
+Chat HTTP fixtures emit usage only when `stream_options.include_usage=true`,
+so omitting that request flag cannot be hidden by an unconditional mock usage
+frame. The restored-usage driver isolates notifications by process and
+session and checks `used=5` plus the context-window value before/after warm
+reload, cold load and continuation. This verifies the public `usage_update`
+last-turn values; cumulative internal token-ledger inheritance is covered by
+the ACP product unit tests, not inferred from the fixed five-token fixture.

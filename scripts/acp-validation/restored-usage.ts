@@ -67,15 +67,15 @@ fs.writeFileSync(
 const failures: string[] = [];
 const log = (line: string) => console.log(`[${new Date().toISOString()}] ${line}`);
 
-interface UsageUpdate { used: number; size: number }
-const pendingUsage: UsageUpdate[] = [];
-function drainUsage(max: number, timeoutMs: number): Promise<UsageUpdate[]> {
+interface UsageUpdate { used: number; size: number; sessionId: string }
+function drainUsage(handle: AgentHandle, sessionId: string, max: number, timeoutMs: number): Promise<UsageUpdate[]> {
     const collected: UsageUpdate[] = [];
     return new Promise((resolve) => {
         const started = Date.now();
         const tick = () => {
-            while (pendingUsage.length > 0 && collected.length < max) {
-                collected.push(pendingUsage.shift()!);
+            while (handle.pendingUsage.length > 0 && collected.length < max) {
+                const update = handle.pendingUsage.shift()!;
+                if (update.sessionId === sessionId) collected.push(update);
             }
             if (collected.length >= max) return resolve(collected);
             if (Date.now() - started > timeoutMs) return resolve(collected);
@@ -88,13 +88,18 @@ function drainUsage(max: number, timeoutMs: number): Promise<UsageUpdate[]> {
 interface AgentHandle {
     child: ReturnType<typeof spawn>;
     agent: ReturnType<ReturnType<typeof acpClient>["connect"]>["agent"];
+    pendingUsage: UsageUpdate[];
 }
+const activeAgents = new Set<AgentHandle>();
 
 function startAgent(): AgentHandle {
+    const pendingUsage: UsageUpdate[] = [];
     const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
         cwd: REPO,
         env: {
-            ...process.env,
+            // Offline fixtures own provider routing; an inherited NUWAX
+            // environment must not bypass the mock's endpoint and budget.
+            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_"))),
             CODEX_HOME: codexHome,
             DEFAULT_AUTH_REQUEST: JSON.stringify({
                 methodId: "api-key",
@@ -112,7 +117,7 @@ function startAgent(): AgentHandle {
         .onNotification(methods.client.session.update, (ctx: any) => {
             const update = ctx.params?.update;
             if (update?.sessionUpdate === "usage_update") {
-                pendingUsage.push({ used: update.used, size: update.size });
+                pendingUsage.push({ used: update.used, size: update.size, sessionId: ctx.params?.sessionId });
             }
         })
         .onRequest(methods.client.session.requestPermission, (ctx: any) => {
@@ -125,7 +130,9 @@ function startAgent(): AgentHandle {
         .onRequest(methods.client.fs.readTextFile, () => ({ content: "" }))
         .onRequest(methods.client.fs.writeTextFile, () => ({}))
         .connect(stream);
-    return { child, agent: connection.agent };
+    const handle = { child, agent: connection.agent, pendingUsage };
+    activeAgents.add(handle);
+    return handle;
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
@@ -143,6 +150,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Pr
 }
 
 async function stopAgent(handle: AgentHandle): Promise<void> {
+    if (handle.child.exitCode !== null || handle.child.signalCode !== null) {
+        activeAgents.delete(handle);
+        return;
+    }
     handle.child.kill("SIGKILL");
     await new Promise((resolve) => {
         const timer = setTimeout(resolve, 2000);
@@ -151,6 +162,7 @@ async function stopAgent(handle: AgentHandle): Promise<void> {
             resolve(null);
         });
     });
+    activeAgents.delete(handle);
 }
 
 async function main() {
@@ -178,7 +190,7 @@ async function main() {
     const sessionId = newSession.sessionId as string;
     log(`session ${sessionId}`);
 
-    pendingUsage.length = 0;
+    handle.pendingUsage.length = 0;
     const first = await withTimeout(
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
@@ -190,16 +202,16 @@ async function main() {
     if (first?.stopReason !== "end_turn") {
         throw new Error(`first prompt stopReason=${first?.stopReason ?? first?.error}`);
     }
-    const turnUsage = await drainUsage(/*max*/ 1, 10_000);
+    const turnUsage = await drainUsage(handle, sessionId, /*max*/ 1, 10_000);
     if (turnUsage.length === 0) failures.push("no usage_update observed for the first turn");
     const snapshot = turnUsage[0];
     log(`turn usage: used=${snapshot?.used} size=${snapshot?.size}`);
-    if (snapshot && !(snapshot.used > 0 && snapshot.size > 0)) {
+    if (snapshot && !(snapshot.used === 5 && snapshot.size > 0)) {
         failures.push(`usage_update numbers not positive: ${JSON.stringify(snapshot)}`);
     }
 
     // --- Flow A: same-process reload.
-    pendingUsage.length = 0;
+    handle.pendingUsage.length = 0;
     await withTimeout(
         handle.agent.request((methods.agent.session as any).load ?? "session/load", {
             sessionId,
@@ -209,7 +221,7 @@ async function main() {
         60_000,
         "session/load (same process)",
     );
-    const restoredSame = await drainUsage(1, 15_000);
+    const restoredSame = await drainUsage(handle, sessionId, 1, 15_000);
     const restored = restoredSame[0];
     log(`same-process restored usage: used=${restored?.used} size=${restored?.size}`);
     if (!restored) {
@@ -222,7 +234,7 @@ async function main() {
             failures.push(`same-process restored size ${restored.size} != snapshot ${snapshot?.size}`);
         }
     }
-    pendingUsage.length = 0;
+    handle.pendingUsage.length = 0;
     const second = await withTimeout(
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
@@ -234,11 +246,12 @@ async function main() {
     if (second?.stopReason !== "end_turn") {
         failures.push(`post-reload prompt stopReason=${second?.stopReason ?? second?.error}`);
     }
-    const postReloadUsage = await drainUsage(1, 10_000);
+    const postReloadUsage = await drainUsage(handle, sessionId, 1, 10_000);
     if (postReloadUsage.length === 0) {
         failures.push("no usage_update after the post-reload prompt (stream did not continue)");
     } else {
-        log(`post-reload turn usage: used=${postReloadUsage[0].used}`);
+        log(`post-reload turn usage: used=${postReloadUsage[0]!.used}`);
+        if (postReloadUsage[0]!.used !== 5 || postReloadUsage[0]!.size !== snapshot?.size) failures.push("post-reload numerical usage does not match the mock contract");
     }
 
     // --- Flow B: fresh-process load.
@@ -252,7 +265,7 @@ async function main() {
         30_000,
         "initialize (fresh process)",
     );
-    pendingUsage.length = 0;
+    handle.pendingUsage.length = 0;
     await withTimeout(
         handle.agent.request((methods.agent.session as any).load ?? "session/load", {
             sessionId,
@@ -262,7 +275,7 @@ async function main() {
         60_000,
         "session/load (fresh process)",
     );
-    const restoredFresh = await drainUsage(1, 15_000);
+    const restoredFresh = await drainUsage(handle, sessionId, 1, 15_000);
     const fresh = restoredFresh[0];
     log(`fresh-process restored usage: used=${fresh?.used} size=${fresh?.size}`);
     if (!fresh) {
@@ -275,7 +288,7 @@ async function main() {
             failures.push(`fresh-process restored size ${fresh.size} != snapshot ${snapshot?.size}`);
         }
     }
-    pendingUsage.length = 0;
+    handle.pendingUsage.length = 0;
     const third = await withTimeout(
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
@@ -287,11 +300,12 @@ async function main() {
     if (third?.stopReason !== "end_turn") {
         failures.push(`fresh-process prompt stopReason=${third?.stopReason ?? third?.error}`);
     }
-    const freshTurnUsage = await drainUsage(1, 10_000);
+    const freshTurnUsage = await drainUsage(handle, sessionId, 1, 10_000);
     if (freshTurnUsage.length === 0) {
         failures.push("no usage_update after the fresh-process prompt");
     } else {
-        log(`fresh-process turn usage: used=${freshTurnUsage[0].used}`);
+        log(`fresh-process turn usage: used=${freshTurnUsage[0]!.used}`);
+        if (freshTurnUsage[0]!.used !== 5 || freshTurnUsage[0]!.size !== snapshot?.size) failures.push("fresh-process numerical usage does not match the mock contract");
     }
 
     await stopAgent(handle);
@@ -305,7 +319,8 @@ async function main() {
     }, null, 2));
     if (failures.length > 0) {
         for (const failure of failures) log(`FAIL: ${failure}`);
-        process.exit(1);
+        process.exitCode = 1;
+        return;
     }
     log("restored usage validation PASS");
 }
@@ -336,5 +351,7 @@ async function fetchStats(): Promise<{ requests: number; openSockets: number } |
 
 main().catch((error) => {
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
+}).finally(async () => {
+    await Promise.all([...activeAgents].map(stopAgent));
 });

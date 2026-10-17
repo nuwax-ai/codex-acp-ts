@@ -29,6 +29,7 @@
 // can no longer produce a green round.
 import http from "node:http";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import zlib from "node:zlib";
 import { crc32, SHOT_PALETTE } from "./shot-server.mjs";
@@ -208,6 +209,22 @@ export function wireForPath(pathname) {
 // Request normalization
 // ---------------------------------------------------------------------------
 
+function isGeneratedImageLabel(value) {
+    return typeof value === "string" && /^\s*Images returned by tool call [^\r\n:]+:/.test(value);
+}
+
+/** Date refreshes are metadata even when rig merges them with user text. */
+function realInstructionText(value) {
+    if (typeof value !== "string") return "";
+    let text = value.trimStart();
+    while (text.startsWith("<environment_context>")) {
+        const end = text.indexOf("</environment_context>");
+        if (end < 0) return "";
+        text = text.slice(end + "</environment_context>".length).trimStart();
+    }
+    return text.trim() && !isGeneratedImageLabel(text) ? text : "";
+}
+
 /**
  * Normalize any wire's request body into a common view:
  *   messages  — chat-like [{role, content}] where text parts are
@@ -249,6 +266,7 @@ export function normalizeRequest(parsed, wireHint) {
      * (history from earlier turns must not suppress a forced tool call). */
     let tailAfterLastUser = "";
     const tailImages = [];
+    let imageLabelInCurrentTail = false;
 
     if (wire === "responses") {
         const items = parsed.input;
@@ -259,10 +277,8 @@ export function normalizeRequest(parsed, wireHint) {
             // Tool-result user items (and codex's generated image label) are
             // not instructions; anchor on the newest real instruction.
             const content = Array.isArray(item.content) ? item.content : [];
-            const isAnchorable = (text) =>
-                text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
             const hasInstruction = content.some((part) =>
-                part?.type === "input_text" && isAnchorable(part.text));
+                part?.type === "input_text" && realInstructionText(part.text));
             if (hasInstruction) { lastUser = i; break; }
         }
         tailAfterLastUser = JSON.stringify(items.slice(lastUser + 1));
@@ -281,6 +297,7 @@ export function normalizeRequest(parsed, wireHint) {
                 if (Array.isArray(item.output)) collectResponsesImages(item.output);
             } else if (item?.type === "message" && Array.isArray(item.content)) {
                 collectResponsesImages(item.content);
+                if (item.role === "user" && item.content.some((part) => part?.type === "input_text" && isGeneratedImageLabel(part.text))) imageLabelInCurrentTail = true;
             }
         }
         for (const item of items) {
@@ -334,16 +351,17 @@ export function normalizeRequest(parsed, wireHint) {
             // refresh can append the context to the very tool-result message
             // the screenshot follow-up needs anchored. Anchor only on real
             // instructions.
-            const isAnchorable = (text) =>
-                text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
             const hasInstruction = typeof content === "string"
-                ? isAnchorable(content)
+                ? realInstructionText(content)
                 : Array.isArray(content) && content.some((part) =>
-                    part?.type === "text" && isAnchorable(part.text));
+                    part?.type === "text" && realInstructionText(part.text));
             if (hasInstruction) { lastUser = i; break; }
         }
         const tailMessages = messages.slice(lastUser + 1);
         tailAfterLastUser = JSON.stringify(tailMessages);
+        imageLabelInCurrentTail = tailMessages.some((message) => message?.role === "user"
+            && (typeof message.content === "string" ? isGeneratedImageLabel(message.content)
+                : Array.isArray(message.content) && message.content.some((part) => part?.type === "text" && isGeneratedImageLabel(part.text))));
         if (wire === "anthropic") {
             // Typed images of the current turn: image blocks (including
             // blocks nested in tool_result content) of tail messages.
@@ -405,6 +423,7 @@ export function normalizeRequest(parsed, wireHint) {
         allText,
         tailAfterLastUser,
         tailImages,
+        imageLabelInCurrentTail,
         schema,
         toolNames,
         hasImage,
@@ -420,14 +439,13 @@ export function latestUserText(view) {
     // Codex injects <environment_context> and its generated image label as
     // user text; neither is an instruction. Skip them so a date refresh
     // appended to a tool-result message cannot shadow the real instruction.
-    const isInstruction = (text) =>
-        text && !/^Images returned by tool call/.test(text) && !/^<environment_context>/.test(text);
     for (let i = messages.length - 1; i >= 0; i -= 1) {
         const m = messages[i];
         if (m["role"] !== "user") continue;
         const content = m["content"];
         if (typeof content === "string") {
-            if (isInstruction(content)) return content;
+            const text = realInstructionText(content);
+            if (text) return text;
             continue;
         }
         if (Array.isArray(content)) {
@@ -435,7 +453,8 @@ export function latestUserText(view) {
                 .filter((c) => c["type"] === "text")
                 .map((c) => c["text"]);
             for (let t = texts.length - 1; t >= 0; t -= 1) {
-                if (isInstruction(texts[t])) return texts[t];
+                const text = realInstructionText(texts[t]);
+                if (text) return text;
             }
         }
     }
@@ -488,8 +507,9 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
     // The generated image label may share the tool-result message (or follow
     // it); anchoring skips label-only messages, so detect the label in the
     // tail rather than in the anchored instruction text.
-    const labelInCurrentTail = /Images returned by tool call/i.test(tailText);
-    if (labelInCurrentTail || (/take_screenshot/i.test(userText) && screenshotInCurrentTail)) {
+    const labelInCurrentTail = view.imageLabelInCurrentTail;
+    if ((labelInCurrentTail && (/take_screenshot/i.test(userText) || view.tailImages.length > 0))
+        || (/take_screenshot/i.test(userText) && screenshotInCurrentTail)) {
         if (view.tailImages.length === 0) {
             return { kind: "image-missing", text: "mock vendor: screenshot tool result carried no image" };
         }
@@ -533,7 +553,7 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
         if (!name) return { kind: "missing-tool", text: "mock vendor: shell tool is not advertised" };
         // Once the exec_command result is back in the tail, close the turn.
         const tail = String(view.tailAfterLastUser ?? "");
-        if (tail.includes('"role":"tool"') || tail.includes("function_call_output")) {
+        if (tail.includes('"role":"tool"') || tail.includes("function_call_output") || tail.includes('"type":"tool_result"')) {
             return { kind: "ping", text: "pong" };
         }
         return {
@@ -563,7 +583,7 @@ function chatUsageChunk() {
 }
 
 /** One chat SSE response carrying the given assistant content. */
-function chatText(content) {
+function chatText(content, includeUsage) {
     const chunk = (delta, finish = null) =>
         `data: ${JSON.stringify({
             id: "mock-chatcmpl",
@@ -574,12 +594,12 @@ function chatText(content) {
         chunk({ role: "assistant", content: "" }) +
         chunk({ content }) +
         chunk({}, "stop") +
-        chatUsageChunk() +
+        (includeUsage ? chatUsageChunk() : "") +
         "data: [DONE]\n\n"
     );
 }
 
-function chatToolCall(name, args) {
+function chatToolCall(name, args, includeUsage) {
     const chunk = (delta, finish = null) =>
         `data: ${JSON.stringify({
             id: "mock-chatcmpl",
@@ -589,7 +609,7 @@ function chatToolCall(name, args) {
     return (
         chunk({ role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_val_1", type: "function", function: { name, arguments: args } }] }) +
         chunk({}, "tool_calls") +
-        chatUsageChunk() +
+        (includeUsage ? chatUsageChunk() : "") +
         "data: [DONE]\n\n"
     );
 }
@@ -640,21 +660,21 @@ function responsesToolCall(name, args) {
     );
 }
 
-export function textResponse(wire, content) {
+export function textResponse(wire, content, { includeUsage = true } = {}) {
     if (wire === "anthropic") return anthropicText(content);
     if (wire === "responses") return responsesText(content);
-    return chatText(content);
+    return chatText(content, includeUsage);
 }
 
-export function toolCallResponse(wire, name, args) {
+export function toolCallResponse(wire, name, args, { includeUsage = true } = {}) {
     if (wire === "anthropic") return anthropicToolCall(name, args);
     if (wire === "responses") return responsesToolCall(name, args);
-    return chatToolCall(name, args);
+    return chatToolCall(name, args, includeUsage);
 }
 
 /** Slow essay stream: deltas every 250ms for a bounded window so any client
  * retry after a cancel drains quickly instead of holding the turn open. */
-export function streamEssay(wire, res) {
+export function streamEssay(wire, res, { includeUsage = true } = {}) {
     res.writeHead(200, sseHeaders);
     if (wire === "anthropic") {
         res.write(anthropicFrame({ type: "message_start", message: { id: "msg-val", type: "message", role: "assistant", content: [], model: "acp-val-mock-model", stop_reason: null, stop_sequence: null, usage: { input_tokens: 4, output_tokens: 0 } } }));
@@ -689,7 +709,7 @@ export function streamEssay(wire, res) {
                 res.write(responsesFrame({ type: "response.output_item.done", item: { type: "message", role: "assistant", content: [{ type: "output_text", text: "essay complete" }], id: "msg_val_1" } }));
                 res.write(responsesFrame({ type: "response.completed", response: { id: "resp-val", usage: { input_tokens: 4, output_tokens: 1, total_tokens: 5 } } }));
             } else {
-                res.write(chatUsageChunk());
+                if (includeUsage) res.write(chatUsageChunk());
                 res.write("data: [DONE]\n\n");
             }
             res.end();
@@ -702,7 +722,8 @@ export function streamEssay(wire, res) {
 // Server
 // ---------------------------------------------------------------------------
 
-export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget = 3 }) {
+export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget = 3, readyPath }) {
+    if (!Number.isSafeInteger(maxRequests) || maxRequests < 1 || !Number.isSafeInteger(toolBudget) || toolBudget < 0) throw new Error("mock request/tool budgets must be bounded nonnegative integers (request budget >= 1)");
     let screenshotToolCalls = 0;
     let requests = 0;
     let openSockets = 0;
@@ -743,12 +764,13 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             try { parsed = JSON.parse(body); }
             catch { res.writeHead(400).end("invalid JSON"); return; }
             const response = selectResponse(parsed, screenshotToolCalls, wire, toolBudget, answeredImages);
+            const streamOptions = { includeUsage: parsed.stream_options?.include_usage === true };
             fs.appendFileSync(recordPath, `${JSON.stringify({
                 ts: new Date().toISOString(), wire, auth: req.headers.authorization ?? null,
                 xApi: req.headers["x-api-key"] ?? null,
                 kind: response.kind, body,
             })}\n`);
-            if (response.kind === "essay") { streamEssay(wire, res); return; }
+            if (response.kind === "essay") { streamEssay(wire, res, streamOptions); return; }
             if (response.kind === "hang") {
                 // Never answer; release only when the client cancels. The
                 // record above IS the arrival signal the stress driver
@@ -758,12 +780,12 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             res.writeHead(200, sseHeaders);
             if (response.kind === "tool") {
                 if (response.name === "mcp__screenshots__take_screenshot") screenshotToolCalls += 1;
-                res.end(toolCallResponse(wire, response.name, response.args ?? "{}"));
+                res.end(toolCallResponse(wire, response.name, response.args ?? "{}", streamOptions));
             } else {
                 if (response.kind === "image" && response.imagePayload) {
                     answeredImages.set(response.imagePayload, screenshotToolCalls);
                 }
-                res.end(textResponse(wire, response.text));
+                res.end(textResponse(wire, response.text, streamOptions));
             }
         });
     });
@@ -772,6 +794,15 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
         socket.on("close", () => { openSockets -= 1; });
     });
     server.listen(port, "127.0.0.1", () => {
+        if (readyPath) {
+            const temporaryReady = `${readyPath}.${process.pid}.tmp`;
+            fs.writeFileSync(temporaryReady, JSON.stringify({
+            pid: process.pid, port: server.address().port,
+            mockSha256: crypto.createHash("sha256").update(fs.readFileSync(new URL(import.meta.url))).digest("hex"),
+            maxRequests, toolBudget,
+            }) + "\n");
+            fs.renameSync(temporaryReady, readyPath);
+        }
         console.log(`mock vendor listening on http://127.0.0.1:${server.address().port}`);
     });
     return server;
@@ -785,5 +816,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         recordPath,
         maxRequests: Number(process.env["MOCK_MAX_REQUESTS"] ?? 48),
         toolBudget: Number(process.env["MOCK_TOOL_BUDGET"] ?? 3),
+        readyPath: process.env["MOCK_READY_PATH"],
     });
 }

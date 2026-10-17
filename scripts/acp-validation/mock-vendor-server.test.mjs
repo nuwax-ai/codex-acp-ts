@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -143,6 +145,61 @@ function anthropicFollowUp(imagePart) {
 }
 const anthropicImage = (url) => ({ type: "image", source: { type: "base64", media_type: "image/png", data: url.replace(/^data:image\/png;base64,/, "") } });
 
+const MIDNIGHT_CONTEXT = "<environment_context>\n<current_date>2026-10-18</current_date>\n<timezone>Asia/Shanghai</timezone>\n</environment_context>";
+
+test("date refresh in a new or merged user message preserves current image and missing-image contracts on every wire", () => {
+    for (const wire of ["chat", "responses", "anthropic"]) {
+        for (const merged of [false, true]) {
+            for (const present of [false, true]) {
+                const url = shotPngUrl("yellow", 0x081801);
+                const body = wire === "chat" ? chatFollowUp(present ? chatImage(url) : null)
+                    : wire === "responses" ? responsesFollowUp(present ? responsesImage(url) : null)
+                        : anthropicFollowUp(present ? anthropicImage(url) : null);
+                if (wire === "responses") {
+                    const block = { type: "input_text", text: MIDNIGHT_CONTEXT };
+                    if (merged) body.input.at(-1).content.push(block);
+                    else body.input.push({ type: "message", role: "user", content: [block] });
+                } else if (merged) body.messages.at(-1).content.push(text(MIDNIGHT_CONTEXT));
+                else body.messages.push(user(wire === "chat" ? MIDNIGHT_CONTEXT : [text(MIDNIGHT_CONTEXT)]));
+                const view = normalizeRequest(body, wire);
+                assert.equal(latestUserText(view), FORCE_PROMPT, `${wire} merged=${merged}: midnight metadata must not shadow the instruction`);
+                assert.equal(view.tailImages.length, present ? 1 : 0);
+                const response = selectResponse(body, 1, wire);
+                assert.equal(response.kind, present ? "image" : "image-missing", `${wire} merged=${merged} present=${present}`);
+                if (present) assert.equal(response.text, "yellow");
+            }
+        }
+    }
+});
+
+test("a date block merged into the same text part keeps its following real instruction", () => {
+    const body = { messages: [user("essay about ocean currents"), user("  " + MIDNIGHT_CONTEXT + "\nReply with exactly the single word: pong")] };
+    assert.equal(latestUserText(normalizeRequest(body, "chat")), "Reply with exactly the single word: pong");
+    assert.equal(selectResponse(body).kind, "ping");
+});
+
+test("ordinary shell output quoting an image label does not trigger the image classifier on any wire", () => {
+    const quoted = "log quotes Images returned by tool call prior_call: but has no image";
+    const instruction = "run the shell marker command";
+    const bodies = [
+        [{ tools: [{ type: "function", function: { name: "exec_command" } }], messages: [user(instruction), { role: "tool", tool_call_id: "shell", content: quoted }] }, "chat"],
+        [{ tools: [{ type: "function", name: "exec_command" }], input: [{ type: "message", role: "user", content: [{ type: "input_text", text: instruction }] }, { type: "function_call_output", call_id: "shell", output: quoted }] }, "responses"],
+        [{ tools: [{ name: "exec_command" }], messages: [user([text(instruction)]), user([{ type: "tool_result", tool_use_id: "shell", content: [text(quoted)] }])] }, "anthropic"],
+    ];
+    for (const [body, wire] of bodies) {
+        assert.deepEqual(selectResponse(body, 0, wire), { kind: "ping", text: "pong" }, wire);
+    }
+});
+
+test("new post-midnight instruction cannot be answered with a historical screenshot", () => {
+    const body = chatFollowUp(chatImage(shotPngUrl("red", 0x081802)));
+    body.messages.push(user("Reply with exactly the single word: pong"), user(MIDNIGHT_CONTEXT));
+    const view = normalizeRequest(body, "chat");
+    assert.equal(view.tailImages.length, 0);
+    assert.equal(view.imageLabelInCurrentTail, false);
+    assert.deepEqual(selectResponse(body, 1, "chat"), { kind: "ping", text: "pong" });
+});
+
 test("current-tail typed images are extracted on every wire; history-only ones are not", () => {
     const url = shotPngUrl("blue", 0x0c0d01);
     for (const [body, wire] of [[chatFollowUp(chatImage(url)), "chat"], [responsesFollowUp(responsesImage(url)), "responses"], [anthropicFollowUp(anthropicImage(url)), "anthropic"]]) {
@@ -223,6 +280,78 @@ test("mock HTTP dispatch stops at its global request cap", async (t) => {
     const second = await fetch(url, init);
     assert.equal(second.status, 429);
     assert.equal(fs.readFileSync(recordPath, "utf8").trim().split("\n").length, 1);
+});
+
+test("ephemeral mock readiness identifies its owner, source and actual reserved port", async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-mock-ready-"));
+    const readyPath = path.join(dir, "ready.json");
+    const server = startMockServer({ port: 0, readyPath, recordPath: path.join(dir, "requests.jsonl"), maxRequests: 200 });
+    t.after(() => { server.closeAllConnections(); server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    await once(server, "listening");
+    const ready = JSON.parse(fs.readFileSync(readyPath, "utf8"));
+    assert.equal(ready.pid, process.pid);
+    assert.equal(ready.port, server.address().port);
+    assert.equal(ready.maxRequests, 200);
+    assert.equal(ready.mockSha256, crypto.createHash("sha256").update(fs.readFileSync(new URL("./mock-vendor-server.mjs", import.meta.url))).digest("hex"));
+});
+
+test("invalid mock budgets cannot silently disable the hard request cap", () => {
+    for (const maxRequests of [NaN, Infinity, 0, -1, 1.5]) {
+        assert.throws(() => startMockServer({ port: 0, recordPath: "/unused", maxRequests }), /budgets/);
+    }
+});
+
+test("stress startup refuses a busy port rather than adopting another server's health", async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-mock-busy-"));
+    const oldRecord = path.join(dir, "old-requests.jsonl");
+    const server = startMockServer({ port: 0, recordPath: oldRecord });
+    t.after(() => { server.closeAllConnections(); server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    await once(server, "listening");
+    const runner = new URL("./run-stress.sh", import.meta.url);
+    const result = spawnSync("bash", [runner.pathname, process.execPath, "", "chat"], {
+        env: { ...process.env, MOCK_PORT: String(server.address().port), VAL_ROOT: path.join(dir, "new-run") }, encoding: "utf8", timeout: 8000,
+    });
+    assert.equal(result.error, undefined, result.stderr);
+    assert.equal(result.status, 4, result.stdout + result.stderr);
+    assert.match(result.stderr, /mock vendor server died/);
+    assert.equal(fs.existsSync(oldRecord), false, "the unrelated server never received model traffic");
+});
+
+test("stress startup rejects a changed mock source before starting Codex", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-mock-version-"));
+    try {
+        const result = spawnSync("bash", [new URL("./run-stress.sh", import.meta.url).pathname, process.execPath, "", "chat"], {
+            env: { ...process.env, MOCK_PORT: "0", MOCK_EXPECT_SHA: "0".repeat(64), VAL_ROOT: dir }, encoding: "utf8", timeout: 8000,
+        });
+        assert.equal(result.error, undefined, result.stderr);
+        assert.equal(result.status, 4, result.stdout + result.stderr);
+        assert.match(result.stderr, /source receipt mismatch/);
+        assert.equal(fs.readFileSync(path.join(dir, "mock-record.jsonl"), "utf8"), "");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("chat HTTP responses emit a final usage-only frame only when include_usage is requested", async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acp-mock-usage-"));
+    const server = startMockServer({ port: 0, recordPath: path.join(dir, "requests.jsonl"), maxRequests: 6 });
+    t.after(() => { server.closeAllConnections(); server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    await once(server, "listening");
+    for (const tool of [false, true]) {
+        for (const includeUsage of [undefined, false, true]) {
+            const body = { messages: [user(tool ? "please take_screenshot now" : "pong")], tools: tool ? [screenshotTool] : [] };
+            if (includeUsage !== undefined) body.stream_options = { include_usage: includeUsage };
+            const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/chat/completions`, { method: "POST", body: JSON.stringify(body) });
+            assert.equal(response.status, 200);
+            const raw = await response.text();
+            const frames = raw.split("\n").filter((line) => line.startsWith("data: ") && !line.includes("[DONE]")).map((line) => JSON.parse(line.slice(6)));
+            const usages = frames.filter((frame) => frame.usage);
+            assert.equal(usages.length, includeUsage === true ? 1 : 0);
+            if (includeUsage === true) {
+                assert.equal(frames.at(-1), usages[0]);
+                assert.deepEqual(usages[0].choices, []);
+                assert.deepEqual(usages[0].usage, { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 });
+            }
+        }
+    }
 });
 
 // ---------------------------------------------------------------------------

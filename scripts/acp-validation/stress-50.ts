@@ -504,7 +504,9 @@ function startAgent(): AgentHandle {
     const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
         cwd: REPO,
         env: {
-            ...process.env,
+            // Offline fixtures own provider routing; an inherited NUWAX
+            // environment must not bypass the mock's endpoint and budget.
+            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_"))),
             CODEX_HOME: codexHome,
             APP_SERVER_LOGS: logsDir,
             // The wrapper's checkAuthorization() asks the app-server for an

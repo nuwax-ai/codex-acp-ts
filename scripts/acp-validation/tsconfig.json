@@ -4,6 +4,6 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["acp-mock-validation-driver.ts", "stress-50.ts"],
+  "include": ["acp-mock-validation-driver.ts", "stress-50.ts", "restored-usage.ts"],
   "exclude": []
 }

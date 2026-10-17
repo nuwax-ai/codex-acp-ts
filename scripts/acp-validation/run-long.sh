@@ -17,8 +17,16 @@ OUTDIR="${3:-/tmp/acp-long-run-$(date +%Y%m%d-%H%M%S)}"
 BUDGET_S="${LONG_RUN_BUDGET_S:-15300}"
 MIN_ROUNDS="${LONG_RUN_MIN_ROUNDS:-200}"
 mkdir -p "$OUTDIR"
+MOCK_EXPECT_SHA="$(node - "$SCRIPT_DIR/mock-vendor-server.mjs" <<'JS'
+const fs = require("node:fs");
+const crypto = require("node:crypto");
+console.log(crypto.createHash("sha256").update(fs.readFileSync(process.argv[2])).digest("hex"));
+JS
+)" || exit 4
+export MOCK_EXPECT_SHA
+printf '%s\n' "$MOCK_EXPECT_SHA" > "$OUTDIR/mock-source-sha256.txt"
 STARTED=$(date +%s)
-echo "long-run start $(date -Is) budget=${BUDGET_S}s min_rounds=$MIN_ROUNDS out=$OUTDIR" | tee "$OUTDIR/driver.log"
+echo "long-run start $(date -u +%Y-%m-%dT%H:%M:%SZ) budget=${BUDGET_S}s min_rounds=$MIN_ROUNDS out=$OUTDIR" | tee "$OUTDIR/driver.log"
 
 batch=0
 total_rounds=0
@@ -34,11 +42,9 @@ while :; do
   batch=$((batch + 1))
   echo "=== batch $batch at +${elapsed}s remaining ${remaining}s rounds $total_rounds ===" | tee -a "$OUTDIR/driver.log"
   LOG="$OUTDIR/batch-$batch.log"
-  # A fresh port per batch: the fixed default port intermittently fails to
-  # rebind while the previous batch's mock is still tearing down
-  # (EADDRINUSE observed after dozens of consecutive batches).
-  MOCK_PORT=$((20000 + (RANDOM % 20000)))
-  if MOCK_PORT="$MOCK_PORT" bash "$SCRIPT_DIR/run-stress.sh" "$CODEX_PATH" "$EXPECT_SHA" ALL >"$LOG" 2>&1; then
+  # Let the OS reserve a free port for each wire. Picking a random number
+  # does not reserve it, and can collide with an unrelated listening server.
+  if MOCK_PORT=0 bash "$SCRIPT_DIR/run-stress.sh" "$CODEX_PATH" "$EXPECT_SHA" ALL >"$LOG" 2>&1; then
     # Each wire prints one "summary: P/R rounds passed" line; count the
     # run side of every wire summary in this batch.
     batch_rounds=$(grep -oE '[0-9]+/[0-9]+ rounds passed' "$LOG" | awk -F'[/ ]' '{s+=$2} END {print s+0}')

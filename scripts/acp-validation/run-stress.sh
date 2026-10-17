@@ -44,18 +44,26 @@ fi
 if [ "$WIRE_SCOPE" = "ALL" ]; then
     OVERALL=0
     for WIRE in chat responses anthropic; do
-        "$0" "$CODEX_PATH" "$EXPECT_SHA" "$WIRE" || OVERALL=1
+        if [ -n "${VAL_ROOT:-}" ]; then
+            VAL_ROOT="$VAL_ROOT/$WIRE" "$0" "$CODEX_PATH" "$EXPECT_SHA" "$WIRE" || OVERALL=1
+        else
+            "$0" "$CODEX_PATH" "$EXPECT_SHA" "$WIRE" || OVERALL=1
+        fi
     done
     exit "$OVERALL"
 fi
 
 VAL_ROOT="${VAL_ROOT:-$(mktemp -d /tmp/acp-val-stress.XXXXXX)}"
+mkdir -p "$VAL_ROOT"
 MOCK_RECORD_PATH="$VAL_ROOT/mock-record.jsonl"
+MOCK_READY_PATH="$VAL_ROOT/mock-ready.json"
+export MOCK_READY_PATH
+rm -f "$MOCK_READY_PATH"
 # Fresh ground-truth file per run: shot-server appends
 # {ts, mcpCallId, color, event:start|complete} records the driver verifies
 # tool-image rounds against.
 SHOT_TRUTH_PATH="$VAL_ROOT/shot-truth.jsonl"
-MOCK_PORT="${MOCK_PORT:-47713}"
+MOCK_PORT="${MOCK_PORT:-0}"
 export MOCK_RECORD_PATH MOCK_PORT SHOT_TRUTH_PATH
 : > "$MOCK_RECORD_PATH"
 : > "$SHOT_TRUTH_PATH"
@@ -73,18 +81,30 @@ export CODEX_PATH
 
 node "$SCRIPT_DIR/mock-vendor-server.mjs" > "$VAL_ROOT/mock-server.log" 2>&1 &
 MOCK_PID=$!
-cleanup() { kill "$MOCK_PID" 2>/dev/null || true; }
+cleanup() { kill "$MOCK_PID" 2>/dev/null || true; wait "$MOCK_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 MOCK_READY=0
 for _ in $(seq 1 50); do
-    if curl --fail -s -o /dev/null "http://127.0.0.1:${MOCK_PORT}/health" 2>/dev/null; then
-        MOCK_READY=1
-        break
-    fi
     if ! kill -0 "$MOCK_PID" 2>/dev/null; then
         echo "mock vendor server died:" >&2
         cat "$VAL_ROOT/mock-server.log" >&2
         exit 4
+    fi
+    if [ -s "$MOCK_READY_PATH" ]; then
+        MOCK_PORT="$(node - "$MOCK_READY_PATH" "$MOCK_PID" "${MOCK_EXPECT_SHA:-}" <<'JS'
+const fs = require("node:fs");
+const [file, pid, expected] = process.argv.slice(2);
+const ready = JSON.parse(fs.readFileSync(file, "utf8"));
+if (ready.pid !== Number(pid) || !Number.isInteger(ready.port) || ready.port < 1 || ready.port > 65535 || (expected && ready.mockSha256 !== expected)) process.exit(1);
+console.log(ready.port);
+JS
+)" || { echo "mock owner/source receipt mismatch" >&2; exit 4; }
+        export MOCK_PORT
+        export VAL_BASE_URL="http://127.0.0.1:${MOCK_PORT}/v1"
+        export MOCK_STATS_URL="http://127.0.0.1:${MOCK_PORT}/stats"
+        echo "mock source receipt: $(cat "$MOCK_READY_PATH")"
+        MOCK_READY=1
+        break
     fi
     sleep 0.2
 done
