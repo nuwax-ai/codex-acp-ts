@@ -502,6 +502,20 @@ export function selectResponse(parsed, screenshotToolCalls = 0, wireHint, toolBu
         }
         return { kind: "tool", name };
     }
+    if (/run the shell marker command/i.test(userText)) {
+        const name = view.toolNames.find((tool) => tool === "exec_command");
+        if (!name) return { kind: "missing-tool", text: "mock vendor: shell tool is not advertised" };
+        // Once the exec_command result is back in the tail, close the turn.
+        const tail = String(view.tailAfterLastUser ?? "");
+        if (tail.includes('"role":"tool"') || tail.includes("function_call_output")) {
+            return { kind: "ping", text: "pong" };
+        }
+        return {
+            kind: "tool",
+            name,
+            args: JSON.stringify({ cmd: "printf shell-sandbox-ok > /tmp/probe-ws/marker.txt" }),
+        };
+    }
     if (userText.includes("pong")) return { kind: "ping", text: "pong" };
     return { kind: "unscripted", text: "mock vendor: no scripted answer for this request" };
 }
@@ -717,8 +731,8 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             }
             res.writeHead(200, sseHeaders);
             if (response.kind === "tool") {
-                screenshotToolCalls += 1;
-                res.end(toolCallResponse(wire, response.name, "{}"));
+                if (response.name === "mcp__screenshots__take_screenshot") screenshotToolCalls += 1;
+                res.end(toolCallResponse(wire, response.name, response.args ?? "{}"));
             } else {
                 if (response.kind === "image" && response.imagePayload) {
                     answeredImages.set(response.imagePayload, screenshotToolCalls);
