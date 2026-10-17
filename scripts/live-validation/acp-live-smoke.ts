@@ -151,7 +151,11 @@ async function main() {
             "reload initialize",
         );
         const loaded = await withTimeout(
-            reload.agent.request(methods.agent.session.load as any, { sessionId }),
+            reload.agent.request(methods.agent.session.load as any, {
+                sessionId,
+                cwd: VAL_ROOT,
+                mcpServers: [],
+            }),
             60_000,
             "session/load",
         );

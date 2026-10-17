@@ -31,6 +31,7 @@ log() { echo "[$(date -u +%FT%TZ)] $*"; }
 ATTEMPTS=0
 count_attempt() { # n class vendor wire detail
     ATTEMPTS=$((ATTEMPTS + $1))
+    set -- "$1" "$2" "$3" "$4" "${5:-}"
     printf '%s\n' "{\"ts\":\"$(date -u +%FT%TZ)\",\"attempts\":$1,\"total\":$ATTEMPTS,\"class\":\"$2\",\"vendor\":\"$3\",\"wire\":\"$4\",\"detail\":\"$5\"}" >> "$LEDGER"
     log "attempt +$1 ($2/$3/$4) -> total $ATTEMPTS/$BUDGET :: $5"
     [ "$ATTEMPTS" -lt "$BUDGET" ] || { log "HARD BUDGET STOP at $ATTEMPTS"; exit 10; }
@@ -47,8 +48,9 @@ vendor_field() { grep -E "^LIVE_$1_$2=" "$ENV_FILE" | head -1 | cut -d= -f2-; }
 # env for one exec invocation: vendor, wire, home, extra pairs after --
 exec_env() { # vendor wire home
     local vendor="$1" wire="$2" home="$3"
-    local base model key
-    base="$(vendor_field "$vendor" "${wire^^}_URL")"
+    local wire_uc base model key
+    wire_uc="$(printf '%s' "$wire" | tr '[:lower:]' '[:upper:]')"
+    base="$(vendor_field "$vendor" "${wire_uc}_URL")"
     model="$(vendor_field "$vendor" MODEL)"
     key="$(vendor_field "$vendor" API_KEY)"
     [ -n "$base" ] || { echo "MISSING-URL-$vendor-$wire" >&2; return 1; }
@@ -123,7 +125,7 @@ if grep -q "^/v1/chat/completions$" "$VAL_ROOT/sink.log" 2>/dev/null; then
 else
     record env-determinism 0 "sink never hit"
 fi
-count_attempt 0 preflight local "sink (no real request)"
+count_attempt 0 preflight local none "sink check - no real request"
 
 # --- Wire basics: chat via GLM, anthropic via STEP, responses via GLM,
 # --- backup-provider switch to MIMO (chat).
