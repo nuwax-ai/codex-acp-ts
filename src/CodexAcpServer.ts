@@ -2041,9 +2041,26 @@ export class CodexAcpServer {
             () => sessionState.sessionTitleSource,
             () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
         );
+        const replacedState = this.sessions.get(sessionId);
         this.installSessionState(sessionState);
         subscribed = false;
         this.applyRestoredTokenUsage(sessionState);
+        if (
+            sessionState.lastTokenUsage === null &&
+            replacedState !== undefined &&
+            (replacedState.lastTokenUsage !== null || replacedState.totalTokenUsage !== null)
+        ) {
+            // A warm (same-process) resume is metadata-only on the app-server
+            // side, so no restored-snapshot replay arrives for it; the load
+            // still replaces the session state, and the client would lose the
+            // cumulative usage numbers. Inherit the replaced state's live
+            // ledger so the reload restores the same numbers a fresh-process
+            // load replays, and publish them with the same usage_update shape.
+            sessionState.lastTokenUsage = replacedState.lastTokenUsage;
+            sessionState.totalTokenUsage = replacedState.totalTokenUsage;
+            sessionState.modelContextWindow = replacedState.modelContextWindow;
+            this.publishSessionUsageUpdate(sessionState);
+        }
 
         if (requestedMcpServers.length > 0 && mcpServerStartupVersion !== null) {
             this.pendingMcpStartupSessions.set(sessionId, {
@@ -2083,6 +2100,11 @@ export class CodexAcpServer {
         sessionState.lastTokenUsage = toTokenCount(restored.tokenUsage.last);
         sessionState.totalTokenUsage = toTokenCount(restored.tokenUsage.total);
         sessionState.modelContextWindow = restored.tokenUsage.modelContextWindow;
+        this.publishSessionUsageUpdate(sessionState);
+    }
+
+    /** Publishes the session's current usage numbers as one usage_update. */
+    private publishSessionUsageUpdate(sessionState: SessionState): void {
         const used = sessionState.lastTokenUsage?.totalTokens;
         const size = sessionState.modelContextWindow;
         if (used == null || size == null || size <= 0) {
