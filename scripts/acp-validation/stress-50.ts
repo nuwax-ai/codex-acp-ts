@@ -328,7 +328,33 @@ async function waitUntilGone(handle: AgentHandle): Promise<TrackedProc[]> {
         });
         if (survivors.length === 0) return [];
         const deadline = survivors.every(isUpdateCheck) ? UPDATE_CHECK_DEADLINE : SERVING_DEADLINE;
-        if (Date.now() >= deadline) return survivors;
+        if (Date.now() >= deadline) {
+            if (survivors.every(isUpdateCheck)) {
+                // Round-owned update-check orphans: when the app-server is
+                // killed before its own 30s timeout fires, the git children
+                // lose the only process that would kill them and can hang on
+                // a black-holed network until the TCP stack gives up. They
+                // belong to THIS round's tree, so reap them here instead of
+                // waiting minutes.
+                for (const proc of survivors) {
+                    try {
+                        process.kill(proc.pid, "SIGKILL");
+                    } catch {
+                        // already gone
+                    }
+                }
+                await new Promise((r) => setTimeout(r, 1000));
+                const table2 = psTable();
+                const still = table2
+                    ? survivors.filter((proc) => {
+                        const current = table2.get(proc.pid);
+                        return current !== undefined && current.lstart === proc.lstart;
+                    })
+                    : [];
+                return still;
+            }
+            return survivors;
+        }
         await new Promise((r) => setTimeout(r, 500));
     }
 }
