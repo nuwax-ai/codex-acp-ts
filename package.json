@@ -45,7 +45,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p scripts/acp-validation/tsconfig.json && tsc --noEmit -p scripts/live-validation/tsconfig.json",
     "test:acp-validation": "node --import tsx --test scripts/acp-validation/mock-vendor-server.test.mjs scripts/acp-validation/stress-contracts.test.mjs",
-    "test:live-budget": "node --import tsx --test scripts/live-validation/budget-gateway.test.mjs scripts/live-validation/assistant-text.test.mjs",
+    "test:live-budget": "node --import tsx --test scripts/live-validation/budget-gateway.test.mjs scripts/live-validation/assistant-text.test.mjs scripts/live-validation/workflow-contracts.test.mjs",
     "codex-test": "tsx .claude/skills/run-codex/scripts/run-codex-test.ts"
   },
   "homepage": "https://github.com/agentclientprotocol/codex-acp#readme",

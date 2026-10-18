@@ -114,7 +114,12 @@ def provider_env(origin, token, vendor, wire, home, max_output):
         raise ValidationError("gateway returned invalid provider configuration")
     # Vendor secrets and a pre-existing direct NUWAX endpoint must not reach
     # child processes. The only API key below is the local gateway capability.
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("NUWAX_", "LIVE_", "OPENAI_", "ANTHROPIC_"))}
+    provider_overrides = {
+        "MODEL_PROVIDER", "CODEX_CONFIG", "CODEX_BASE_URL", "CODEX_API_KEY", "CODEX_API_PROTOCOL",
+        "CODEX_WIRE_API", "CODEX_PROVIDER_ID", "CODEX_PROVIDER_NAME", "CODEX_MODEL", "CODEX_MODEL_CONTEXT_WINDOW",
+    }
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("NUWAX_", "LIVE_", "OPENAI_", "ANTHROPIC_")) and key not in provider_overrides}
     env.update({
         "CODEX_HOME": str(home), "NUWAX_BASE_URL": expected, "NUWAX_MODEL": config["model"],
         "NUWAX_WIRE_API": wire, "NUWAX_API_KEY": token, "NUWAX_MAX_OUTPUT_TOKENS": str(max_output),

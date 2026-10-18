@@ -8,7 +8,7 @@
  * fresh adapter process -> one more real tool call.
  *
  * Verifies along the way: tool_call/tool_result pairing, no giant base64
- * text parts (images stay structured), compaction reduces reported usage,
+ * text parts (images stay structured), compaction completes and reports usage,
  * exactly-one usage_update after cold load with no idle duplicates, and no
  * surviving codex descendants after the adapter exits.
  *
@@ -16,11 +16,15 @@
  * dummy-key auth) and SHOT_TRUTH_PATH; this file never sees or prints a
  * real key. Prints `WORKFLOW-PASS <detail>` on success.
  */
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { requireBudgetGateway } from "./gateway-contract.js";
 import { FinalAssistantText } from "./assistant-text.js";
+import {randomUUID} from "node:crypto";
+import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, isModelDelta, latestUsageAfter,
+    processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath,
+    type ProcessIdentity, type ToolCall, type ToolUpdate} from "./workflow-contracts.js";
 import { Readable, Writable } from "node:stream";
 import {
     PROTOCOL_VERSION,
@@ -45,45 +49,23 @@ const log = (line: string) => console.log(`[${new Date().toISOString()}] ${line}
 const BASE64_RUN = /[A-Za-z0-9+/]{600,}/;
 
 interface Observation {
-    toolCalls: { id: string; tool: string }[];
-    toolCallUpdates: { id: string; status?: string }[];
+    toolCalls: ToolCall[];
+    toolCallUpdates: ToolUpdate[];
     usageUpdates: { used: number; size: number }[];
     textParts: string[];
+    imageToolIds: string[];
     sawDelta: boolean;
     errors: string[];
 }
 
 function newObservation(): Observation {
-    return { toolCalls: [], toolCallUpdates: [], usageUpdates: [], textParts: [], sawDelta: false, errors: [] };
+    return { toolCalls: [], toolCallUpdates: [], usageUpdates: [], textParts: [], imageToolIds: [], sawDelta: false, errors: [] };
 }
 
 function summarize(obs: Observation): string {
     const tools = obs.toolCalls.map((t) => t.tool).join(",");
     const usage = obs.usageUpdates.map((u) => `${u.used}/${u.size}`).join(" ");
     return `tools=[${tools}] usage=[${usage}]`;
-}
-
-function descendantsOf(pid: number): number[] {
-    try {
-        const table = execSync("ps -eo pid,ppid --no-headers", { encoding: "utf8" })
-            .split("\n").map((l) => l.trim().split(/\s+/).map(Number))
-            .filter((p) => p.length === 2 && Number.isFinite(p[0]!) && Number.isFinite(p[1]!))
-            .map((p) => [p[0]!, p[1]!] as const);
-        const out: number[] = [];
-        const frontier = [pid];
-        while (frontier.length) {
-            const cur = frontier.pop()!;
-            for (const [p, ppid] of table) {
-                if (ppid === cur && !out.includes(p)) {
-                    out.push(p);
-                    frontier.push(p);
-                }
-            }
-        }
-        return out;
-    } catch {
-        return [];
-    }
 }
 
 interface AgentHandle {
@@ -93,6 +75,8 @@ interface AgentHandle {
     text: () => string;
     resetText: () => void;
     stderrTail: () => string;
+    tracked: Map<number, ProcessIdentity>;
+    stopped: boolean;
 }
 
 function startAgent(): AgentHandle {
@@ -125,22 +109,19 @@ function startAgent(): AgentHandle {
             const update = ctx.params?.update;
             if (!update) return;
             text.add(update);
-            if (update.sessionUpdate === "agent_message_chunk" && update.content?.type === "text") {
-                obs.sawDelta = true;
-            }
+            if (isModelDelta(update)) obs.sawDelta = true;
             if (update.sessionUpdate === "usage_update") {
                 obs.usageUpdates.push({ used: update.used, size: update.size });
             }
             if (update.sessionUpdate === "tool_call") {
-                obs.toolCalls.push({ id: update.toolCallId, tool: update.title ?? "" });
+                obs.toolCalls.push({ id: update.toolCallId, tool: update.title ?? "", kind: update.kind, status: update.status });
             }
             if (update.sessionUpdate === "tool_call_update") {
                 obs.toolCallUpdates.push({ id: update.toolCallId, status: typeof update.status === "string" ? update.status : undefined });
             }
-            const content = update.content ?? update.update?.content;
-            if (content?.type === "text" && typeof content.text === "string") {
-                obs.textParts.push(content.text);
-            }
+            const content = inspectContent(update.content ?? update.update?.content);
+            obs.textParts.push(...content.texts);
+            if (content.images > 0 && typeof update.toolCallId === "string") obs.imageToolIds.push(update.toolCallId);
         })
         .onRequest(methods.client.session.requestPermission, (ctx: any) => {
             const options = ctx.params?.options ?? [];
@@ -149,24 +130,11 @@ function startAgent(): AgentHandle {
                 ? { outcome: { outcome: "selected", optionId: allow.optionId } }
                 : { outcome: { outcome: "cancelled" } };
         })
-        .onRequest(methods.client.fs.readTextFile, (ctx: any) => {
-            const p = String(ctx?.params?.path ?? "");
-            if (!p.startsWith(work)) return { content: "" };
-            try {
-                return { content: fs.readFileSync(p, "utf8") };
-            } catch {
-                return { content: "" };
-            }
-        })
+        .onRequest(methods.client.fs.readTextFile, (ctx: any) => ({
+            content: fs.readFileSync(workspacePath(work, String(ctx?.params?.path ?? "")), "utf8"),
+        }))
         .onRequest(methods.client.fs.writeTextFile, (ctx: any) => {
-            const p = String(ctx?.params?.path ?? "");
-            if (p.startsWith(work)) {
-                try {
-                    fs.writeFileSync(p, String(ctx?.params?.content ?? ""));
-                } catch {
-                    /* best effort */
-                }
-            }
+            fs.writeFileSync(workspacePath(work, String(ctx?.params?.path ?? "")), String(ctx?.params?.content ?? ""));
             return {};
         })
         .connect(stream);
@@ -177,6 +145,7 @@ function startAgent(): AgentHandle {
         text: () => text.text(),
         resetText: () => text.reset(),
         stderrTail: () => stderrTail.join("\n"),
+        tracked: new Map(), stopped: false,
     };
 }
 
@@ -190,7 +159,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 async function prompt(handle: AgentHandle, sessionId: string, text: string, timeoutMs = 240_000) {
     handle.resetText();
-    return withTimeout(
+    beginPrompt(handle.obs);
+    if (handle.child.pid) rememberFamily(handle.child.pid, processTable(), handle.tracked);
+    const result = await withTimeout(
         handle.agent.request(methods.agent.session.prompt as any, {
             sessionId,
             prompt: [{ type: "text", text }],
@@ -198,6 +169,8 @@ async function prompt(handle: AgentHandle, sessionId: string, text: string, time
         timeoutMs,
         `prompt(${text.slice(0, 24)}…)`,
     );
+    if (handle.child.pid) rememberFamily(handle.child.pid, processTable(), handle.tracked);
+    return result;
 }
 
 function normalize(s: string): string {
@@ -217,12 +190,31 @@ function assertFile(file: string, expected: string, label: string) {
     if (actual !== expected) throw new Error(`${label}: ${file} content ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
 }
 
-function readTruth(): { kind: string }[] {
+function readTruth(): {event?: string; color?: string}[] {
+    if (!fs.existsSync(SHOT_TRUTH_PATH)) return [];
+    return fs.readFileSync(SHOT_TRUTH_PATH, "utf8").split("\n").filter(line => line.trim()).map(line => JSON.parse(line));
+}
+
+async function stopAgent(handle: AgentHandle): Promise<void> {
+    if (handle.stopped) return;
     try {
-        return fs.readFileSync(SHOT_TRUTH_PATH, "utf8").split("\n")
-            .filter((l) => l.trim()).map((l) => JSON.parse(l));
-    } catch {
-        return [];
+        if (handle.child.pid) rememberFamily(handle.child.pid, processTable(), handle.tracked);
+        handle.child.kill("SIGKILL");
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline) {
+            const survivors = survivingFamily(handle.tracked, processTable());
+            if (survivors.length === 0) return;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        throw new Error("owned processes survived adapter shutdown deadline");
+    } finally {
+        // Preserve a failed deadline/probe result even when cleanup succeeds.
+        handle.stopped = true;
+        handle.child.kill("SIGKILL");
+        const table = processTable();
+        for (const survivor of survivingFamily(handle.tracked, table)) {
+            try { process.kill(survivor.pid, "SIGKILL"); } catch { /* already exited */ }
+        }
     }
 }
 
@@ -267,6 +259,7 @@ async function main() {
         }
     };
 
+    for (const marker of ["note.txt", "cmd-marker.txt", "pc-marker.txt", "resumed-marker.txt"]) fs.rmSync(path.join(work, marker), {force: true});
     const handle = startAgent();
     let sessionId = "";
     try {
@@ -288,47 +281,56 @@ async function main() {
         });
 
         // 2. Write a project file through the agent's tools.
+        const writeCursor = handle.obs.toolCalls.length;
         const p2 = await prompt(handle, sessionId,
             "在工作目录创建文件 note.txt，内容为 nuwax-workflow，完成后只回复：文件完成");
         record("tool-file-write", () => {
             if (p2?.stopReason !== "end_turn") throw new Error(`stopReason=${p2?.stopReason}`);
+            requireCompletedTool(handle.obs.toolCalls.slice(writeCursor), handle.obs.toolCallUpdates, call => call.kind !== "think");
             assertFile("note.txt", "nuwax-workflow", "tool-file-write");
         });
 
         // 3. Read it back through the model (tool result must reach the wire).
-        const p3 = await prompt(handle, sessionId, "读取 note.txt 的内容，然后只回复文件内容本身");
+        const readSecret = `read-${randomUUID()}`;
+        fs.writeFileSync(path.join(work, "note.txt"), readSecret);
+        const readCursor = handle.obs.toolCalls.length;
+        const p3 = await prompt(handle, sessionId, "读取 note.txt 的当前内容，然后只回复文件内容本身");
         record("tool-file-read", () => {
             if (p3?.stopReason !== "end_turn") throw new Error(`stopReason=${p3?.stopReason}`);
-            assertContains(handle.text(), "nuwax-workflow", "tool-file-read");
+            requireCompletedTool(handle.obs.toolCalls.slice(readCursor), handle.obs.toolCallUpdates, call => call.kind === "read" || call.kind === "execute");
+            assertContains(handle.text(), readSecret, "tool-file-read");
         });
 
         // 4. Real shell command execution.
+        const shellCursor = handle.obs.toolCalls.length;
         const p4 = await prompt(handle, sessionId,
             "执行 shell 命令：printf shell-ok > cmd-marker.txt ，完成后只回复：命令完成");
         record("tool-shell", () => {
             if (p4?.stopReason !== "end_turn") throw new Error(`stopReason=${p4?.stopReason}`);
+            requireCompletedTool(handle.obs.toolCalls.slice(shellCursor), handle.obs.toolCallUpdates, call => call.kind === "execute" && call.tool.includes("cmd-marker.txt"));
             assertFile("cmd-marker.txt", "shell-ok", "tool-shell");
         });
 
         // 5. MCP screenshot: typed tool round-trip, no base64 blob in text.
         const truthBefore = readTruth().length;
+        const shotCursor = handle.obs.toolCalls.length;
+        const imagesBefore = handle.obs.imageToolIds.length;
         const p5 = await prompt(handle, sessionId,
             "调用 take_screenshot 工具恰好一次，然后只回复你看到的画面主色（一个词）");
         log(`screenshot step answer: ${JSON.stringify(handle.text().slice(0, 200))}`);
         log(`screenshot step toolCalls: ${JSON.stringify(handle.obs.toolCalls)}`);
         record("mcp-screenshot", () => {
             if (p5?.stopReason !== "end_turn") throw new Error(`stopReason=${p5?.stopReason}`);
-            const shots = readTruth().slice(truthBefore);
-            const completed = shots.filter((s: any) => s?.event === "complete").length;
-            if (completed < 1) {
-                throw new Error(`take_screenshot never completed at the MCP server ledger: ${JSON.stringify(shots)}`);
-            }
+            assertScreenshot(readTruth().slice(truthBefore), handle.text(), handle.obs.imageToolIds.slice(imagesBefore),
+                handle.obs.toolCalls.slice(shotCursor), handle.obs.toolCallUpdates);
             const blob = handle.obs.textParts.find((t) => BASE64_RUN.test(t));
             if (blob) throw new Error("a text part carried a giant base64 run — image leaked into plain text");
             if (!handle.text().trim()) throw new Error("no final answer about the color");
         });
 
         // 6. Interrupt a long generation mid-stream.
+        handle.resetText();
+        beginPrompt(handle.obs);
         const essay = withTimeout(
             handle.agent.request(methods.agent.session.prompt as any, {
                 sessionId,
@@ -337,6 +339,7 @@ async function main() {
             180_000,
             "essay",
         );
+        void essay.catch(() => {}); // The explicit await below still reports failures after the handshake.
         const deadline = Date.now() + 90_000;
         while (!handle.obs.sawDelta && Date.now() < deadline) {
             await new Promise((resolve) => setTimeout(resolve, 100));
@@ -359,41 +362,35 @@ async function main() {
         const beforeCompact = handle.obs.usageUpdates.at(-1);
         if (!beforeCompact) throw new Error("no usage_update observed before compaction");
 
-        // 8. Compact and require the reported context to shrink.
+        // 8. A completed compaction and fresh usage; report the observed reduction.
+        const compactUsageCursor = handle.obs.usageUpdates.length;
+        const compactToolCursor = handle.obs.toolCalls.length;
         const p8 = await prompt(handle, sessionId, "/compact", 240_000);
-        const afterCompactWait = await waitForUsage(handle, 20_000);
+        const afterCompactWait = await waitForUsage(handle, compactUsageCursor, 20_000);
         record("compact", () => {
             if (p8?.stopReason !== "end_turn") throw new Error(`stopReason=${p8?.stopReason}`);
             if (!afterCompactWait) throw new Error("no usage_update after compaction");
-            if (afterCompactWait.used >= beforeCompact.used) {
-                throw new Error(`compaction did not shrink usage: ${afterCompactWait.used}/${afterCompactWait.size} vs ${beforeCompact.used}/${beforeCompact.size}`);
-            }
+            requireCompletedTool(handle.obs.toolCalls.slice(compactToolCursor), handle.obs.toolCallUpdates, call => call.tool === "Compact conversation");
+            if (!Number.isFinite(afterCompactWait.used) || afterCompactWait.used < 0 || !Number.isFinite(afterCompactWait.size) || afterCompactWait.size <= 0) throw new Error("invalid post-compaction usage");
+            return `usage before=${beforeCompact.used}/${beforeCompact.size}, after=${afterCompactWait.used}/${afterCompactWait.size}, shrank=${afterCompactWait.used < beforeCompact.used}`;
         });
 
         // 9. Tools still work after compaction.
+        const compactShellCursor = handle.obs.toolCalls.length;
+        const shutdownUsageCursor = handle.obs.usageUpdates.length;
         const p9 = await prompt(handle, sessionId,
             "执行 shell 命令：printf post-compact > pc-marker.txt ，完成后只回复：压缩后完成");
         record("tool-after-compact", () => {
             if (p9?.stopReason !== "end_turn") throw new Error(`stopReason=${p9?.stopReason}`);
+            requireCompletedTool(handle.obs.toolCalls.slice(compactShellCursor), handle.obs.toolCallUpdates, call => call.kind === "execute" && call.tool.includes("pc-marker.txt"));
             assertFile("pc-marker.txt", "post-compact", "tool-after-compact");
         });
-        const beforeShutdown = handle.obs.usageUpdates.at(-1)!;
+        const beforeShutdown = latestUsageAfter(handle.obs.usageUpdates, shutdownUsageCursor);
+        if (!beforeShutdown) throw new Error("no authoritative usage before shutdown");
 
         // 10. Shut the adapter down; nothing may survive it.
-        const family = [handle.child.pid!, ...descendantsOf(handle.child.pid!)];
-        handle.child.kill("SIGKILL");
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-        record("shutdown-no-orphans", () => {
-            const survivors = family.filter((pid) => {
-                try {
-                    process.kill(pid, 0);
-                    return true;
-                } catch {
-                    return false;
-                }
-            });
-            if (survivors.length) throw new Error(`processes survived adapter exit: ${survivors.join(",")}`);
-        });
+        await stopAgent(handle);
+        record("shutdown-no-orphans", () => {});
 
         // 11. Cold resume on a fresh adapter process.
         const reload = startAgent();
@@ -407,14 +404,8 @@ async function main() {
             );
             if (!loaded) throw new Error("session/load failed");
             await new Promise((resolve) => setTimeout(resolve, 4000));
-            const restored = reload.obs.usageUpdates.at(-1);
             record("cold-resume-usage", () => {
-                if (!restored) throw new Error("no usage_update after cold load");
-                const delivered = reload.obs.usageUpdates.length - usageCountAtLoad;
-                if (delivered > 2) throw new Error(`usage_update spammed after load: ${delivered} notifications`);
-                if (restored.used < beforeShutdown.used) {
-                    throw new Error(`restored usage ${restored.used} lost history vs ${beforeShutdown.used}`);
-                }
+                assertRestoredUsage(beforeShutdown, reload.obs.usageUpdates.slice(usageCountAtLoad));
             });
             // No further usage duplicates while idle.
             const idleCount = reload.obs.usageUpdates.length;
@@ -422,25 +413,24 @@ async function main() {
             if (reload.obs.usageUpdates.length !== idleCount) throw new Error("usage_update duplicated while idle");
 
             // 12. One more real tool call after the cold resume.
+            const resumedShellCursor = reload.obs.toolCalls.length;
             const p10 = await prompt(reload, sessionId,
                 "执行 shell 命令：printf resumed-ok > resumed-marker.txt ，完成后只回复：恢复完成");
             record("tool-after-resume", () => {
                 if (p10?.stopReason !== "end_turn") throw new Error(`stopReason=${p10?.stopReason}`);
+                requireCompletedTool(reload.obs.toolCalls.slice(resumedShellCursor), reload.obs.toolCallUpdates, call => call.kind === "execute" && call.tool.includes("resumed-marker.txt"));
                 assertFile("resumed-marker.txt", "resumed-ok", "tool-after-resume");
             });
 
             const blob2 = reload.obs.textParts.find((t) => BASE64_RUN.test(t));
             if (blob2) throw new Error("post-resume text part carried a giant base64 run");
 
-            reload.child.kill();
-        } catch (error) {
-            reload.child.kill();
-            throw error;
+        } finally {
+            await stopAgent(reload);
         }
 
         fs.writeFileSync(path.join(VAL_ROOT, "workflow-summary.json"), JSON.stringify({ sessionId, steps }, null, 2));
         console.log(`WORKFLOW-PASS acp daily workflow on ${sessionId}: ${steps.length} steps; ${summarize(handle.obs)}`);
-        process.exit(0);
     } catch (error) {
         console.error(`WORKFLOW-FAIL ${error}`);
         console.error(`last answer: ${JSON.stringify(handle.text().slice(0, 400))}`);
@@ -448,19 +438,22 @@ async function main() {
         console.error(`observed usageUpdates: ${JSON.stringify(handle.obs.usageUpdates)}`);
         console.error(`recent text parts: ${JSON.stringify(handle.obs.textParts.slice(-4).map((t) => t.slice(0, 120)))}`);
         console.error(handle.stderrTail());
-        handle.child.kill();
-        process.exit(1);
+        steps.push({step: "workflow", pass: false, detail: String(error)});
+        process.exitCode = 1;
+    } finally {
+        try { await stopAgent(handle); }
+        finally { fs.writeFileSync(path.join(VAL_ROOT, "workflow-summary.json"), JSON.stringify({sessionId, steps}, null, 2)); }
     }
 }
 
-async function waitForUsage(handle: AgentHandle, ms: number): Promise<{ used: number; size: number } | undefined> {
-    const start = handle.obs.usageUpdates.length;
+async function waitForUsage(handle: AgentHandle, cursor: number, ms: number): Promise<{ used: number; size: number } | undefined> {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
-        if (handle.obs.usageUpdates.length > start) return handle.obs.usageUpdates.at(-1);
+        const usage = latestUsageAfter(handle.obs.usageUpdates, cursor);
+        if (usage) return usage;
         await new Promise((resolve) => setTimeout(resolve, 200));
     }
     return undefined;
 }
 
-void main().catch(() => { console.error("WORKFLOW-FAIL shared budget gateway is required"); process.exitCode = 1; });
+void main().catch(() => { console.error("WORKFLOW-FAIL gateway or cleanup contract failed"); process.exitCode = 1; });

@@ -9,7 +9,7 @@ import threading
 import unittest
 from unittest import mock
 
-from live_support import ValidationError, ensure_vision_fixtures, exec_result, screenshot_result, vision_prompt
+from live_support import ValidationError, ensure_vision_fixtures, exec_result, screenshot_result, vision_prompt, provider_env
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -23,6 +23,32 @@ def transcript(answer="red", image=True, terminal=True, failed=False):
     if failed:
         events.append({"type": "error", "message": "failure after an answer"})
     return "\n".join(json.dumps(event) for event in events)
+
+
+class ProviderEnvironmentContract(unittest.TestCase):
+    def test_conflicting_parent_routes_and_secrets_cannot_escape_the_shared_gateway(self):
+        origin, token = "http://127.0.0.1:54321", "local-gateway-capability"
+        overrides = {
+            "MODEL_PROVIDER": "paid-direct", "CODEX_CONFIG": '{"model_provider":"paid-direct"}',
+            "CODEX_BASE_URL": "https://unmetered.invalid", "CODEX_API_KEY": "private-api-key",
+            "CODEX_API_PROTOCOL": "anthropic", "CODEX_WIRE_API": "responses", "CODEX_PROVIDER_ID": "foreign",
+            "CODEX_PROVIDER_NAME": "foreign", "CODEX_MODEL": "foreign-model", "CODEX_MODEL_CONTEXT_WINDOW": "1000000",
+            "NUWAX_BASE_URL": "https://another-unmetered.invalid", "NUWAX_API_KEY": "private-nuwax-key",
+            "LIVE_FOREIGN_API_KEY": "private-live-key", "OPENAI_API_KEY": "private-openai-key", "ANTHROPIC_API_KEY": "private-anthropic-key",
+            "DEFAULT_AUTH_REQUEST": '{"methodId":"api-key","_meta":{"api-key":{"apiKey":"private-auth-key"}}}',
+        }
+        with mock.patch.dict(os.environ, {**overrides, "CODEX_PATH": "/chosen/codex", "PATH": "/chosen/bin"}, clear=True), mock.patch("live_support.control", return_value={"baseUrl": origin + "/routes/GLM/chat", "model": "test-model"}):
+            env = provider_env(origin, token, "GLM", "chat", Path("/isolated/home"), 2048)
+        self.assertEqual(env["NUWAX_BASE_URL"], origin + "/routes/GLM/chat")
+        self.assertEqual(env["NUWAX_API_KEY"], token)
+        self.assertEqual(json.loads(env["DEFAULT_AUTH_REQUEST"])["_meta"]["api-key"]["apiKey"], token)
+        self.assertEqual(env["CODEX_PATH"], "/chosen/codex")
+        self.assertEqual(env["CODEX_HOME"], "/isolated/home")
+        self.assertEqual(env["PATH"], "/chosen/bin")
+        for key in overrides:
+            if key not in ("NUWAX_BASE_URL", "NUWAX_API_KEY", "DEFAULT_AUTH_REQUEST"):
+                self.assertNotIn(key, env)
+        self.assertNotIn("private-", json.dumps(env))
 
 
 class FinalAnswerContract(unittest.TestCase):
