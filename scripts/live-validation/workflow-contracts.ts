@@ -1,8 +1,10 @@
+import type {CompactionUpdate} from "@agentclientprotocol/sdk";
 import {execFileSync} from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-export type Usage = {used: number; size: number};
+export type Usage = {used: number; size: number; sessionId?: string};
+export type NativeCompaction = {sessionId: string; compactionId: string; status: CompactionUpdate["status"]};
 export type ToolCall = {id: string; tool: string; kind?: string; status?: string};
 export type ToolUpdate = {id: string; status?: string};
 export type ProcessIdentity = {pid: number; ppid: number; started: string};
@@ -67,7 +69,24 @@ export function assertScreenshot(truth: {event?: string; color?: string}[], answ
     if (!colors[color].includes(answer.trim().toLowerCase().replace(/[。.!！]/g, ""))) throw new Error("final assistant color does not match screenshot ground truth");
 }
 
-export function latestUsageAfter(updates: Usage[], cursor: number): Usage | undefined { return updates.slice(cursor).at(-1); }
+export function latestUsageAfter(updates: Usage[], cursor: number, sessionId?: string): Usage | undefined {
+    return updates.slice(cursor).filter(update => sessionId === undefined || update.sessionId === sessionId).at(-1);
+}
+
+/** A manually requested compaction must start and complete after subscription. */
+export function assertNativeCompaction(updates: NativeCompaction[], cursor: number, sessionId: string): void {
+    const oldIds = new Set(updates.slice(0, cursor).filter(update => update.sessionId === sessionId).map(update => update.compactionId));
+    const current = updates.slice(cursor).filter(update => update.sessionId === sessionId);
+    const started = new Set<string>();
+    const completed = new Set<string>();
+    for (const update of current) {
+        if (!update.compactionId || oldIds.has(update.compactionId)) throw new Error("stale compaction identity after the manual compaction cursor");
+        if (update.status === "in_progress" && !started.has(update.compactionId)) started.add(update.compactionId);
+        else if (update.status === "completed" && started.has(update.compactionId) && !completed.has(update.compactionId)) completed.add(update.compactionId);
+        else throw new Error("native compaction did not follow an in_progress to completed lifecycle");
+    }
+    if (started.size !== 1 || completed.size !== 1) throw new Error("no unique current-session native compaction completed");
+}
 
 export function assertRestoredUsage(expected: Usage, updates: Usage[]): void {
     if (updates.length !== 1 || updates[0]?.used !== expected.used || updates[0]?.size !== expected.size) {

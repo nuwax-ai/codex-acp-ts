@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {createMcpToolCallUpdate} from "../../src/CodexToolCallMapper.ts";
-import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, inspectUpdateContent, isModelDelta, latestUsageAfter,
+import {CodexSessionCompactions} from "../../src/CodexSessionCompactions.ts";
+import {assertNativeCompaction, assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, inspectUpdateContent, isModelDelta, latestUsageAfter,
     processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath} from "./workflow-contracts.ts";
 
 test("each new prompt requires its own identified text delta; old text and advisory chunks cannot satisfy cancel", () => {
@@ -124,4 +125,42 @@ test("only the declared MCP content array counts; error metadata and serialized 
         {result: {content: [{type: "text", text: JSON.stringify(image)}]}},
     ]) assert.equal(inspectUpdateContent({rawOutput}).images, 0);
     assert.deepEqual(inspectUpdateContent({rawOutput: {result: {content: [{type: "text", text: "A".repeat(700)}]}}}), {texts: ["A".repeat(700)], images: 0});
+});
+
+
+test("native compaction acceptance matches the actual lifecycle fixture and production tracker", () => {
+    const fixture = fs.readFileSync(new URL("../../src/__tests__/CodexACPAgent/data/session-compaction-lifecycle.json", import.meta.url), "utf8")
+        .trim().split(/\n(?=\{)/).map(value => JSON.parse(value).args[0])
+        .filter(notification => notification.update.sessionUpdate === "compaction_update");
+    const tracker = new CodexSessionCompactions();
+    const production = [tracker.start("compaction-session", "turn", "compaction-item"), tracker.complete("compaction-session", "turn", "compaction-item")];
+    assert.deepEqual(production, fixture.map(notification => notification.update));
+    const observed = fixture.map(({sessionId, update}) => ({sessionId, compactionId: update.compactionId, status: update.status}));
+    assert.doesNotThrow(() => assertNativeCompaction(observed, 0, "compaction-session"));
+    assert.throws(() => assertNativeCompaction(observed, 0, "other-session"));
+    assert.throws(() => assertNativeCompaction(observed, observed.length, "compaction-session"));
+    assert.throws(() => assertNativeCompaction(observed, 1, "compaction-session"));
+    assert.throws(() => assertNativeCompaction([...observed, ...observed], observed.length, "compaction-session"));
+    assert.throws(() => assertNativeCompaction([{...observed[0], compactionId: "current"}, observed[1]], 0, "compaction-session"));
+});
+
+test("failed or interrupted production compactions cannot count as successful completion", () => {
+    for (const status of ["failed", "cancelled"]) {
+        const tracker = new CodexSessionCompactions();
+        const started = tracker.start("main", "turn", "item");
+        const [ended] = tracker.finishTurn("main", "turn", status, "test failure");
+        const updates = [started, ended].map(update => ({sessionId: "main", compactionId: update.compactionId, status: update.status}));
+        assert.throws(() => assertNativeCompaction(updates, 0, "main"));
+        assert.throws(() => assertNativeCompaction([...updates, {sessionId: "main", compactionId: "item", status: "completed"}], 0, "main"));
+    }
+    assert.throws(() => assertNativeCompaction([{sessionId: "main", compactionId: "item", status: "in_progress"}, {sessionId: "main", compactionId: "item", status: "interrupted"}], 0, "main"));
+});
+
+test("a different session's fresh usage cannot satisfy the compaction usage cursor", () => {
+    const updates = [{used: 1000, size: 32000, sessionId: "main"}];
+    const cursor = updates.length;
+    updates.push({used: 400, size: 32000, sessionId: "child"});
+    assert.equal(latestUsageAfter(updates, cursor, "main"), undefined);
+    updates.push({used: 500, size: 32000, sessionId: "main"});
+    assert.deepEqual(latestUsageAfter(updates, cursor, "main"), {used: 500, size: 32000, sessionId: "main"});
 });

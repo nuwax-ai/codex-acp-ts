@@ -22,9 +22,9 @@ import path from "node:path";
 import { requireBudgetGateway } from "./gateway-contract.js";
 import { FinalAssistantText } from "./assistant-text.js";
 import {randomUUID} from "node:crypto";
-import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectUpdateContent, isModelDelta, latestUsageAfter,
+import {assertNativeCompaction, assertRestoredUsage, assertScreenshot, beginPrompt, inspectUpdateContent, isModelDelta, latestUsageAfter,
     processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath,
-    type ProcessIdentity, type ToolCall, type ToolUpdate} from "./workflow-contracts.js";
+    type NativeCompaction, type ProcessIdentity, type ToolCall, type ToolUpdate} from "./workflow-contracts.js";
 import { Readable, Writable } from "node:stream";
 import {
     PROTOCOL_VERSION,
@@ -51,7 +51,8 @@ const BASE64_RUN = /[A-Za-z0-9+/]{600,}/;
 interface Observation {
     toolCalls: ToolCall[];
     toolCallUpdates: ToolUpdate[];
-    usageUpdates: { used: number; size: number }[];
+    usageUpdates: { used: number; size: number; sessionId: string }[];
+    compactions: NativeCompaction[];
     textParts: string[];
     imageToolIds: string[];
     sawDelta: boolean;
@@ -59,7 +60,7 @@ interface Observation {
 }
 
 function newObservation(): Observation {
-    return { toolCalls: [], toolCallUpdates: [], usageUpdates: [], textParts: [], imageToolIds: [], sawDelta: false, errors: [] };
+    return { toolCalls: [], toolCallUpdates: [], usageUpdates: [], compactions: [], textParts: [], imageToolIds: [], sawDelta: false, errors: [] };
 }
 
 function summarize(obs: Observation): string {
@@ -111,7 +112,10 @@ function startAgent(): AgentHandle {
             text.add(update);
             if (isModelDelta(update)) obs.sawDelta = true;
             if (update.sessionUpdate === "usage_update") {
-                obs.usageUpdates.push({ used: update.used, size: update.size });
+                obs.usageUpdates.push({ used: update.used, size: update.size, sessionId: ctx.params.sessionId });
+            }
+            if (update.sessionUpdate === "compaction_update") {
+                obs.compactions.push({sessionId: ctx.params.sessionId, compactionId: update.compactionId, status: update.status});
             }
             if (update.sessionUpdate === "tool_call") {
                 obs.toolCalls.push({ id: update.toolCallId, tool: update.title ?? "", kind: update.kind, status: update.status });
@@ -359,18 +363,18 @@ async function main() {
         });
 
         // usage before compaction (latest usage_update).
-        const beforeCompact = handle.obs.usageUpdates.at(-1);
+        const beforeCompact = handle.obs.usageUpdates.filter(update => update.sessionId === sessionId).at(-1);
         if (!beforeCompact) throw new Error("no usage_update observed before compaction");
 
         // 8. A completed compaction and fresh usage; report the observed reduction.
         const compactUsageCursor = handle.obs.usageUpdates.length;
-        const compactToolCursor = handle.obs.toolCalls.length;
+        const compactionCursor = handle.obs.compactions.length;
         const p8 = await prompt(handle, sessionId, "/compact", 240_000);
-        const afterCompactWait = await waitForUsage(handle, compactUsageCursor, 20_000);
+        const afterCompactWait = await waitForUsage(handle, compactUsageCursor, sessionId, 20_000);
         record("compact", () => {
             if (p8?.stopReason !== "end_turn") throw new Error(`stopReason=${p8?.stopReason}`);
             if (!afterCompactWait) throw new Error("no usage_update after compaction");
-            requireCompletedTool(handle.obs.toolCalls.slice(compactToolCursor), handle.obs.toolCallUpdates, call => call.tool === "Compact conversation");
+            assertNativeCompaction(handle.obs.compactions, compactionCursor, sessionId);
             if (!Number.isFinite(afterCompactWait.used) || afterCompactWait.used < 0 || !Number.isFinite(afterCompactWait.size) || afterCompactWait.size <= 0) throw new Error("invalid post-compaction usage");
             return `usage before=${beforeCompact.used}/${beforeCompact.size}, after=${afterCompactWait.used}/${afterCompactWait.size}, shrank=${afterCompactWait.used < beforeCompact.used}`;
         });
@@ -385,7 +389,7 @@ async function main() {
             requireCompletedTool(handle.obs.toolCalls.slice(compactShellCursor), handle.obs.toolCallUpdates, call => call.kind === "execute" && call.tool.includes("pc-marker.txt"));
             assertFile("pc-marker.txt", "post-compact", "tool-after-compact");
         });
-        const beforeShutdown = latestUsageAfter(handle.obs.usageUpdates, shutdownUsageCursor);
+        const beforeShutdown = latestUsageAfter(handle.obs.usageUpdates, shutdownUsageCursor, sessionId);
         if (!beforeShutdown) throw new Error("no authoritative usage before shutdown");
 
         // 10. Shut the adapter down; nothing may survive it.
@@ -405,7 +409,7 @@ async function main() {
             if (!loaded) throw new Error("session/load failed");
             await new Promise((resolve) => setTimeout(resolve, 4000));
             record("cold-resume-usage", () => {
-                assertRestoredUsage(beforeShutdown, reload.obs.usageUpdates.slice(usageCountAtLoad));
+                assertRestoredUsage(beforeShutdown, reload.obs.usageUpdates.slice(usageCountAtLoad).filter(update => update.sessionId === sessionId));
             });
             // No further usage duplicates while idle.
             const idleCount = reload.obs.usageUpdates.length;
@@ -446,10 +450,10 @@ async function main() {
     }
 }
 
-async function waitForUsage(handle: AgentHandle, cursor: number, ms: number): Promise<{ used: number; size: number } | undefined> {
+async function waitForUsage(handle: AgentHandle, cursor: number, sessionId: string, ms: number): Promise<{ used: number; size: number } | undefined> {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
-        const usage = latestUsageAfter(handle.obs.usageUpdates, cursor);
+        const usage = latestUsageAfter(handle.obs.usageUpdates, cursor, sessionId);
         if (usage) return usage;
         await new Promise((resolve) => setTimeout(resolve, 200));
     }
