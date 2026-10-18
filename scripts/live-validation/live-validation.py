@@ -14,7 +14,7 @@ from live_support import Gateway, ValidationError, ensure_vision_fixtures, exec_
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO = SCRIPT_DIR.parent.parent
 DEFAULT_CODEX = "/Volumes/soddy/git_workspace/fork-nuwax-codex/.claude/worktrees/merge-main-20261014/codex-rs/target/debug/codex"
-CASES = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo", "main-text", "main-cold-recall", "main-tool", "main-cancel", "main-screenshot", "vision-direct", "acp-smoke")
+CASES = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo", "main-text", "main-cold-recall", "main-tool", "main-cancel", "main-screenshot", "vision-direct", "acp-smoke", "acp-workflow")
 
 
 def main():
@@ -49,7 +49,7 @@ def main():
     if args.only_failed:
         selected = [name for name in selected if not latest.get(name, {}).get("pass")]
     if os.environ.get("LIVE_SKIP_ACP") == "1":
-        selected = [name for name in selected if name not in ("acp-smoke", "main-cancel")]
+        selected = [name for name in selected if name not in ("acp-smoke", "main-cancel", "acp-workflow")]
     manifest = {"codexExecSha256": hashlib.sha256(exec_bin.read_bytes()).hexdigest(), "cases": selected}
     if codex.is_file():
         manifest["codexSha256"] = hashlib.sha256(codex.read_bytes()).hexdigest()
@@ -119,7 +119,7 @@ def main():
                     truth = [json.loads(line) for line in truth_path.read_text().splitlines() if line.strip()]
                     screenshot_result(result.stdout, result.returncode, truth)
                     detail = "one successful typed MCP image; final assistant matched ground truth"
-                elif name in ("main-cancel", "acp-smoke", "vision-direct"):
+                elif name in ("main-cancel", "acp-smoke", "acp-workflow", "vision-direct"):
                     wire = "anthropic" if name == "vision-direct" else "chat"
                     env, _, work = env_for("GLM", wire, name)
                     if name == "vision-direct":
@@ -127,10 +127,10 @@ def main():
                         command = [sys.executable, str(SCRIPT_DIR / "vision-direct.py"), str(work), str(exec_bin)]
                         expected = "vision: PASS 3/3"
                     else:
-                        helper = "acp-live-cancel.ts" if name == "main-cancel" else "acp-live-smoke.ts"
+                        helper = {"main-cancel": "acp-live-cancel.ts", "acp-smoke": "acp-live-smoke.ts", "acp-workflow": "acp-live-workflow.ts"}[name]
                         command = ["node", "--import", "tsx", str(SCRIPT_DIR / helper)]
-                        expected = "SMOKE-PASS"
-                    result = run_process(command, env, REPO, timeout=600)
+                        expected = "WORKFLOW-PASS" if name == "acp-workflow" else "SMOKE-PASS"
+                    result = run_process(command, env, REPO, timeout=1800 if name == "acp-workflow" else 600)
                     (root / f"{name}.log").write_text(result.stdout)
                     (root / f"{name}.err").write_text(result.stderr)
                     if result.returncode or expected not in result.stdout:
