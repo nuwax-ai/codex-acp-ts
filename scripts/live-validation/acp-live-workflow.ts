@@ -22,7 +22,7 @@ import path from "node:path";
 import { requireBudgetGateway } from "./gateway-contract.js";
 import { FinalAssistantText } from "./assistant-text.js";
 import {randomUUID} from "node:crypto";
-import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, isModelDelta, latestUsageAfter,
+import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectUpdateContent, isModelDelta, latestUsageAfter,
     processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath,
     type ProcessIdentity, type ToolCall, type ToolUpdate} from "./workflow-contracts.js";
 import { Readable, Writable } from "node:stream";
@@ -119,7 +119,7 @@ function startAgent(): AgentHandle {
             if (update.sessionUpdate === "tool_call_update") {
                 obs.toolCallUpdates.push({ id: update.toolCallId, status: typeof update.status === "string" ? update.status : undefined });
             }
-            const content = inspectContent(update.content ?? update.update?.content);
+            const content = inspectUpdateContent(update);
             obs.textParts.push(...content.texts);
             if (content.images > 0 && typeof update.toolCallId === "string") obs.imageToolIds.push(update.toolCallId);
         })

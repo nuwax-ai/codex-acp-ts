@@ -29,6 +29,21 @@ export function inspectContent(content: unknown): {texts: string[]; images: numb
     return result;
 }
 
+/** Read ACP display blocks plus the MCP mapper's explicit structured result. */
+export function inspectUpdateContent(update: {
+    content?: unknown;
+    rawOutput?: {result?: {content?: unknown} | null; error?: unknown};
+    update?: {content?: unknown};
+}): {texts: string[]; images: number} {
+    const display = inspectContent(update.content ?? update.update?.content);
+    const raw = update.rawOutput;
+    // MCP results live here rather than ACP display content. Never search or
+    // parse arbitrary raw JSON, metadata, errors or serialized text for images.
+    const mcp = raw?.error == null && Array.isArray(raw?.result?.content)
+        ? inspectContent(raw.result.content) : {texts: [], images: 0};
+    return {texts: [...display.texts, ...mcp.texts], images: display.images + mcp.images};
+}
+
 export function requireCompletedTool(calls: ToolCall[], updates: ToolUpdate[], predicate: (call: ToolCall) => boolean): void {
     const byId = new Map(calls.map(call => [call.id, call]));
     const completed = [...byId.values()].filter(call => {

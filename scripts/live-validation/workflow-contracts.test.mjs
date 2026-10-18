@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, isModelDelta, latestUsageAfter,
+import {createMcpToolCallUpdate} from "../../src/CodexToolCallMapper.ts";
+import {assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, inspectUpdateContent, isModelDelta, latestUsageAfter,
     processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath} from "./workflow-contracts.ts";
 
 test("each new prompt requires its own identified text delta; old text and advisory chunks cannot satisfy cancel", () => {
@@ -99,4 +100,28 @@ test("filesystem handlers reject traversal, sibling-prefix paths and escaping sy
         assert.throws(() => workspacePath(work, dangling));
         assert.equal(fs.existsSync(path.join(sibling, "not-created")), false);
     }
+});
+
+test("the real MCP mapper's structured result supplies a correlated image without ACP display content", async () => {
+    const update = await createMcpToolCallUpdate({
+        type: "mcpToolCall", id: "mapper-shot", server: "screenshots", tool: "take_screenshot", status: "completed",
+        arguments: {}, result: {content: [{type: "image", mimeType: "image/png", data: "ZHVtbXk="}, {type: "text", text: "screenshot captured"}], structuredContent: null, _meta: null}, error: null,
+    });
+    assert.equal(update.content, undefined);
+    const observed = inspectUpdateContent(update);
+    assert.deepEqual(observed, {texts: ["screenshot captured"], images: 1});
+    assert.doesNotThrow(() => assertScreenshot([{event: "complete", color: "red"}], "红色", [update.toolCallId],
+        [{id: update.toolCallId, tool: update.title, status: update.status}], []));
+});
+
+test("only the declared MCP content array counts; error metadata and serialized image JSON do not", () => {
+    const image = {type: "image", data: "ZHVtbXk="};
+    for (const rawOutput of [
+        {result: {structuredContent: image}},
+        {metadata: {content: [image]}},
+        {result: {content: [image]}, error: {message: "failed"}},
+        {result: {content: JSON.stringify([image])}},
+        {result: {content: [{type: "text", text: JSON.stringify(image)}]}},
+    ]) assert.equal(inspectUpdateContent({rawOutput}).images, 0);
+    assert.deepEqual(inspectUpdateContent({rawOutput: {result: {content: [{type: "text", text: "A".repeat(700)}]}}}), {texts: ["A".repeat(700)], images: 0});
 });
