@@ -1,4 +1,5 @@
 import http.server
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,44 @@ class ProviderEnvironmentContract(unittest.TestCase):
             if key not in ("NUWAX_BASE_URL", "NUWAX_API_KEY", "DEFAULT_AUTH_REQUEST"):
                 self.assertNotIn(key, env)
         self.assertNotIn("private-", json.dumps(env))
+
+    def test_declared_vendor_window_reaches_the_child_but_raw_live_keys_do_not(self):
+        origin, token = "http://127.0.0.1:54322", "local-gateway-capability"
+        parent = {
+            "LIVE_WINDOW_GLM": "200000", "LIVE_WINDOW_STEP": "not-a-number",
+            "LIVE_GATEWAY_URL": origin, "LIVE_GATEWAY_KEY": "private-gateway-key", "PATH": "/chosen/bin",
+        }
+        for vendor, expected in (("GLM", "200000"), ("STEP", None)):
+            with mock.patch.dict(os.environ, parent, clear=True), mock.patch("live_support.control", return_value={"baseUrl": origin + f"/routes/{vendor}/chat", "model": "test-model"}):
+                env = provider_env(origin, token, vendor, "chat", Path("/isolated/home"), 2048)
+            if expected is None:
+                self.assertNotIn("CODEX_MODEL_CONTEXT_WINDOW", env)
+            else:
+                self.assertEqual(env["CODEX_MODEL_CONTEXT_WINDOW"], expected)
+            self.assertNotIn("LIVE_WINDOW_GLM", env)
+            # The only key material in the child is the loopback gateway's
+            # own capability token; the parent's private value was stripped.
+            self.assertEqual(env["LIVE_GATEWAY_KEY"], token)
+
+
+class CaseOverrideContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("live_validation_runner", SCRIPT_DIR / "live-validation.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.parse_case = staticmethod(module.parse_case)
+
+    def test_plain_and_suffixed_specs_parse(self):
+        self.assertEqual(self.parse_case("acp-workflow"), ("acp-workflow", None, None))
+        self.assertEqual(self.parse_case("acp-workflow@MIMO/chat"), ("acp-workflow", "MIMO", "chat"))
+        self.assertEqual(self.parse_case("main-screenshot@STEP/anthropic"), ("main-screenshot", "STEP", "anthropic"))
+
+    def test_fixed_route_cases_and_unknown_or_malformed_specs_fail(self):
+        for bad in ("wire-chat@MIMO/chat", "env-determinism@GLM/chat", "backup-switch-mimo@GLM/chat",
+                    "acp-workflow@GLMgrpc", "acp-workflow@/chat", "acp-workflow@GLM/", "not-a-case@GLM/chat"):
+            with self.assertRaises(ValidationError, msg=bad):
+                self.parse_case(bad)
 
 
 class FinalAnswerContract(unittest.TestCase):

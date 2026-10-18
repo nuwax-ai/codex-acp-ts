@@ -15,6 +15,26 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO = SCRIPT_DIR.parent.parent
 DEFAULT_CODEX = "/Volumes/soddy/git_workspace/fork-nuwax-codex/.claude/worktrees/merge-main-20261014/codex-rs/target/debug/codex"
 CASES = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo", "main-text", "main-cold-recall", "main-tool", "main-cancel", "main-screenshot", "vision-direct", "acp-smoke", "acp-workflow")
+# Cases whose vendor/wire is fixed by their definition reject an override.
+OVERRIDE_REJECTED = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo")
+
+
+def parse_case(spec):
+    """`name` keeps its default route; `name@VENDOR/wire` pins it explicitly.
+
+    The suffixed form exists so the same scenario (for example the full
+    acp-workflow loop) can run against several vendors in one shared-budget
+    run without reusing a previous round's receipts.
+    """
+    if "@" not in spec:
+        return spec, None, None
+    name, route = spec.split("@", 1)
+    vendor, _, wire = route.partition("/")
+    if name in OVERRIDE_REJECTED or name not in CASES:
+        raise ValidationError(f"case {name} does not accept a vendor/wire override")
+    if not vendor or wire not in ("chat", "responses", "anthropic"):
+        raise ValidationError(f"invalid vendor/wire override: {route}")
+    return name, vendor.upper(), wire
 
 
 def main():
@@ -28,8 +48,14 @@ def main():
         print("\n".join(CASES))
         return 0
     selected = args.cases.split(",")
-    if not selected or any(name not in CASES for name in selected) or len(set(selected)) != len(selected):
+    parsed = [parse_case(spec) for spec in selected]
+    names = [name for name, _, _ in parsed]
+    if not names or any(name not in CASES for name in names) or len(set(selected)) != len(selected):
         raise ValidationError("unknown or duplicate live case; use --list")
+
+    def row_name(spec):
+        name, vendor, wire = parse_case(spec)
+        return name if vendor is None else f"{name}-{vendor}-{wire}"
     root = Path(os.environ.get("VAL_ROOT") or tempfile.mkdtemp(prefix="acp-live-val.")).resolve()
     root.mkdir(parents=True, exist_ok=True)
     ledger = root / "request-ledger.jsonl"
@@ -47,9 +73,9 @@ def main():
     previous = [json.loads(line) for line in (root / "results.jsonl").read_text().splitlines() if line.strip()] if (root / "results.jsonl").exists() else []
     latest = {row["name"]: row for row in previous}
     if args.only_failed:
-        selected = [name for name in selected if not latest.get(name, {}).get("pass")]
+        selected = [spec for spec in selected if not latest.get(row_name(spec), {}).get("pass")]
     if os.environ.get("LIVE_SKIP_ACP") == "1":
-        selected = [name for name in selected if name not in ("acp-smoke", "main-cancel", "acp-workflow")]
+        selected = [spec for spec in selected if parse_case(spec)[0] not in ("acp-smoke", "main-cancel", "acp-workflow")]
     manifest = {"codexExecSha256": hashlib.sha256(exec_bin.read_bytes()).hexdigest(), "cases": selected}
     if codex.is_file():
         manifest["codexSha256"] = hashlib.sha256(codex.read_bytes()).hexdigest()
@@ -66,23 +92,28 @@ def main():
         env.update({"CODEX_PATH": str(codex), "VAL_ROOT": str(work)})
         return env, home, work
 
-    def execute(name, vendor, wire, prompt, resume=False, setup=None):
-        env, home, work = env_for(vendor, wire, "main-text" if name == "main-cold-recall" else name)
+    def execute(name, label, vendor, wire, prompt, resume=False, setup=None):
+        # A cold recall resumes the session its unsuffixed main-text partner
+        # recorded, under the same route suffix when one is pinned.
+        session = label.replace("main-cold-recall", "main-text")
+        env, home, work = env_for(vendor, wire, session)
         if setup:
             setup(home, work, env)
         command = [str(exec_bin), "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--json", "-C", str(work)]
         command += ["resume", "--last", prompt] if resume else [prompt]
         result = run_process(command, env, work)
-        (root / f"{name}.jsonl").write_text(result.stdout)
-        (root / f"{name}.err").write_text(result.stderr)
+        (root / f"{label}.jsonl").write_text(result.stdout)
+        (root / f"{label}.err").write_text(result.stderr)
         parsed = exec_result(result.stdout, result.returncode)
         for event in parsed["events"]:
             if event.get("type") == "turn.completed":
-                observed_usage.append({"case": name, **event.get("usage", {})})
+                observed_usage.append({"case": label, **event.get("usage", {})})
         return result, parsed, work
 
     try:
-        for name in selected:
+        for spec in selected:
+            name, vendor_override, wire_override = parse_case(spec)
+            label = row_name(spec)
             before = gateway.stats()["used"]
             passed, detail = True, "passed"
             try:
@@ -91,39 +122,39 @@ def main():
                     detail = "real Codex reached exact local NUWAX path/model with dummy auth; no real vendor request"
                 elif name in ("wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo"):
                     vendor, wire = {"wire-chat": ("GLM", "chat"), "wire-anthropic": ("STEP", "anthropic"), "wire-responses": ("GLM", "responses"), "backup-switch-mimo": ("MIMO", "chat")}[name]
-                    _, parsed, _ = execute(name, vendor, wire, "Reply with exactly the single word: pong")
+                    _, parsed, _ = execute(name, label, vendor, wire, "Reply with exactly the single word: pong")
                     if parsed["answer"].lower().rstrip(".!，。") != "pong":
                         raise ValidationError("final assistant answer was not pong")
                 elif name == "main-text":
-                    _, parsed, _ = execute(name, "GLM", "chat", "Remember the secret word LIVE-KIWANO-7 and reply with exactly: OK")
+                    _, parsed, _ = execute(name, label, vendor_override or "GLM", wire_override or "chat", "Remember the secret word LIVE-KIWANO-7 and reply with exactly: OK")
                     if parsed["answer"].upper().rstrip(".!，。") != "OK":
                         raise ValidationError("initial final assistant answer was not OK")
                 elif name == "main-cold-recall":
-                    _, parsed, _ = execute(name, "GLM", "chat", "What secret word did I ask you to remember? Reply with just the word.", resume=True)
+                    _, parsed, _ = execute(name, label, vendor_override or "GLM", wire_override or "chat", "What secret word did I ask you to remember? Reply with just the word.", resume=True)
                     if parsed["answer"].upper().rstrip(".!，。") != "LIVE-KIWANO-7":
                         raise ValidationError("final assistant did not recall the cold-session secret")
                 elif name == "main-tool":
-                    _, parsed, work = execute(name, "GLM", "chat", "Create a file named tool-marker.txt containing the text marlin, then reply with exactly: DONE")
+                    _, parsed, work = execute(name, label, vendor_override or "GLM", wire_override or "chat", "Create a file named tool-marker.txt containing the text marlin, then reply with exactly: DONE")
                     if not (work / "tool-marker.txt").is_file() or (work / "tool-marker.txt").read_text().strip() != "marlin":
                         raise ValidationError("real tool marker was not created correctly")
                     if parsed["answer"].upper().rstrip(".!，。") != "DONE":
                         raise ValidationError("tool turn did not finish with DONE")
                 elif name == "main-screenshot":
-                    truth_path = root / "shot-truth.jsonl"
+                    truth_path = root / f"{label}-shot-truth.jsonl"
                     truth_path.write_text("")
                     def setup(home, _work, env):
                         config = '[mcp_servers.screenshots]\ncommand = "node"\nargs = [' + json.dumps(str(REPO / "scripts/acp-validation/shot-server.mjs")) + ']\n[mcp_servers.screenshots.env]\nSHOT_TRUTH_PATH = ' + json.dumps(str(truth_path)) + '\n'
                         (home / "config.toml").write_text(config)
                         env["SHOT_TRUTH_PATH"] = str(truth_path)
-                    result, _, _ = execute(name, "GLM", "chat", "Call take_screenshot exactly once, then reply with ONLY the dominant color word you see.", setup=setup)
+                    result, _, _ = execute(name, label, vendor_override or "GLM", wire_override or "chat", "Call take_screenshot exactly once, then reply with ONLY the dominant color word you see.", setup=setup)
                     truth = [json.loads(line) for line in truth_path.read_text().splitlines() if line.strip()]
                     screenshot_result(result.stdout, result.returncode, truth)
                     detail = "one successful typed MCP image; final assistant matched ground truth"
                 elif name in ("main-cancel", "acp-smoke", "acp-workflow", "vision-direct"):
-                    wire = "anthropic" if name == "vision-direct" else "chat"
-                    env, _, work = env_for("GLM", wire, name)
+                    wire = wire_override or ("anthropic" if name == "vision-direct" else "chat")
+                    env, _, work = env_for(vendor_override or "GLM", wire, label)
                     if name == "vision-direct":
-                        ensure_vision_fixtures(SCRIPT_DIR, work / "vision", allow_create=name not in latest)
+                        ensure_vision_fixtures(SCRIPT_DIR, work / "vision", allow_create=label not in latest)
                         command = [sys.executable, str(SCRIPT_DIR / "vision-direct.py"), str(work), str(exec_bin)]
                         expected = "vision: PASS 3/3"
                     else:
@@ -131,8 +162,8 @@ def main():
                         command = ["node", "--import", "tsx", str(SCRIPT_DIR / helper)]
                         expected = "WORKFLOW-PASS" if name == "acp-workflow" else "SMOKE-PASS"
                     result = run_process(command, env, REPO, timeout=1800 if name == "acp-workflow" else 600)
-                    (root / f"{name}.log").write_text(result.stdout)
-                    (root / f"{name}.err").write_text(result.stderr)
+                    (root / f"{label}.log").write_text(result.stdout)
+                    (root / f"{label}.err").write_text(result.stderr)
                     if result.returncode or expected not in result.stdout:
                         raise ValidationError("live helper failed; inspect its log")
                 else:
@@ -140,11 +171,11 @@ def main():
             except (ValidationError, OSError, ValueError) as error:
                 passed, detail = False, str(error)
             after = gateway.stats()["used"]
-            row = {"name": name, "pass": passed, "detail": detail, "actualAttempts": after - before}
-            latest[name] = row
+            row = {"name": label, "pass": passed, "detail": detail, "actualAttempts": after - before}
+            latest[label] = row
             with (root / "results.jsonl").open("a") as output:
                 output.write(json.dumps(row) + "\n")
-            print(f"{'PASS' if passed else 'FAIL'} {name}: {detail}; actualAttempts={after - before}", flush=True)
+            print(f"{'PASS' if passed else 'FAIL'} {label}: {detail}; actualAttempts={after - before}", flush=True)
             if gateway.stats()["denied"]:
                 break
         deadline = time.monotonic() + 3

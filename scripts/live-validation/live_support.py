@@ -127,6 +127,12 @@ def provider_env(origin, token, vendor, wire, home, max_output):
         "LIVE_GATEWAY_URL": origin, "LIVE_GATEWAY_KEY": token, "LIVE_VENDOR": vendor,
         "DEFAULT_AUTH_REQUEST": json.dumps({"methodId": "api-key", "_meta": {"api-key": {"apiKey": token}}}),
     })
+    # A vendor-specific context window keeps the local budget honest for
+    # models whose default fallback does not match the advertised capability;
+    # unset leaves Codex's own default handling in place.
+    declared_window = os.environ.get(f"LIVE_WINDOW_{vendor}", "")
+    if declared_window.isdigit() and int(declared_window) > 0:
+        env["CODEX_MODEL_CONTEXT_WINDOW"] = declared_window
     no_proxy = ",".join(filter(None, [env.get("NO_PROXY", env.get("no_proxy", "")), "127.0.0.1,localhost,::1"]))
     env["NO_PROXY"] = no_proxy
     env["no_proxy"] = no_proxy
