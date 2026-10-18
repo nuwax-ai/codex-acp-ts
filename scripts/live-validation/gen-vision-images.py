@@ -32,7 +32,9 @@ COLORS = {
     "blue": (40, 80, 230),
     "yellow": (230, 210, 30),
     "purple": (150, 40, 210),
-    "cyan": (30, 200, 210),
+    # Pure secondary hues only: mixed values like (30, 200, 210) are
+    # legitimately nameable as "turquoise", making the truth ambiguous.
+    "cyan": (0, 255, 255),
 }
 WIDTH = HEIGHT = 96
 SCALE = 6  # 5x7 font * 6 -> 30x42 sprite
