@@ -1,6 +1,6 @@
 // noinspection ES6RedundantAwait
 
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi, type MockInstance} from 'vitest';
 import {CODEX_API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR, type CodexAuthRequest} from "../../CodexAuthMethod";
 import type * as acp from "@agentclientprotocol/sdk";
 import {
@@ -18,6 +18,24 @@ import type {Model, ReviewStartResponse, ThreadGoal, TurnCompletedNotification, 
 import type {RateLimitsMap} from "../../RateLimitsMap";
 import {ModelId} from "../../ModelId";
 import {GOAL_CONTROL_METHOD} from "../../AcpExtensions";
+
+// `skillsExtraRootsSet` receives `path.join` output, so the recorded calls
+// differ by separator per platform; the assertions pin which root the scanner
+// is pointed at. `toContainEqual` keeps `toHaveBeenCalledWith`'s any-call scope.
+function posixShape(value: unknown): unknown {
+    if (typeof value === "string") return value.replace(/\\/g, "/");
+    if (Array.isArray(value)) return value.map(posixShape);
+    if (value && typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, posixShape(entry)]),
+        );
+    }
+    return value;
+}
+
+function extraRootsCalls(spy: MockInstance): unknown[] {
+    return spy.mock.calls.map(([params]) => posixShape(params));
+}
 
 describe('ACP server test', { timeout: 40_000 }, () => {
 
@@ -506,7 +524,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         });
 
         expect(session.additionalDirectories).toEqual(["/workspace/extra"]);
-        expect(extraRootsSetSpy).toHaveBeenCalledWith({
+        expect(extraRootsCalls(extraRootsSetSpy)).toContainEqual({
             extraRoots: ["/workspace/extra/.agents/skills"],
         });
         expect(listSkillsSpy).toHaveBeenCalledWith({
@@ -1097,7 +1115,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             prompt: [{ type: "text", text: "Hello" }],
         });
 
-        expect(extraRootsSetSpy).toHaveBeenCalledWith({
+        expect(extraRootsCalls(extraRootsSetSpy)).toContainEqual({
             extraRoots: ["/workspace/extra/.agents/skills"],
         });
         expect(listSkillsSpy).toHaveBeenCalledWith({

@@ -780,7 +780,12 @@ describe("CodexACPAgent - loadSession", () => {
                 mcpServers: [],
             });
 
-            await expect(fixture.getAcpConnectionDump([])).toMatchFileSnapshot(
+            // The dump is compared as text, so a Windows `path.join` separator
+            // arrives here already escaped by JSON.stringify as `\\`. The history
+            // shape under test is separator-agnostic; fold it onto the baseline.
+            const posixSeparators = (dump: string) => dump.replace(/\\\\/g, "/");
+
+            await expect(posixSeparators(fixture.getAcpConnectionDump([]))).toMatchFileSnapshot(
                 "data/load-session-response-item-history-fallback.json",
             );
         } finally {
