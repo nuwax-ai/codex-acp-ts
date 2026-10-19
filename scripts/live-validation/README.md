@@ -34,17 +34,28 @@ scripts/live-validation/live-smallbatch.sh --resume --cases wire-chat,wire-anthr
 scripts/live-validation/live-smallbatch.sh --resume --cases main-screenshot
 ```
 
-`--list` lists the twelve cases. Without `--cases`, all run in this order:
+`--list` lists the thirteen cases. Without `--cases`, all run in this order:
 local env preflight; GLM Chat; STEP Anthropic; GLM Responses; MIMO Chat;
 initial text; cross-process cold recall; real shell tool; ACP streaming
-cancel; MCP screenshot; three randomized digit/color images; ACP
-prompt/compact/continuation/cold-load.
+cancel; MCP screenshot; ACP single request; three randomized digit/color
+images; ACP prompt/compact/continuation/cold-load.
 
 `main-cold-recall` requires `main-text` in the same run directory. `CODEX_BIN`
-is needed for the ACP cases; `CODEX_EXEC_BIN` is needed for exec cases.
-`LIVE_SKIP_ACP=1` omits both ACP cases. The fresh-run request cap defaults to
-96; set it explicitly for a smaller acceptance run. Output defaults to 2048
-tokens and the gateway applies the cap independently of the child setting.
+is required for every run: it must name the `codex` binary built from the
+source under test, and there is no default, because an inherited path would
+hash and validate a binary nobody chose. `CODEX_EXEC_BIN` defaults to
+`CODEX_BIN` with an `-exec` suffix, which is the sibling cargo produces in the
+same profile directory. `LIVE_SKIP_ACP=1` omits the three ACP cases. The
+fresh-run request cap defaults to 96; set it explicitly for a smaller
+acceptance run. Output defaults to 2048 tokens and the gateway applies the cap
+independently of the child setting.
+
+`LIVE_WINDOW_<VENDOR>` pins `CODEX_MODEL_CONTEXT_WINDOW` for that vendor's
+child processes, so the local request budget matches the model's advertised
+window instead of Codex's fallback default. Absent leaves Codex's own default
+handling in place; present but not a positive integer stops the run, since a
+silently dropped window would charge paid attempts against a budget nobody
+configured.
 
 The credentials file uses `LIVE_{GLM,MIMO,STEP}_MODEL`,
 `LIVE_{GLM,MIMO,STEP}_API_KEY` and
@@ -87,6 +98,18 @@ The byte receipt in `truth.json` is checked before any vision model request.
 # Retry only failed cases without resetting this run's request counter.
 scripts/live-validation/live-fixup.sh --cases main-screenshot,acp-smoke
 ```
+
+A case may pin its route as `name@VENDOR/wire`, so one scenario can be run
+against several vendors inside one shared-budget run; each route keeps its own
+result row (`name-VENDOR-wire`). `live-fixup.sh` without `--cases` retries
+exactly the rows this run recorded as failed, decoded back to their routes. It
+deliberately does not fall back to the default suite: that would spend fresh
+paid attempts on routes the run never selected and append rows under labels no
+earlier receipt contains. Naming cases narrows that retry — a plain name covers
+every route recorded for that case, a routed name stays pinned to its route.
+Two spellings of one route (`main-text@GLM/chat` and `main-text@glm/chat`) are
+rejected before any request, because they share a row label and the later row
+would overwrite the first.
 
 Resume cannot increase/change the stored budget or output cap. An exhausted
 run remains exhausted. A pre-gateway manual ledger cannot be resumed as a

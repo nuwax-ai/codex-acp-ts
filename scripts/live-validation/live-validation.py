@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import time
@@ -13,10 +14,17 @@ from live_support import Gateway, ValidationError, ensure_vision_fixtures, exec_
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO = SCRIPT_DIR.parent.parent
-DEFAULT_CODEX = "/Volumes/soddy/git_workspace/fork-nuwax-codex/.claude/worktrees/merge-main-20261014/codex-rs/target/debug/codex"
 CASES = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo", "main-text", "main-cold-recall", "main-tool", "main-cancel", "main-screenshot", "vision-direct", "acp-smoke", "acp-workflow")
 # Cases whose vendor/wire is fixed by their definition reject an override.
 OVERRIDE_REJECTED = ("env-determinism", "wire-chat", "wire-anthropic", "wire-responses", "backup-switch-mimo")
+WIRES = ("chat", "responses", "anthropic")
+# The gateway registers a route as LIVE_<VENDOR>_<WIRE>_URL, so a vendor token
+# that cannot normalise into that identifier can never resolve.
+VENDOR = re.compile(r"[A-Z][A-Z0-9_]*")
+# A routed result row is `<case>-<VENDOR>-<wire>`. Case names carry hyphens and
+# one ends in a wire word, so the uppercase vendor segment is what separates a
+# routed row from a plain case name.
+ROUTED_ROW = re.compile(r"(.+)-([A-Z][A-Z0-9_]*)-(?P<wire>" + "|".join(WIRES) + r")\Z")
 
 
 def parse_case(spec):
@@ -27,19 +35,73 @@ def parse_case(spec):
     run without reusing a previous round's receipts.
     """
     if "@" not in spec:
-        return spec, None, None
+        name = spec.strip()
+        if name not in CASES:
+            raise ValidationError(f"unknown live case {spec!r}; use --list")
+        return name, None, None
     name, route = spec.split("@", 1)
     vendor, _, wire = route.partition("/")
     if name in OVERRIDE_REJECTED or name not in CASES:
         raise ValidationError(f"case {name} does not accept a vendor/wire override")
-    if not vendor or wire not in ("chat", "responses", "anthropic"):
+    vendor = vendor.strip().upper()
+    if not vendor or not VENDOR.fullmatch(vendor) or wire not in WIRES:
         raise ValidationError(f"invalid vendor/wire override: {route}")
-    return name, vendor.upper(), wire
+    return name, vendor, wire
+
+
+def case_label(name, vendor, wire):
+    return name if vendor is None else f"{name}-{vendor}-{wire}"
+
+
+def spec_from_row(name):
+    """Inverse of `case_label`, so a fixup retries the route that failed."""
+    match = ROUTED_ROW.fullmatch(name)
+    if not match:
+        return name
+    return f"{match.group(1)}@{match.group(2)}/{match.group('wire')}"
+
+
+def select_specs(cases_arg, only_failed, previous):
+    """Resolve the case specs to run, refusing labels that would collide.
+
+    `--only-failed` without `--cases` selects from this run's own recorded
+    rows. Falling back to the default suite instead would spend fresh paid
+    attempts on routes the run never selected and append rows under labels no
+    earlier receipt contains.
+    """
+    if not only_failed:
+        return dedup(list(CASES) if cases_arg is None else cases_arg.split(","))
+    if not previous:
+        raise ValidationError("no recorded results to select failures from; run the cases first")
+    # results.jsonl is append-only, so a case already retried appears more
+    # than once. Only its newest verdict decides whether it must run again.
+    still_failing = [spec_from_row(name) for name, row in {row["name"]: row for row in previous}.items() if not row.get("pass")]
+    if cases_arg is not None:
+        narrowing = [parse_case(spec) for spec in cases_arg.split(",")]
+        # A plain name in a fixup means "retry every route this run recorded
+        # for this case"; a routed name stays pinned to that one route.
+        plain = {name for name, vendor, _ in narrowing if vendor is None}
+        exact = {case_label(*route) for route in narrowing if route[1] is not None}
+        narrowed = []
+        for spec in still_failing:
+            name, vendor, wire = parse_case(spec)
+            if name in plain or case_label(name, vendor, wire) in exact:
+                narrowed.append(spec)
+        still_failing = narrowed
+    return dedup(still_failing)
+
+
+def dedup(specs):
+    labels = [case_label(*parse_case(spec)) for spec in specs]
+    if len(set(labels)) != len(labels):
+        collision = next(label for index, label in enumerate(labels) if label in labels[:index])
+        raise ValidationError(f"live case {collision} is selected more than once; one route spends one paid attempt set")
+    return specs
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cases", default=",".join(CASES), help="comma-separated case names; use --list to inspect")
+    parser.add_argument("--cases", help="comma-separated case names, each optionally name@VENDOR/wire; use --list to inspect")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--only-failed", action="store_true")
@@ -47,15 +109,6 @@ def main():
     if args.list:
         print("\n".join(CASES))
         return 0
-    selected = args.cases.split(",")
-    parsed = [parse_case(spec) for spec in selected]
-    names = [name for name, _, _ in parsed]
-    if not names or any(name not in CASES for name in names) or len(set(selected)) != len(selected):
-        raise ValidationError("unknown or duplicate live case; use --list")
-
-    def row_name(spec):
-        name, vendor, wire = parse_case(spec)
-        return name if vendor is None else f"{name}-{vendor}-{wire}"
     root = Path(os.environ.get("VAL_ROOT") or tempfile.mkdtemp(prefix="acp-live-val.")).resolve()
     root.mkdir(parents=True, exist_ok=True)
     ledger = root / "request-ledger.jsonl"
@@ -63,22 +116,25 @@ def main():
         raise ValidationError("cannot resume a legacy/manual attempt ledger; start a new gateway-backed run")
     if not args.resume and ledger.exists():
         raise ValidationError("run already has a shared budget; use --resume or a new VAL_ROOT")
+    previous = [json.loads(line) for line in (root / "results.jsonl").read_text().splitlines() if line.strip()] if (root / "results.jsonl").exists() else []
+    selected = select_specs(args.cases, args.only_failed, previous)
     env_file = Path(os.environ.get("LIVE_ENV_FILE", "/Volumes/soddy/git_workspace/fork-nuwax-codex/.env.local"))
-    codex = Path(os.environ.get("CODEX_BIN", DEFAULT_CODEX))
+    codex_env = os.environ.get("CODEX_BIN")
+    if not codex_env:
+        raise ValidationError("CODEX_BIN must name the codex binary built from the source under test; there is no default")
+    codex = Path(codex_env)
     exec_bin = Path(os.environ.get("CODEX_EXEC_BIN", str(codex) + "-exec"))
-    if not env_file.is_file() or not exec_bin.is_file() or not os.access(exec_bin, os.X_OK):
-        raise ValidationError("credential env file or executable codex-exec is missing")
+    if not env_file.is_file():
+        raise ValidationError(f"credential env file {env_file} is missing; set LIVE_ENV_FILE")
+    if not codex.is_file() or not exec_bin.is_file() or not os.access(exec_bin, os.X_OK):
+        raise ValidationError("CODEX_BIN or the codex-exec it names is missing, unreadable or not executable")
     max_output = int(os.environ.get("LIVE_MAX_OUTPUT_TOKENS", "2048"))
     budget = int(os.environ["LIVE_BUDGET_ATTEMPTS"]) if "LIVE_BUDGET_ATTEMPTS" in os.environ else None
-    previous = [json.loads(line) for line in (root / "results.jsonl").read_text().splitlines() if line.strip()] if (root / "results.jsonl").exists() else []
     latest = {row["name"]: row for row in previous}
-    if args.only_failed:
-        selected = [spec for spec in selected if not latest.get(row_name(spec), {}).get("pass")]
     if os.environ.get("LIVE_SKIP_ACP") == "1":
         selected = [spec for spec in selected if parse_case(spec)[0] not in ("acp-smoke", "main-cancel", "acp-workflow")]
-    manifest = {"codexExecSha256": hashlib.sha256(exec_bin.read_bytes()).hexdigest(), "cases": selected}
-    if codex.is_file():
-        manifest["codexSha256"] = hashlib.sha256(codex.read_bytes()).hexdigest()
+    manifest = {"codexSha256": hashlib.sha256(codex.read_bytes()).hexdigest(),
+                "codexExecSha256": hashlib.sha256(exec_bin.read_bytes()).hexdigest(), "cases": selected}
     (root / "binary-receipt.json").write_text(json.dumps(manifest, indent=2) + "\n")
     observed_usage = []
     print(f"live artifacts: {root}", flush=True)
@@ -113,7 +169,7 @@ def main():
     try:
         for spec in selected:
             name, vendor_override, wire_override = parse_case(spec)
-            label = row_name(spec)
+            label = case_label(name, vendor_override, wire_override)
             before = gateway.stats()["used"]
             passed, detail = True, "passed"
             try:
