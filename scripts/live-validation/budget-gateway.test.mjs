@@ -125,3 +125,13 @@ test("env parser accepts quoted values without evaluating shell contents", (t) =
     fs.writeFileSync(file, 'export LIVE_TEST_CHAT_URL="http://127.0.0.1/v1"\nLIVE_TEST_MODEL=example\nLIVE_TEST_API_KEY=\'dummy$(echo unsafe)\'\n');
     assert.deepEqual(readVendorRoutes(file).get("TEST/chat"), { url: "http://127.0.0.1/v1", model: "example", key: "dummy$(echo unsafe)" });
 });
+
+test("an unauthenticated shutdown cannot stop the run that owns the budget", async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "live-gateway-shutdown-"));
+    const lock = path.join(root, "ledger.jsonl.lock");
+    const gateway = await startBudgetGateway({ routes: new Map([["TEST/chat", { url: "http://127.0.0.1:1/upstream", key: "k", model: "m" }]]), ledgerPath: path.join(root, "ledger.jsonl"), budget: 2 });
+    t.after(async () => { await gateway.close(); fs.rmSync(root, { recursive: true, force: true }); });
+    assert.equal((await fetch(`${gateway.origin}/control/shutdown`, { method: "POST" })).status, 403);
+    assert.equal((await fetch(`${gateway.origin}/control/stats`, { headers: { authorization: `Bearer ${gateway.token}` } })).status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(lock, "utf8")).pid, process.pid, "the refused request left the ledger owned");
+});

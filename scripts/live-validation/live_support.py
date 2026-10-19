@@ -96,11 +96,11 @@ def screenshot_result(stdout, returncode, truth):
     return result
 
 
-def control(origin, token, path):
+def control(origin, token, path, method="GET"):
     url = urllib.parse.urlparse(origin)
     if url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.password or url.path not in ("", "/"):
         raise ValidationError("a loopback budget gateway is required")
-    request = urllib.request.Request(origin.rstrip("/") + path, headers={"authorization": "Bearer " + token})
+    request = urllib.request.Request(origin.rstrip("/") + path, headers={"authorization": "Bearer " + token}, method=method)
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.load(response)
@@ -232,7 +232,21 @@ class Gateway:
 
     def close(self):
         if self.process.poll() is None:
-            self.process.terminate()
+            # TerminateProcess on Windows cannot deliver SIGTERM, so a killed
+            # gateway leaves its ledger lock behind and the next --resume on the
+            # same run directory fails closed. Ask for a cooperative shutdown
+            # first and only escalate to terminate/kill if it stays alive.
+            if getattr(self, "origin", None):
+                try:
+                    control(self.origin, self.token, "/control/shutdown", "POST")
+                except ValidationError:
+                    pass
+            try:
+                self.process.wait(timeout=5)
+                self.log.close()
+                return
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:

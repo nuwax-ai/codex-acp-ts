@@ -115,12 +115,15 @@ Resume cannot increase/change the stored budget or output cap. An exhausted
 run remains exhausted. A pre-gateway manual ledger cannot be resumed as a
 gateway-backed receipt. Keep it as historical evidence and start a new run.
 
-Only one gateway can own a ledger. Normal shutdown releases its lock. After
-an abnormal termination, startup fails closed if `request-ledger.jsonl.lock`
-remains. Confirm that the recorded process no longer owns this run before
-manually removing that lock; retain the ledger. Automatic stale-lock
-takeover is deliberately absent because concurrent takeovers can double the
-allowance. A new `VAL_ROOT` is independent and therefore a new explicit run.
+Only one gateway can own a ledger. Normal shutdown releases its lock: the
+driver asks the gateway for a token-authenticated `/control/shutdown` rather
+than relying on signal delivery, which a Windows `terminate()` cannot provide.
+After an abnormal termination, startup fails closed if
+`request-ledger.jsonl.lock` remains. Confirm that the recorded process no longer
+owns this run before manually removing that lock; retain the ledger. Automatic
+stale-lock takeover is deliberately absent because concurrent takeovers can
+double the allowance. A new `VAL_ROOT` is independent and therefore a new
+explicit run.
 
 Standalone `vision-direct.py`, `acp-live-smoke.ts` and `acp-live-cancel.ts`
 refuse to start model processes without a live authenticated loopback gateway

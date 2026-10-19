@@ -16,6 +16,19 @@ from live_support import ValidationError, ensure_vision_fixtures, exec_result, s
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
+def write_fake_exec(path, body):
+    """Write a fake `codex exec` that the driver can spawn directly."""
+    if os.name == "nt":
+        script = path.with_name(path.name + ".py")
+        script.write_text(body)
+        launcher = path.with_name(path.name + ".cmd")
+        launcher.write_text(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n')
+        return launcher
+    path.write_text("#!/usr/bin/env python3\n" + body)
+    path.chmod(0o755)
+    return path
+
+
 def transcript(answer="red", image=True, terminal=True, failed=False):
     events = [{"type": "item.completed", "item": {"type": "mcp_tool_call", "tool": "take_screenshot", "status": "completed", "result": {"content": [{"type": "text", "text": "screenshot captured"}] + ([{"type": "image", "data": "dummy-base64"}] if image else [])}}}]
     if answer is not None:
@@ -30,6 +43,7 @@ def transcript(answer="red", image=True, terminal=True, failed=False):
 class ProviderEnvironmentContract(unittest.TestCase):
     def test_conflicting_parent_routes_and_secrets_cannot_escape_the_shared_gateway(self):
         origin, token = "http://127.0.0.1:54321", "local-gateway-capability"
+        home = Path("/isolated/home")
         overrides = {
             "MODEL_PROVIDER": "paid-direct", "CODEX_CONFIG": '{"model_provider":"paid-direct"}',
             "CODEX_BASE_URL": "https://unmetered.invalid", "CODEX_API_KEY": "private-api-key",
@@ -40,12 +54,12 @@ class ProviderEnvironmentContract(unittest.TestCase):
             "DEFAULT_AUTH_REQUEST": '{"methodId":"api-key","_meta":{"api-key":{"apiKey":"private-auth-key"}}}',
         }
         with mock.patch.dict(os.environ, {**overrides, "CODEX_PATH": "/chosen/codex", "PATH": "/chosen/bin"}, clear=True), mock.patch("live_support.control", return_value={"baseUrl": origin + "/routes/GLM/chat", "model": "test-model"}):
-            env = provider_env(origin, token, "GLM", "chat", Path("/isolated/home"), 2048)
+            env = provider_env(origin, token, "GLM", "chat", home, 2048)
         self.assertEqual(env["NUWAX_BASE_URL"], origin + "/routes/GLM/chat")
         self.assertEqual(env["NUWAX_API_KEY"], token)
         self.assertEqual(json.loads(env["DEFAULT_AUTH_REQUEST"])["_meta"]["api-key"]["apiKey"], token)
         self.assertEqual(env["CODEX_PATH"], "/chosen/codex")
-        self.assertEqual(env["CODEX_HOME"], "/isolated/home")
+        self.assertEqual(env["CODEX_HOME"], str(home))
         self.assertEqual(env["PATH"], "/chosen/bin")
         for key in overrides:
             if key not in ("NUWAX_BASE_URL", "NUWAX_API_KEY", "DEFAULT_AUTH_REQUEST"):
@@ -226,6 +240,45 @@ class FinalAnswerContract(unittest.TestCase):
             screenshot_result(output, 0, self.truth)
 
 
+class GatewayShutdownContract(unittest.TestCase):
+    def test_a_finished_run_releases_the_ledger_lock_the_next_process_needs(self):
+        # Killing the gateway leaves request-ledger.jsonl.lock behind whenever
+        # shutdown is not cooperative. On Windows terminate() is
+        # TerminateProcess, so node never ran its SIGTERM handler and every
+        # later --resume on the same run directory failed closed while the
+        # driver reported the previous run's summary as if it were fresh.
+        with tempfile.TemporaryDirectory(prefix="live-gateway-shutdown-") as directory:
+            root = Path(directory)
+            env_file = root / "dummy.env"
+            env_file.write_text("LIVE_GLM_CHAT_URL=http://127.0.0.1:1/v1\nLIVE_GLM_MODEL=test\nLIVE_GLM_API_KEY=dummy-key\n")
+            fake = write_fake_exec(root / "fake-exec", '''
+import json, os, urllib.request, urllib.error
+for n in range(2):
+    request = urllib.request.Request(os.environ['NUWAX_BASE_URL'] + '/chat/completions', data=b'{}', headers={'authorization': 'Bearer ' + os.environ['NUWAX_API_KEY']})
+    try: urllib.request.urlopen(request).read()
+    except Exception: pass
+print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'pong'}}))
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_tokens':1}}))
+''')
+            run = root / "run"
+            env = {**os.environ, "VAL_ROOT": str(run), "LIVE_ENV_FILE": str(env_file),
+                   "LIVE_BUDGET_ATTEMPTS": "2", "CODEX_BIN": str(fake), "CODEX_EXEC_BIN": str(fake)}
+            command = [sys.executable, str(SCRIPT_DIR / "live-validation.py"), "--cases", "wire-chat"]
+            lock = run / "request-ledger.jsonl.lock"
+            first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertFalse(lock.exists(), "a finished run must not keep the ledger locked")
+            resumed = subprocess.run([sys.executable, str(SCRIPT_DIR / "live-validation.py"), "--resume"],
+                                     env=env, capture_output=True, text=True, timeout=60)
+            self.assertNotIn("could not start", resumed.stderr,
+                             "a resume must reach the gateway, not reuse the previous summary")
+            self.assertEqual(resumed.returncode, 1, resumed.stdout + resumed.stderr)
+            summary = json.loads((run / "summary.json").read_text())
+            self.assertGreaterEqual(summary["budgetDenied"], 1, "the exhausted budget must charge the resumed attempts")
+            self.assertEqual(summary["attemptsUsed"], 2, "a denied attempt never reaches the upstream, so it is not billed as used")
+            self.assertFalse(lock.exists(), "the resumed run must release the lock too")
+
+
 class ExecutableReceiptContract(unittest.TestCase):
     def test_codex_binary_must_be_named_explicitly_instead_of_a_stale_default(self):
         # The old built-in default pointed at an abandoned merge worktree. On a
@@ -252,13 +305,11 @@ class ExecutableReceiptContract(unittest.TestCase):
             root = Path(directory)
             env_file = root / "dummy.env"
             env_file.write_text("LIVE_GLM_CHAT_URL=http://127.0.0.1:1/v1\nLIVE_GLM_MODEL=test\nLIVE_GLM_API_KEY=dummy-key\n")
-            fake = root / "fake-exec"
-            fake.write_text('''#!/usr/bin/env python3
+            fake = write_fake_exec(root / "fake-exec", '''
 import json
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'pong'}}))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_tokens':1}}))
 ''')
-            fake.chmod(0o755)
             env = {**os.environ, "VAL_ROOT": str(root / "run"), "LIVE_ENV_FILE": str(env_file),
                    "LIVE_BUDGET_ATTEMPTS": "1", "CODEX_BIN": str(fake), "CODEX_EXEC_BIN": str(fake)}
             completed = subprocess.run([sys.executable, str(SCRIPT_DIR / "live-validation.py"), "--cases", "wire-chat"],
@@ -289,10 +340,9 @@ class WholeRunnerBudgetContract(unittest.TestCase):
             threading.Thread(target=server.serve_forever, daemon=True).start()
             env_file = root / "dummy.env"
             env_file.write_text(f"LIVE_GLM_CHAT_URL=http://127.0.0.1:{server.server_port}/v1\nLIVE_GLM_MODEL=test\nLIVE_GLM_API_KEY=dummy-key\n")
-            fake = root / "fake-exec"
             # Intentionally ignores a refusal and still reports success. The
             # outer run MUST fail because the shared gateway denied an attempt.
-            fake.write_text('''#!/usr/bin/env python3
+            fake = write_fake_exec(root / "fake-exec", '''
 import json, os, urllib.request, urllib.error
 for n in range(3):
     request = urllib.request.Request(os.environ['NUWAX_BASE_URL'] + '/chat/completions', data=b'{}', headers={'authorization': 'Bearer ' + os.environ['NUWAX_API_KEY']})
@@ -301,7 +351,6 @@ for n in range(3):
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'pong'}}))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_tokens':1}}))
 ''')
-            fake.chmod(0o755)
             try:
                 for budget in (2, 3):
                     run_root = root / str(budget)
@@ -349,9 +398,8 @@ class RoutedFixupRunContract(unittest.TestCase):
             threading.Thread(target=server.serve_forever, daemon=True).start()
             env_file = root / "dummy.env"
             env_file.write_text(f"LIVE_GLM_CHAT_URL=http://127.0.0.1:{server.server_port}/v1\nLIVE_GLM_MODEL=test\nLIVE_GLM_API_KEY=dummy-key\n")
-            fake = root / "fake-exec"
             # Two charged attempts, then a final answer that fails the case.
-            fake.write_text('''#!/usr/bin/env python3
+            fake = write_fake_exec(root / "fake-exec", '''
 import json, os, urllib.request
 for n in range(2):
     request = urllib.request.Request(os.environ['NUWAX_BASE_URL'] + '/chat/completions', data=b'{}', headers={'authorization': 'Bearer ' + os.environ['NUWAX_API_KEY']})
@@ -360,7 +408,6 @@ for n in range(2):
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'wrong answer'}}))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_tokens':1}}))
 ''')
-            fake.chmod(0o755)
             run_root = root / "run"
             env = {**os.environ, "VAL_ROOT": str(run_root), "LIVE_ENV_FILE": str(env_file),
                    "LIVE_BUDGET_ATTEMPTS": "2", "CODEX_EXEC_BIN": str(fake), "CODEX_BIN": str(fake)}

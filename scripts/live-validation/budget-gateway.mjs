@@ -61,6 +61,7 @@ export async function startBudgetGateway({ routes, ledgerPath, budget, maxOutput
     const stats = () => ({ limit, used, denied, active, remaining: Math.max(0, limit - used), maxOutputTokens });
     const sockets = new Set();
     let origin;
+    let close;
     const server = http.createServer((req, res) => {
         const reply = (status, value) => {
             res.writeHead(status, { "content-type": "application/json" });
@@ -74,6 +75,13 @@ export async function startBudgetGateway({ routes, ledgerPath, budget, maxOutput
             const route = routes.get(routeName);
             if (!route) { reply(404, { error: "vendor/wire is not configured" }); return; }
             reply(200, { baseUrl: `${origin}/routes/${routeName}`, model: route.model });
+            return;
+        }
+        // Windows cannot deliver SIGTERM to a spawned node child, so the driver
+        // asks for this instead of relying on a signal to release the ledger lock.
+        if (req.method === "POST" && incoming.pathname === "/control/shutdown") {
+            reply(200, { closing: true });
+            setTimeout(() => { close().then(() => process.exit(0), () => process.exit(1)); }, 0);
             return;
         }
         const match = /^\/routes\/([A-Z0-9_]+)\/(chat|responses|anthropic)(\/.*)$/.exec(incoming.pathname);
@@ -167,10 +175,10 @@ export async function startBudgetGateway({ routes, ledgerPath, budget, maxOutput
         });
     });
     server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
-    server.on("upgrade", (_req, socket) => { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); });
-    await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+    server.on("upgrade", (_req, socket) => { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); });    await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
     origin = `http://127.0.0.1:${server.address().port}`;
-    return { origin, token, stats, close: async () => { for (const socket of sockets) socket.destroy(); await new Promise((resolve) => server.close(resolve)); release(); } };
+    close = async () => { for (const socket of sockets) socket.destroy(); await new Promise((resolve) => server.close(resolve)); release(); };
+    return { origin, token, stats, close };
     } catch (error) { release(); throw error; }
 }
 
