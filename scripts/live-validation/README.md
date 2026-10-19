@@ -45,7 +45,11 @@ is required for every run: it must name the `codex` binary built from the
 source under test, and there is no default, because an inherited path would
 hash and validate a binary nobody chose. `CODEX_EXEC_BIN` defaults to
 `CODEX_BIN` with an `-exec` suffix, which is the sibling cargo produces in the
-same profile directory. `LIVE_SKIP_ACP=1` omits the three ACP cases. The
+same profile directory. The published npm package ships one entrypoint with an
+`exec` subcommand and no such sibling, so when validating that binary set
+`CODEX_EXEC_BIN` to a wrapper that appends `exec` to the same file; the receipt
+then hashes the wrapper, and `codexSha256` stays the binding for the real
+binary. `LIVE_SKIP_ACP=1` omits the three ACP cases. The
 fresh-run request cap defaults to 96; set it explicitly for a smaller
 acceptance run. Output defaults to 2048 tokens and the gateway applies the cap
 independently of the child setting.
