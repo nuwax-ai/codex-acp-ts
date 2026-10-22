@@ -35,6 +35,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
+import { auditBridgeRouting } from "./bridge-routing-contract.js";
 import {
     PROTOCOL_VERSION,
     client as acpClient,
@@ -55,6 +56,11 @@ const VAL_ENV_KEY = process.env["VAL_ENV_KEY"] ?? "ACP_VAL_MOCK_API_KEY";
 const VAL_ENV_VALUE = requiredEnv(VAL_ENV_KEY);
 const MOCK_RECORD_PATH = requiredEnv("MOCK_RECORD_PATH");
 const VAL_WIRE = process.env["VAL_WIRE"] ?? "chat";
+const VAL_GATEWAY_ENV = process.env["VAL_GATEWAY_ENV"] === "1";
+const VAL_BRIDGE = process.env["VAL_BRIDGE"] ?? "default";
+if (!["default", "rig", "native"].includes(VAL_BRIDGE)) throw new Error("VAL_BRIDGE must be default, rig or native");
+if (VAL_BRIDGE === "native" && VAL_WIRE !== "responses") throw new Error("native requires the responses wire");
+if (VAL_BRIDGE !== "default" && !VAL_GATEWAY_ENV) throw new Error("VAL_BRIDGE requires VAL_GATEWAY_ENV=1");
 
 const SESSION_TOKEN = "ACP-COLD-42";
 const RED_PNG_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
@@ -64,12 +70,13 @@ const RED_PNG_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe";
 const rootDir = process.env["VAL_ROOT"] ?? fs.mkdtempSync(path.join(os.tmpdir(), "acp-val-mock-"));
 const codexHome = path.join(rootDir, "codex-home");
 const workspace = path.join(rootDir, "workspace");
+const rigCapture = path.join(rootDir, "rig-requests.jsonl");
 const logsDir = path.join(rootDir, "appserver-logs");
 for (const dir of [codexHome, workspace, logsDir]) fs.mkdirSync(dir, { recursive: true });
 
 fs.writeFileSync(
     path.join(codexHome, "config.toml"),
-    [
+    VAL_GATEWAY_ENV ? "" : [
         `model = "${VAL_MODEL}"`,
         `model_provider = "vendor"`,
         ``,
@@ -93,6 +100,7 @@ interface RecordedRequest {
     wire?: string;
     kind?: string;
     body: string;
+    path?: string;
 }
 function readRecorded(): RecordedRequest[] {
     if (!fs.existsSync(MOCK_RECORD_PATH)) return [];
@@ -163,8 +171,9 @@ interface TurnTrace {
     toolNames: Map<string, string>;
     updateKinds: Set<string>;
     compactionUpdates: number;
+    usage: Array<{ used: number; size: number }>;
 }
-const newTrace = (): TurnTrace => ({ text: "", toolCalls: [], completedTools: [], toolNames: new Map(), updateKinds: new Set(), compactionUpdates: 0 });
+const newTrace = (): TurnTrace => ({ text: "", toolCalls: [], completedTools: [], toolNames: new Map(), updateKinds: new Set(), compactionUpdates: 0, usage: [] });
 
 let trace = newTrace();
 
@@ -187,7 +196,18 @@ function startAgent(): AgentHandle {
         env: {
             // Offline fixtures own provider routing; an inherited NUWAX
             // environment/provider/config must not bypass the mock endpoint and budget.
-            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_") && name !== "MODEL_PROVIDER" && name !== "CODEX_CONFIG")),
+            ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("NUWAX_") && !name.startsWith("CODEX_") && name !== "MODEL_PROVIDER" && name !== "OPENAI_API_KEY")),
+            CODEX_PATH,
+            CODEX_RIG_REQUEST_CAPTURE_FILE: rigCapture,
+            CODEX_RIG_MAX_HTTP_ATTEMPTS: "48",
+            ...(VAL_GATEWAY_ENV ? {
+                CODEX_BASE_URL: VAL_BASE_URL,
+                CODEX_MODEL: VAL_MODEL,
+                CODEX_API_KEY: VAL_ENV_VALUE,
+                CODEX_API_PROTOCOL: VAL_WIRE === "anthropic" ? "anthropic" : "openai",
+                ...(VAL_WIRE === "anthropic" ? {} : { CODEX_WIRE_API: VAL_WIRE }),
+                ...(VAL_BRIDGE === "default" ? {} : { CODEX_BRIDGE: VAL_BRIDGE }),
+            } : {}),
             CODEX_HOME: codexHome,
             APP_SERVER_LOGS: logsDir,
             // Fresh CODEX_HOME has no codex account; hand the wrapper its
@@ -202,6 +222,7 @@ function startAgent(): AgentHandle {
     });
     let stderrTail: string[] = [];
     child.stderr?.on("data", (d: Buffer) => {
+        fs.appendFileSync(path.join(rootDir, "agent.stderr.log"), d);
         stderrTail = [...stderrTail, ...d.toString().split("\n")].slice(-30);
     });
     (child as unknown as { stderrTail: () => string }).stderrTail = () => stderrTail.join("\n");
@@ -226,6 +247,9 @@ function startAgent(): AgentHandle {
                 if (update.status === "completed") {
                     trace.completedTools.push(name);
                 }
+            }
+            if (update.sessionUpdate === "usage_update") {
+                trace.usage.push({ used: update.used, size: update.size });
             }
             if (update.sessionUpdate === "compaction_update") {
                 trace.compactionUpdates += 1;
@@ -348,11 +372,12 @@ async function main() {
                 return false;
             }
         });
-        const s2ok = s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk && titleModelOk && s2rec.delta.length > 0;
+        const usageOk = s2.trace.usage.some((u) => u.used === 5 && Number.isInteger(u.size) && u.size > 0);
+        const s2ok = usageOk && s2.response?.stopReason === "end_turn" && /pong/i.test(s2.trace.text) && authOk && modelOk && titleModelOk && s2rec.delta.length > 0;
         record(
             "S2 env passthrough + first turn",
             s2ok,
-            `stop=${s2.response?.stopReason} authOk=${authOk} modelOk=${modelOk} titleModelOk=${titleModelOk} httpAttempts=${s2rec.delta.length} text="${s2.trace.text.slice(0, 60).replace(/\s+/g, " ")}"`,
+            `stop=${s2.response?.stopReason} authOk=${authOk} modelOk=${modelOk} titleModelOk=${titleModelOk} usageOk=${usageOk} httpAttempts=${s2rec.delta.length} text="${s2.trace.text.slice(0, 60).replace(/\s+/g, " ")}"`,
         );
 
         // ---- S3 screenshot typed-image delivery ------------------------------
@@ -432,6 +457,7 @@ async function main() {
 
         // ---- S6 cold resume ---------------------------------------------------
         await killAgent(handle);
+        trace = newTrace();
         handle = startAgent();
         await withTimeout(
             handle.agent.request(methods.agent.initialize as any, {
@@ -454,6 +480,7 @@ async function main() {
             60_000,
             "session/load",
         );
+        const restoredUsageOk = trace.usage.some((u) => u.used === 5 && Number.isInteger(u.size) && u.size > 0);
         recordedBefore = readRecorded().length;
         const s6 = await prompt(
             handle,
@@ -466,32 +493,49 @@ async function main() {
         // rollout was really loaded by the fresh process.
         const tokenInResumedRequest = s6rec.delta.some((r) => r.body.includes(SESSION_TOKEN));
         const s6ok =
-            s6.response?.stopReason === "end_turn" &&
+            restoredUsageOk && s6.response?.stopReason === "end_turn" &&
             s6.trace.text.toUpperCase().includes(SESSION_TOKEN) &&
             tokenInResumedRequest;
         record(
             "S6 cold resume recall",
             s6ok,
-            `stop=${s6.response?.stopReason} tokenInResumedRequest=${tokenInResumedRequest} recalled="${s6.trace.text.trim().slice(0, 40)}" httpAttempts=${s6rec.delta.length}`,
+            `stop=${s6.response?.stopReason} restoredUsageOk=${restoredUsageOk} tokenInResumedRequest=${tokenInResumedRequest} recalled="${s6.trace.text.trim().slice(0, 40)}" httpAttempts=${s6rec.delta.length}`,
         );
     } catch (error) {
         record("driver", false, `unexpected: ${String(error)}`);
         if (handle) log(`agent stderr tail:\n${(handle.child as unknown as { stderrTail: () => string }).stderrTail?.() ?? ""}`);
     } finally {
         await killAgent(handle);
+        let captureCount: number | null = null;
+        try {
+            const routing = auditBridgeRouting(
+                fs.existsSync(MOCK_RECORD_PATH) ? fs.readFileSync(MOCK_RECORD_PATH, "utf8") : "",
+                fs.existsSync(rigCapture) ? fs.readFileSync(rigCapture, "utf8") : "",
+                { wire: VAL_WIRE, key: VAL_ENV_VALUE, model: VAL_MODEL, native: VAL_BRIDGE === "native" },
+            );
+            captureCount = routing.captures;
+            record("S7 bridge routing + exact path", true, `entry=${VAL_GATEWAY_ENV ? "CODEX_*" : "config"} bridge=${VAL_BRIDGE} requests=${routing.requests} rigCapture=${routing.captures} expectedPath=${routing.expectedPath}`);
+        } catch (error) {
+            // Evidence failures must preserve earlier scenario failures and
+            // still produce results.json; malformed native capture is not zero.
+            record("S7 bridge routing + exact path", false, String(error));
+        }
         const artifact = {
             codexPath: CODEX_PATH,
             codexSha256: sha256,
             valModel: VAL_MODEL,
             valBaseUrl: VAL_BASE_URL,
             valWire: VAL_WIRE,
+            bridge: VAL_BRIDGE,
+            gatewayEnv: VAL_GATEWAY_ENV,
+            rigCaptureCount: captureCount,
             envKeyName: VAL_ENV_KEY,
             results,
         };
         fs.writeFileSync(path.join(rootDir, "results.json"), JSON.stringify(artifact, null, 2));
         log(`results artifact: ${path.join(rootDir, "results.json")} (mock record: ${MOCK_RECORD_PATH})`);
         const failed = results.filter((r) => !r.pass);
-        log(`summary: ${results.filter((r) => r.pass).length}/${results.length} steps passed; total model HTTP requests: ${readRecorded().length}`);
+        log(`summary: ${results.filter((r) => r.pass).length}/${results.length} steps passed; model HTTP record: ${MOCK_RECORD_PATH}`);
         process.exit(failed.length > 0 ? 1 : 0);
     }
 }

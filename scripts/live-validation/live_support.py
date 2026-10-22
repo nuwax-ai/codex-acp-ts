@@ -117,7 +117,7 @@ def provider_env(origin, token, vendor, wire, home, max_output):
     # child processes. The only API key below is the local gateway capability.
     provider_overrides = {
         "MODEL_PROVIDER", "CODEX_CONFIG", "CODEX_BASE_URL", "CODEX_API_KEY", "CODEX_API_PROTOCOL",
-        "CODEX_WIRE_API", "CODEX_PROVIDER_ID", "CODEX_PROVIDER_NAME", "CODEX_MODEL", "CODEX_MODEL_CONTEXT_WINDOW",
+        "CODEX_WIRE_API", "CODEX_BRIDGE", "CODEX_PROVIDER_ID", "CODEX_PROVIDER_NAME", "CODEX_MODEL", "CODEX_MODEL_CONTEXT_WINDOW",
     }
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("NUWAX_", "LIVE_", "OPENAI_", "ANTHROPIC_")) and key not in provider_overrides}

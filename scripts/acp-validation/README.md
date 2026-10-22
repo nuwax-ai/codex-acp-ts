@@ -219,3 +219,40 @@ session and checks `used=5` plus the context-window value before/after warm
 reload, cold load and continuation. This verifies the public `usage_update`
 last-turn values; cumulative internal token-ledger inheritance is covered by
 the ACP product unit tests, not inferred from the fixed five-token fixture.
+
+## Environment gateway / native Responses closure
+
+The six-scenario driver also accepts `VAL_GATEWAY_ENV=1`. In this mode it
+starts with an empty `config.toml` and supplies the public `CODEX_*` gateway
+environment variables to the real ACP process. Inherited `CODEX_*`,
+`NUWAX_*`, `OPENAI_API_KEY` and `MODEL_PROVIDER` routing is removed first;
+the explicit candidate binary and local dummy credential are then added.
+This exercises the adapter's environment gateway rather than a prewritten
+provider configuration.
+
+```bash
+# Explicit native Responses, followed by default rig on the same wire:
+VAL_GATEWAY_ENV=1 VAL_BRIDGE=native VAL_WIRE=responses \
+  scripts/acp-validation/run-acp-mock-validation.sh /absolute/path/to/codex EXPECTED_SHA256
+VAL_GATEWAY_ENV=1 VAL_BRIDGE=default VAL_WIRE=responses \
+  scripts/acp-validation/run-acp-mock-validation.sh /absolute/path/to/codex EXPECTED_SHA256
+# Domestic-model protocol entry points, still with local dummy fixtures:
+VAL_GATEWAY_ENV=1 VAL_WIRE=chat \
+  scripts/acp-validation/run-acp-mock-validation.sh /absolute/path/to/codex EXPECTED_SHA256
+VAL_GATEWAY_ENV=1 VAL_WIRE=anthropic \
+  scripts/acp-validation/run-acp-mock-validation.sh /absolute/path/to/codex EXPECTED_SHA256
+```
+
+`VAL_BRIDGE=default` omits `CODEX_BRIDGE`, proving the default selection;
+`rig` selects it explicitly. `native` requires Responses. Each run additionally
+records a mandatory S7 postflight: all model calls used the exact selected
+path, model and dummy authentication, and rig's request-capture bodies match
+the mock's received bytes. A native run must receive real HTTP model calls
+and create zero rig capture entries; a rig run must capture every request.
+The stable six-scenario table remains the input to `summary-18.json`; a failed
+S7 still makes the per-wire runner and the combined runner fail.
+
+S2 also requires the numerical `usage_update.used=5` fixture value and a
+positive context window. S6 clears prior traces before cold restart and
+requires the restored usage update before sending its recall prompt. These
+are deterministic protocol contracts, not real-vendor usage or vision claims.

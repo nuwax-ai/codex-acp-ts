@@ -766,7 +766,7 @@ export function startMockServer({ port, recordPath, maxRequests = 48, toolBudget
             const response = selectResponse(parsed, screenshotToolCalls, wire, toolBudget, answeredImages);
             const streamOptions = { includeUsage: parsed.stream_options?.include_usage === true };
             fs.appendFileSync(recordPath, `${JSON.stringify({
-                ts: new Date().toISOString(), wire, auth: req.headers.authorization ?? null,
+                ts: new Date().toISOString(), wire, path: req.url, auth: req.headers.authorization ?? null,
                 xApi: req.headers["x-api-key"] ?? null,
                 kind: response.kind, body,
             })}\n`);

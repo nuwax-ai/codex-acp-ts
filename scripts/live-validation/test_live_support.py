@@ -47,7 +47,7 @@ class ProviderEnvironmentContract(unittest.TestCase):
         overrides = {
             "MODEL_PROVIDER": "paid-direct", "CODEX_CONFIG": '{"model_provider":"paid-direct"}',
             "CODEX_BASE_URL": "https://unmetered.invalid", "CODEX_API_KEY": "private-api-key",
-            "CODEX_API_PROTOCOL": "anthropic", "CODEX_WIRE_API": "responses", "CODEX_PROVIDER_ID": "foreign",
+            "CODEX_API_PROTOCOL": "anthropic", "CODEX_WIRE_API": "responses", "CODEX_BRIDGE": "native", "CODEX_PROVIDER_ID": "foreign",
             "CODEX_PROVIDER_NAME": "foreign", "CODEX_MODEL": "foreign-model", "CODEX_MODEL_CONTEXT_WINDOW": "1000000",
             "NUWAX_BASE_URL": "https://another-unmetered.invalid", "NUWAX_API_KEY": "private-nuwax-key",
             "LIVE_FOREIGN_API_KEY": "private-live-key", "OPENAI_API_KEY": "private-openai-key", "ANTHROPIC_API_KEY": "private-anthropic-key",

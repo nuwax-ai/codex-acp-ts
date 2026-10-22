@@ -148,3 +148,33 @@ whole-run denials, shutdown cleanup preserving failure evidence and the
 cancel-notification to acknowledgement request window. The ACP text collector
 excludes advisory notices and commentary, joins chunks by message identity
 and scores the last final assistant message exactly.
+
+## Native Responses closure acceptance
+
+`native-responses-acceptance.py` runs a small GLM Responses acceptance with
+`NUWAX_BRIDGE=native`: a randomized text nonce, a real file-writing tool, a
+separate-process resume that recalls the nonce, and optionally ACP streamed
+cancellation followed by a new successful prompt. It requires explicit binary
+SHA-256 values and verifies the exec build receipt against the source HEAD.
+It does not claim official GPT or another relay has been tested.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/live-validation/native-responses-acceptance.py \
+  --root /Volumes/your-drive/validation/native-responses-unique-run \
+  --env-file /absolute/path/to/protected.env \
+  --source-repo /absolute/path/to/fork-nuwax-codex \
+  --codex /absolute/path/to/codex \
+  --codex-exec /absolute/path/to/codex-exec \
+  --expected-codex-sha256 CODEX_SHA256 \
+  --expected-exec-sha256 EXEC_SHA256 \
+  --budget 16 --acp-cancel
+```
+
+The artifact directory must be new and on the external drive. Credentials are
+read only by the budget gateway; children receive its loopback capability.
+A failed case stops the dependent sequence without automatic retry. The
+receipt requires real admitted GLM/Responses attempts, structured exec usage,
+zero rig capture rows, gateway shutdown and no surviving owned process group.
+The separate credential-free `acp-validation` fixtures exercise the ACP
+`CODEX_*` environment gateway, including `CODEX_BRIDGE=native`; this runner
+exercises the Codex `NUWAX_*` entry.
