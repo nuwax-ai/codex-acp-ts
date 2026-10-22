@@ -1,7 +1,7 @@
 /**
  * Environment-driven auto-configuration for the Nuwax Codex bridge.
  *
- * Reads custom env vars (CODEX_BASE_URL, CODEX_API_PROTOCOL, CODEX_WIRE_API,
+ * Reads custom env vars (CODEX_BASE_URL, CODEX_API_PROTOCOL, CODEX_WIRE_API, CODEX_BRIDGE,
  * CODEX_MODEL, CODEX_LOG_DIR) and translates them into Codex gateway config or
  * system env overrides. All custom logic lives here to keep merge conflicts
  * with upstream codex-acp to a minimum.
@@ -16,6 +16,7 @@ import {logger} from "./Logger";
 export const CODEX_BASE_URL_ENV_VAR = "CODEX_BASE_URL";
 export const CODEX_API_PROTOCOL_ENV_VAR = "CODEX_API_PROTOCOL";
 export const CODEX_WIRE_API_ENV_VAR = "CODEX_WIRE_API";
+export const CODEX_BRIDGE_ENV_VAR = "CODEX_BRIDGE";
 export const CODEX_MODEL_ENV_VAR = "CODEX_MODEL";
 export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
 export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
@@ -40,6 +41,9 @@ export type EnvWireApi = "responses" | "chat";
 /** Wire value written into the gateway (codex `wire_api`) config field. */
 export type GatewayWireApi = EnvWireApi | "anthropic";
 
+/** Transport selected for the environment-owned gateway; omitted preserves Codex's default. */
+export type EnvBridge = "rig" | "native" | "genai";
+
 /** Well-known provider id used by the auto-configured gateway. */
 export const CUSTOM_GATEWAY_ID = "custom-gateway";
 
@@ -51,6 +55,7 @@ export interface EnvGatewayConfig {
         base_url: string;
         http_headers: Record<string, string>;
         wire_api: GatewayWireApi;
+        experimental_bridge?: EnvBridge;
         experimental_bearer_token?: string;
     };
 }
@@ -66,7 +71,11 @@ export interface EnvGatewayConfig {
  */
 export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     const baseUrl = process.env[CODEX_BASE_URL_ENV_VAR]?.trim();
+    const bridge = parseEnvBridge(process.env[CODEX_BRIDGE_ENV_VAR]?.trim());
     if (!baseUrl) {
+        if (bridge !== undefined) {
+            throw new Error(`${CODEX_BRIDGE_ENV_VAR} requires ${CODEX_BASE_URL_ENV_VAR} for the environment gateway.`);
+        }
         return null;
     }
 
@@ -80,6 +89,12 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
         );
     }
     const wireApi: GatewayWireApi = apiProtocol === "anthropic" ? "anthropic" : openAiWire;
+    if (bridge === "native" && wireApi !== "responses") {
+        throw new Error(`${CODEX_BRIDGE_ENV_VAR}=native requires ${CODEX_API_PROTOCOL_ENV_VAR}=openai and ${CODEX_WIRE_API_ENV_VAR}=responses.`);
+    }
+    if (bridge === "genai" && wireApi === "responses") {
+        throw new Error(`${CODEX_BRIDGE_ENV_VAR}=genai requires the chat or anthropic protocol; responses is unsupported.`);
+    }
 
     const providerName =
         process.env[CODEX_PROVIDER_NAME_ENV_VAR]?.trim()
@@ -105,6 +120,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
             base_url: baseUrl,
             http_headers: headers,
             wire_api: wireApi,
+            ...(bridge === undefined ? {} : {experimental_bridge: bridge}),
             ...(apiKey ? {experimental_bearer_token: apiKey} : {}),
         },
     };
@@ -184,7 +200,7 @@ function parseEnvApiProtocol(raw: string | undefined): EnvApiProtocol {
         return raw;
     }
     throw new Error(
-        `Invalid ${CODEX_API_PROTOCOL_ENV_VAR} "${raw}"; expected "openai" or "anthropic".`,
+        `Invalid ${CODEX_API_PROTOCOL_ENV_VAR}; expected "openai" or "anthropic".`,
     );
 }
 
@@ -201,6 +217,13 @@ function parseEnvWireApi(raw: string | undefined): EnvWireApi {
         return raw;
     }
     throw new Error(
-        `Invalid ${CODEX_WIRE_API_ENV_VAR} "${raw}"; expected "responses" or "chat" within the OpenAI family, or set ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic for the Anthropic protocol.`,
+        `Invalid ${CODEX_WIRE_API_ENV_VAR}; expected "responses" or "chat" within the OpenAI family, or set ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic for the Anthropic protocol.`,
     );
+}
+
+/** CODEX_* owns this gateway. NUWAX_BRIDGE is deliberately not an alias or override. */
+function parseEnvBridge(raw: string | undefined): EnvBridge | undefined {
+    if (raw === undefined || raw === "") return undefined;
+    if (raw === "rig" || raw === "native" || raw === "genai") return raw;
+    throw new Error(`Invalid ${CODEX_BRIDGE_ENV_VAR}; expected "rig", "native", or "genai".`);
 }

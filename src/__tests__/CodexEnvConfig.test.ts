@@ -3,16 +3,19 @@ import {CODEX_API_KEY_ENV_VAR} from "../CodexAuthMethod";
 import {
     CODEX_API_PROTOCOL_ENV_VAR,
     CODEX_BASE_URL_ENV_VAR,
+    CODEX_BRIDGE_ENV_VAR,
     CODEX_WIRE_API_ENV_VAR,
     readGatewayConfigFromEnv,
 } from "../CodexEnvConfig";
 
 const ENV_VARS = [
     CODEX_BASE_URL_ENV_VAR,
+    CODEX_BRIDGE_ENV_VAR,
     CODEX_API_PROTOCOL_ENV_VAR,
     CODEX_WIRE_API_ENV_VAR,
     CODEX_API_KEY_ENV_VAR,
     "OPENAI_API_KEY",
+    "NUWAX_BRIDGE",
 ];
 
 function withEnv(overrides: Record<string, string>, run: () => void): void {
@@ -56,6 +59,72 @@ describe("readGatewayConfigFromEnv", () => {
     it("defaults to the OpenAI family with the responses wire when both are unset", () => {
         withEnv({[CODEX_BASE_URL_ENV_VAR]: "https://api.example.com"}, () => {
             expect(readGatewayConfigFromEnv()?.config.wire_api).toBe("responses");
+            expect(readGatewayConfigFromEnv()?.config).not.toHaveProperty("experimental_bridge");
+        });
+    });
+
+    it.each([
+        ["rig", "openai", "responses"],
+        ["rig", "openai", "chat"],
+        ["rig", "anthropic", "responses"],
+        ["native", "openai", "responses"],
+        ["genai", "openai", "chat"],
+        ["genai", "anthropic", "responses"],
+    ])("selects bridge %s for %s/%s", (bridge, protocol, wire) => {
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [CODEX_BRIDGE_ENV_VAR]: ` ${bridge} `,
+            [CODEX_API_PROTOCOL_ENV_VAR]: protocol,
+            [CODEX_WIRE_API_ENV_VAR]: wire,
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.experimental_bridge).toBe(bridge);
+        });
+    });
+
+    it.each(["rig", "native", "genai"])("rejects orphan bridge %s without a gateway", bridge => {
+        withEnv({[CODEX_BRIDGE_ENV_VAR]: bridge}, () => {
+            expect(() => readGatewayConfigFromEnv()).toThrow(/CODEX_BRIDGE requires CODEX_BASE_URL/);
+        });
+    });
+
+    it.each([
+        ["native", "openai", "chat"],
+        ["native", "anthropic", "responses"],
+        ["genai", "openai", "responses"],
+        ["invalid-secret-bridge", "openai", "responses"],
+    ])("rejects unsupported bridge/protocol %s/%s/%s without exposing credentials", (bridge, protocol, wire) => {
+        const sensitiveUrl = "https://user:password@gateway.example/private-token";
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: sensitiveUrl,
+            [CODEX_BRIDGE_ENV_VAR]: bridge,
+            [CODEX_API_PROTOCOL_ENV_VAR]: protocol,
+            [CODEX_WIRE_API_ENV_VAR]: wire,
+            [CODEX_API_KEY_ENV_VAR]: "secret-api-key",
+        }, () => {
+            let error: unknown;
+            try { readGatewayConfigFromEnv(); } catch (caught) { error = caught; }
+            expect(error).toBeInstanceOf(Error);
+            const message = (error as Error).message;
+            expect(message).toContain("CODEX_BRIDGE");
+            expect(message).not.toContain(sensitiveUrl);
+            expect(message).not.toContain("secret-api-key");
+            expect(message).not.toContain("invalid-secret-bridge");
+        });
+    });
+
+    it("does not treat NUWAX_BRIDGE as an override for the ACP gateway", () => {
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [CODEX_BRIDGE_ENV_VAR]: "rig",
+            NUWAX_BRIDGE: "native",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.experimental_bridge).toBe("rig");
+        });
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            NUWAX_BRIDGE: "native",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config).not.toHaveProperty("experimental_bridge");
         });
     });
 

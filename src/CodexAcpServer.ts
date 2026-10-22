@@ -760,7 +760,11 @@ export class CodexAcpServer {
             sessionId,
             sessionState.cwd,
             () => sessionState.sessionTitleSource,
-            () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
+            () => ({
+                provider: sessionState.authProvider,
+                model: ModelId.fromString(sessionState.currentModelId).model,
+                config: this.codexAcpClient.getModelProviderOverrides(sessionState.authProvider),
+            }),
         );
         const replacedState = operation === "resume" ? this.sessions.get(sessionId) : undefined;
         this.installSessionState(sessionState);
@@ -2040,7 +2044,11 @@ export class CodexAcpServer {
             sessionId,
             sessionState.cwd,
             () => sessionState.sessionTitleSource,
-            () => ({ provider: sessionState.authProvider, model: ModelId.fromString(sessionState.currentModelId).model }),
+            () => ({
+                provider: sessionState.authProvider,
+                model: ModelId.fromString(sessionState.currentModelId).model,
+                config: this.codexAcpClient.getModelProviderOverrides(sessionState.authProvider),
+            }),
         );
         const replacedState = this.sessions.get(sessionId);
         this.installSessionState(sessionState);

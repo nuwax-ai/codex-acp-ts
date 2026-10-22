@@ -71,6 +71,32 @@ The adapter advertises ACP auth methods during initialization. Clients can authe
 - `NO_BROWSER` - hide browser-based ChatGPT auth when set.
 - `APP_SERVER_LOGS` - directory for adapter logs.
 
+### Nuwax model gateway from environment
+
+Set `CODEX_BASE_URL`, `CODEX_API_KEY`, and `CODEX_MODEL` to configure a gateway without an ACP provider extension. `CODEX_API_PROTOCOL=openai` (the default) accepts `CODEX_WIRE_API=responses` (the default) or `chat`. Use `CODEX_API_PROTOCOL=anthropic` for the Anthropic Messages API.
+
+`CODEX_BRIDGE` optionally selects the implementation for this environment gateway:
+
+| Value | Supported wire |
+| --- | --- |
+| `rig` | Responses, Chat Completions, Anthropic Messages |
+| `native` | OpenAI Responses |
+| `genai` | Chat Completions, Anthropic Messages |
+
+When omitted, the adapter leaves `experimental_bridge` unset so the selected Codex binary keeps its default. A bridge without `CODEX_BASE_URL`, an unknown value, or an unsupported bridge/wire combination fails at startup. `NUWAX_BRIDGE` does not override the adapter's `CODEX_*` gateway. The environment gateway is already authorized, so it does not require an explicit `authenticate` call. An explicit ACP `providers/set` or any `authenticate` request (API key, ChatGPT, or gateway) replaces or clears the environment gateway, including its bridge selection and credentials.
+
+For native Responses with an official or compatible gateway, set:
+
+```bash
+export CODEX_BASE_URL=https://api.openai.com/v1
+export CODEX_API_PROTOCOL=openai
+export CODEX_WIRE_API=responses
+export CODEX_BRIDGE=native
+export CODEX_MODEL=your-model-id
+# Supply CODEX_API_KEY through your existing secret environment.
+# CODEX_PATH must point to a Nuwax Codex build that supports this bridge setting.
+```
+
 ## Development
 
 ```bash

@@ -6,7 +6,7 @@ import {
     isCodexAuthRequest,
     OPENAI_API_KEY_ENV_VAR,
 } from "./CodexAuthMethod";
-import {getEnvContextWindow, getEnvModel, isThinkingDisabled, readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {type EnvGatewayConfig, getEnvContextWindow, getEnvModel, isThinkingDisabled, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {EmbeddedResourceResource} from "@agentclientprotocol/sdk";
 import * as acp from "@agentclientprotocol/sdk";
 import {type McpServer, RequestError} from "@agentclientprotocol/sdk";
@@ -900,6 +900,16 @@ export class CodexAcpClient {
         return this.gatewayConfig?.modelProvider ?? this.modelProvider;
     }
 
+    /** Copy the active provider definition for hidden sampling threads outside the main session. */
+    getModelProviderOverrides(provider: string | null): JsonObject | undefined {
+        if (provider === null) return undefined;
+        const providers = mergeGatewayConfig(this.config, this.gatewayConfig)["model_providers"];
+        if (!isJsonObject(providers)) return undefined;
+        const selected = providers[provider];
+        if (!isJsonObject(selected)) return undefined;
+        return {model_providers: {[provider]: structuredClone(selected)}};
+    }
+
     /** When a custom gateway is active, prefer CODEX_MODEL env var over codex's default. */
     private effectiveModel(codexModel: string | null): string | null {
         if (this.gatewayConfig) {
@@ -1352,16 +1362,7 @@ type WireApi = "responses" | "chat" | "anthropic";
 
 type GatewayConfigSource = "authentication" | "acpProviders";
 
-interface GatewayConfig {
-    modelProvider: string;
-    config: {
-        name: string,
-        base_url: string,
-        http_headers: Record<string, string>,
-        wire_api: WireApi,
-        experimental_bearer_token?: string,
-    }
-}
+type GatewayConfig = EnvGatewayConfig;
 
 function readMetaAdditionalRoots(meta?: Record<string, unknown> | null): string[] | undefined {
     const rawRoots = meta?.["additionalRoots"];

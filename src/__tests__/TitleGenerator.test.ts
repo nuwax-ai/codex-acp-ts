@@ -80,6 +80,54 @@ describe("TitleGenerator.waitForIdle", () => {
 
 
 describe("TitleGenerator provider routing", () => {
+    it("uses the active model when a gateway overrides the built-in OpenAI provider id", async () => {
+        const threadStart = vi.fn().mockResolvedValue({thread: {id: "ephemeral"}});
+        const runTurn = vi.fn().mockResolvedValue({turn: {items: []}});
+        const generator = new TitleGenerator({threadStart, runTurn} as unknown as CodexAppServerClient,
+            "main", "/test/cwd", () => "unset", () => ({
+                provider: "openai",
+                model: "custom-model",
+                config: {model_providers: {openai: {base_url: "https://gateway.example/v1", experimental_bridge: "native"}}},
+            }));
+        generator.onTurnCompleted("Keep the deployment's selected model");
+        await generator.waitForIdle(1_000);
+        expect(runTurn).toHaveBeenCalledWith(expect.objectContaining({model: "custom-model"}));
+    });
+
+    it("snapshots the complete provider definition before hidden thread creation", async () => {
+        const thread = deferred<{thread: {id: string}}>();
+        const threadStart = vi.fn().mockReturnValue(thread.promise);
+        const runTurn = vi.fn().mockResolvedValue({turn: {items: []}});
+        const config = {model_providers: {gateway: {
+            base_url: "https://gateway.example/v1",
+            wire_api: "responses",
+            experimental_bridge: "native",
+            experimental_bearer_token: "private-token",
+            query_params: {"api-version": "2026-10-22"},
+            http_headers: {"x-custom-auth": "private-header"},
+        }}};
+        const generator = new TitleGenerator({threadStart, runTurn} as unknown as CodexAppServerClient,
+            "main", "/test/cwd", () => "unset", () => ({provider: "gateway", model: "active-vendor-model", config}));
+        generator.onTurnCompleted("Review provider routing");
+        config.model_providers.gateway.experimental_bridge = "rig";
+        config.model_providers.gateway.http_headers["x-custom-auth"] = "changed-later";
+        thread.resolve({thread: {id: "ephemeral"}});
+        await generator.waitForIdle(1_000);
+        expect(threadStart).toHaveBeenCalledWith(expect.objectContaining({
+            modelProvider: "gateway",
+            ephemeral: true,
+            config: {model_providers: {gateway: {
+                base_url: "https://gateway.example/v1",
+                wire_api: "responses",
+                experimental_bridge: "native",
+                experimental_bearer_token: "private-token",
+                query_params: {"api-version": "2026-10-22"},
+                http_headers: {"x-custom-auth": "private-header"},
+            }}},
+        }));
+        expect(runTurn).toHaveBeenCalledWith(expect.objectContaining({model: "active-vendor-model"}));
+    });
+
     it.each([null, "openai", "amazon-bedrock", "amazon-bedrock-runtime", "vendor"])(
         "captures the title model for provider %s before async thread creation",
         async provider => {

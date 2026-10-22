@@ -1,5 +1,5 @@
 import type { CodexAppServerClient } from "./CodexAppServerClient";
-import type { Turn } from "./app-server/v2";
+import type { ThreadStartParams, Turn } from "./app-server/v2";
 
 // Use cheap model to generate a title
 const TITLE_MODEL = "gpt-5.6-luna";
@@ -35,7 +35,7 @@ export class TitleGenerator {
         private readonly mainThreadId: string,
         private readonly cwd: string,
         private readonly getSessionTitleSource: () => string,
-        private readonly getModelRouting: () => { provider: string | null; model: string },
+        private readonly getModelRouting: () => { provider: string | null; model: string; config?: ThreadStartParams["config"] },
     ) {}
 
     /**
@@ -111,9 +111,11 @@ export class TitleGenerator {
 
         // Capture routing before starting the hidden thread: a model switch
         // while thread/start is in flight must not change this title request.
-        const { provider, model: activeModel } = this.getModelRouting();
-        const model = provider === null || provider === "openai" ||
-            provider === "amazon-bedrock" || provider === "amazon-bedrock-runtime"
+        const { provider, model: activeModel, config: providerConfig } = this.getModelRouting();
+        const config = providerConfig === undefined ? undefined : structuredClone(providerConfig);
+        // An explicit provider definition can replace even the built-in OpenAI id.
+        const model = config === undefined && (provider === null || provider === "openai" ||
+            provider === "amazon-bedrock" || provider === "amazon-bedrock-runtime")
             ? TITLE_MODEL : activeModel;
 
         // Ephemeral thread: not persisted to disk, not visible in thread list,
@@ -122,6 +124,7 @@ export class TitleGenerator {
             cwd: this.cwd,
             ephemeral: true,
             modelProvider: provider,
+            ...(config === undefined ? {} : {config}),
         });
 
         const turnResult = await this.client.runTurn({
