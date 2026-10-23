@@ -1,4 +1,4 @@
-import type * as acp from "@agentclientprotocol/sdk";
+import type * as acp from "@agentclientprotocol/sdk/unstable";
 import {describe, expect, it, vi} from "vitest";
 import {ACPSessionConnection} from "../../ACPSessionConnection";
 import type {ServerNotification} from "../../app-server";
@@ -157,7 +157,7 @@ describe("session notices", () => {
         const client = fixture.getCodexAcpClient();
         const appServer = fixture.getCodexAppServerClient();
         const model = createTestModel();
-        vi.spyOn(client, "authRequired").mockResolvedValue(false);
+        vi.spyOn(client, "readAuthRequirement").mockResolvedValue({required: false, account: null});
         vi.spyOn(client, "getAccount").mockResolvedValue({account: null, requiresOpenaiAuth: false});
         vi.spyOn(client, "listSkills").mockResolvedValue({data: []});
         vi.spyOn(appServer, "listModels").mockResolvedValue({data: [model], nextCursor: null});
@@ -213,6 +213,7 @@ async function createFixture(clientCapabilities?: unknown, nativeSubagents = fal
             sessionId,
             true,
             new ACPSessionConnection(fixture.getAcpConnection(), sessionId),
+            () => {},
         );
     }
     vi.spyOn(agent, "getSessionState").mockReturnValue(sessionState);

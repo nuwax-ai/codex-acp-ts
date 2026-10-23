@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {createMcpToolCallUpdate} from "../../src/CodexToolCallMapper.ts";
+import {AcpToolCallRenderer} from "../../src/tool-calls/AcpToolCallRenderer.ts";
+import {ClientCapabilities} from "../../src/tool-calls/ClientCapabilities.ts";
+import {McpToolReporter} from "../../src/tool-calls/reporters/McpToolReporter.ts";
 import {CodexSessionCompactions} from "../../src/CodexSessionCompactions.ts";
 import {assertNativeCompaction, assertRestoredUsage, assertScreenshot, beginPrompt, inspectContent, inspectUpdateContent, isModelDelta, latestUsageAfter,
     processTable, rememberFamily, requireCompletedTool, survivingFamily, workspacePath} from "./workflow-contracts.ts";
@@ -103,16 +105,20 @@ test("filesystem handlers reject traversal, sibling-prefix paths and escaping sy
     }
 });
 
-test("the real MCP mapper's structured result supplies a correlated image without ACP display content", async () => {
-    const update = await createMcpToolCallUpdate({
-        type: "mcpToolCall", id: "mapper-shot", server: "screenshots", tool: "take_screenshot", status: "completed",
+test("the real MCP reporter's structured result supplies a correlated image without ACP display content", () => {
+    const renderer = new AcpToolCallRenderer(ClientCapabilities.DEFAULT);
+    const item = {
+        type: "mcpToolCall", id: "mapper-shot", server: "screenshots", tool: "take_screenshot",
         arguments: {}, result: {content: [{type: "image", mimeType: "image/png", data: "ZHVtbXk="}, {type: "text", text: "screenshot captured"}], structuredContent: null, _meta: null}, error: null,
-    });
+    };
+    // The start report names the tool; the completed report carries the result.
+    const started = renderer.render(McpToolReporter.started({...item, status: "inProgress", result: null}));
+    const update = renderer.render(McpToolReporter.completed({...item, status: "completed"}));
     assert.equal(update.content, undefined);
     const observed = inspectUpdateContent(update);
     assert.deepEqual(observed, {texts: ["screenshot captured"], images: 1});
     assert.doesNotThrow(() => assertScreenshot([{event: "complete", color: "red"}], "红色", [update.toolCallId],
-        [{id: update.toolCallId, tool: update.title, status: update.status}], []));
+        [{id: started.toolCallId, tool: started.title, status: update.status}], []));
 });
 
 test("only the declared MCP content array counts; error metadata and serialized image JSON do not", () => {

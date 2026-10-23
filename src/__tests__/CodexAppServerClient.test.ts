@@ -4,9 +4,9 @@ import {TitleGenerator} from "../TitleGenerator";
 import type {ServerNotification} from "../app-server";
 import type {MessageConnection} from "vscode-jsonrpc/node";
 
-function createUsageNotification(threadId: string): ServerNotification {
+function createUsageNotification(threadId: string, totalTokens = 100): ServerNotification {
     const usage = {
-        totalTokens: 100,
+        totalTokens,
         inputTokens: 80,
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
@@ -107,8 +107,13 @@ describe("CodexAppServerClient restored token usage capture", () => {
         expect(captured?.tokenUsage.total.totalTokens).toBe(100);
         expect(armedCaptures(client).size).toBe(0);
 
-        // After consumption the live stream flows to the handler again.
+        // A replay of the snapshot that was just applied is a duplicate: delivering it would roll
+        // the reloaded state back to the totals the load already replaced.
         send(createUsageNotification("thread-1"));
+        expect(handler).not.toHaveBeenCalled();
+
+        // A newer snapshot is live usage and flows to the handler again.
+        send(createUsageNotification("thread-1", 250));
         expect(handler).toHaveBeenCalledTimes(1);
         expect(handler.mock.calls[0]?.[0]?.method).toBe("thread/tokenUsage/updated");
 
@@ -140,8 +145,10 @@ describe("CodexAppServerClient restored token usage capture", () => {
         client.armRestoredTokenUsageCapture("resumed-thread");
         send(createUsageNotification("resumed-thread"));
 
+        // The live subscription supersedes the capture: it takes the snapshot the load never
+        // consumed, and the late window ends there.
         const lateSubscriber = vi.fn();
-        client.onServerNotification("resumed-thread", lateSubscriber);
+        client.releaseRestoredTokenUsageCapture("resumed-thread", lateSubscriber);
         expect(lateSubscriber).toHaveBeenCalledTimes(1);
         expect(lateSubscriber.mock.calls[0]?.[0]?.method).toBe("thread/tokenUsage/updated");
         expect(armedCaptures(client).size).toBe(0);
@@ -149,7 +156,7 @@ describe("CodexAppServerClient restored token usage capture", () => {
         // An armed capture without a snapshot just disarms on subscription.
         client.armRestoredTokenUsageCapture("silent-thread");
         const quietSubscriber = vi.fn();
-        client.onServerNotification("silent-thread", quietSubscriber);
+        client.releaseRestoredTokenUsageCapture("silent-thread", quietSubscriber);
         expect(quietSubscriber).not.toHaveBeenCalled();
         expect(armedCaptures(client).size).toBe(0);
     });

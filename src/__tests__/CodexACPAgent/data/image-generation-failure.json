@@ -8,10 +8,7 @@
         "toolCallId": "image-generation-failure",
         "kind": "other",
         "title": "Image generation",
-        "status": "in_progress",
-        "rawInput": {
-          "id": "image-generation-failure"
-        }
+        "status": "in_progress"
       }
     }
   ]

@@ -15,7 +15,7 @@ async function warmFixture() {
     const agent = fixture.getCodexAcpAgent();
     const client = fixture.getCodexAcpClient();
     const appServer = fixture.getCodexAppServerClient();
-    vi.spyOn(client, "authRequired").mockResolvedValue(false);
+    vi.spyOn(client, "readAuthRequirement").mockResolvedValue({required: false, account: null});
     vi.spyOn(client, "getAccount").mockResolvedValue({account: null, requiresOpenaiAuth: false});
     vi.spyOn(client, "listSkills").mockResolvedValue({data: []});
     const model = createTestModel();

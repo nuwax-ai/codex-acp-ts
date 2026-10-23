@@ -2,7 +2,7 @@
 // the upstream `CodexAcpClient.ts` and survives merges with upstream. If this
 // file disappears after a merge, the system-prompt passthrough stops working.
 
-import {RequestError} from "@agentclientprotocol/sdk";
+import {RequestError} from "@agentclientprotocol/sdk/unstable";
 
 /**
  * Reads the client-supplied system prompt from an ACP request `_meta`.
@@ -16,8 +16,11 @@ import {RequestError} from "@agentclientprotocol/sdk";
  * built-in instructions. Throws `invalidParams` on a malformed value (Fail Fast),
  * mirroring the validation style used by `readAdditionalDirectories`.
  */
-export function readMetaSystemPrompt(meta?: Record<string, unknown> | null): string | null {
-    const raw = meta?.["systemPrompt"];
+export function readMetaSystemPrompt(meta?: unknown): string | null {
+    const root = meta === null || typeof meta !== "object"
+        ? undefined
+        : meta as Record<string, unknown>;
+    const raw = root?.["systemPrompt"];
     if (raw == null) {
         return null;
     }

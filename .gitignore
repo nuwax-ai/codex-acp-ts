@@ -4,3 +4,7 @@ dist/
 .DS_Store
 .idea/
 tmp/
+
+# The nuwax-harness package installs its own bundle into ~/.nuwax-harness-cache.
+# A leftover vendor/ from the removed postinstall must not be committed.
+vendor/

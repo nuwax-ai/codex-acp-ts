@@ -4,8 +4,9 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import type {McpServerStdio} from "@agentclientprotocol/sdk";
+import type {McpServerStdio} from "@agentclientprotocol/sdk/unstable";
 import {startCodexConnection} from "../../CodexJsonRpcConnection";
+import {resolveCodexBinaryPath} from "../../resolveCodexBinary";
 import {createBaseTestFixture, removeDirectoryWithRetry, type TestFixture} from "../acp-test-utils";
 
 describe('MCP config merge across configured MCP servers and ACP request', { timeout: 40_000 }, () => {
@@ -20,6 +21,10 @@ describe('MCP config merge across configured MCP servers and ACP request', { tim
         const globalConfig = `
 [mcp_servers.shared-mcp]
 url = "https://example.com/mcp"
+
+[mcp_servers.disabled-mcp]
+command = "./node_modules/.bin/mcp-hello-world"
+enabled = false
 `;
 
         const projectConfig = `
@@ -33,7 +38,7 @@ url = "https://example.com/mcp"
         fs.mkdirSync(path.join(projectPath, ".codex"));
         fs.writeFileSync(path.join(projectPath, ".codex", "config.toml"), projectConfig, "utf8");
 
-        const codexConnection = startCodexConnection(undefined, {
+        const codexConnection = startCodexConnection(resolveCodexBinaryPath(), {
             ...process.env,
             CODEX_HOME: codexHome,
         });
@@ -54,7 +59,7 @@ url = "https://example.com/mcp"
         const codexAcpAgent = fixture.getCodexAcpAgent();
         await codexAcpAgent.initialize({protocolVersion: 1});
 
-        fixture.getCodexAcpClient().authRequired = vi.fn().mockResolvedValue(false);
+        fixture.getCodexAcpClient().readAuthRequirement = vi.fn().mockResolvedValue({required: false, account: null});
 
         const conflictingMcp: McpServerStdio = {
             name: "shared-mcp",
@@ -75,14 +80,14 @@ url = "https://example.com/mcp"
         });
 
         const transportDump = fixture.getAcpConnectionDump([]);
-        expect(transportDump).contain("Configured MCP servers:");
-        expect(transportDump).contain("- shared-mcp");
+        expect(transportDump).contain("**MCP servers:** ");
+        expect(transportDump).contain("- `shared-mcp`");
     });
 
     it('should preserve a project url-based MCP when ACP passes a command-type MCP with the same name', async () => {
         const codexAcpAgent = fixture.getCodexAcpAgent();
         await codexAcpAgent.initialize({protocolVersion: 1});
-        fixture.getCodexAcpClient().authRequired = vi.fn().mockResolvedValue(false);
+        fixture.getCodexAcpClient().readAuthRequirement = vi.fn().mockResolvedValue({required: false, account: null});
 
         const conflictingMcp = {
             name: "project-mcp",
@@ -97,12 +102,43 @@ url = "https://example.com/mcp"
         })).resolves.toBeDefined();
     });
 
+    it('should not wait for an ACP MCP that a disabled MCP of the same name in the config replaces', async () => {
+        const codexAcpAgent = fixture.getCodexAcpAgent();
+        await codexAcpAgent.initialize({protocolVersion: 1});
+        fixture.getCodexAcpClient().readAuthRequirement = vi.fn().mockResolvedValue({required: false, account: null});
+
+        const replacedMcp: McpServerStdio = {
+            name: "disabled-mcp",
+            command: "./node_modules/.bin/mcp-hello-world",
+            args: ["example"],
+            env: [],
+        };
+        const brokenMcp: McpServerStdio = {
+            name: "broken-mcp",
+            command: "./node_modules/.bin/missing-mcp-server",
+            args: [],
+            env: [],
+        };
+
+        await codexAcpAgent.newSession({
+            cwd: "",
+            mcpServers: [replacedMcp, brokenMcp],
+            _meta: {mcpStartupAwaitTimeoutMs: 60_000},
+        });
+
+        await vi.waitFor(() => {
+            const dump = fixture.getAcpConnectionDump([]);
+            expect(dump).toContain("MCP server `broken-mcp` failed to start");
+            expect(dump).toContain("MCP server `disabled-mcp` was not started, because the Codex config already defines an MCP server with this name.");
+        });
+    });
+
     it('should not filter the conflicting ACP MCP when config filtering is disabled', async () => {
         vi.stubEnv("DISABLE_MCP_CONFIG_FILTERING", "true");
         const codexAcpAgent = fixture.getCodexAcpAgent();
         await codexAcpAgent.initialize({protocolVersion: 1});
 
-        fixture.getCodexAcpClient().authRequired = vi.fn().mockResolvedValue(false);
+        fixture.getCodexAcpClient().readAuthRequirement = vi.fn().mockResolvedValue({required: false, account: null});
 
         const conflictingMcp: McpServerStdio = {
             name: "shared-mcp",
@@ -115,7 +151,7 @@ url = "https://example.com/mcp"
             cwd: "",
             mcpServers: [conflictingMcp],
         })).rejects.toMatchObject({
-            data: expect.stringContaining("url is not supported for stdio"),
+            message: expect.stringMatching(/url is not supported for stdio[\s\S]*config\.toml/),
         });
     });
 });

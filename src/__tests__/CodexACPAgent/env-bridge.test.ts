@@ -1,8 +1,10 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {PROTOCOL_VERSION} from "@agentclientprotocol/sdk";
-import {createCodexMockTestFixture} from "../acp-test-utils";
+import {createCodexMockTestFixture, stubGatewayModelListing} from "../acp-test-utils";
 import {CUSTOM_GATEWAY_PROVIDER_ID, OPENAI_PROVIDER_ID} from "../../CodexAcpClient";
 import {TitleGenerator} from "../../TitleGenerator";
+
+stubGatewayModelListing(["model-id"]);
 
 const ENV_VARS = [
     "CODEX_BASE_URL", "CODEX_API_PROTOCOL", "CODEX_WIRE_API", "CODEX_BRIDGE",
@@ -40,9 +42,9 @@ describe("environment gateway bridge routing", () => {
         const initialize = vi.spyOn(appServer, "initialize").mockResolvedValue({} as never);
         const start = vi.spyOn(appServer, "threadStart").mockRejectedValue(new Error("captured thread/start"));
 
-        await client.initialize({protocolVersion: PROTOCOL_VERSION});
+        await client.initialize({});
         expect(initialize).toHaveBeenCalledOnce();
-        expect(await client.authRequired()).toBe(false);
+        expect((await client.readAuthRequirement()).required).toBe(false);
         expect(client.getAuthGatewayProviderName()).toBe("Custom Gateway");
         await expect(client.newSession({cwd: "/workspace", mcpServers: []})).rejects.toThrow("captured thread/start");
 
@@ -79,7 +81,7 @@ describe("environment gateway bridge routing", () => {
             baseUrl: "https://replacement.example/anthropic",
             headers: {"x-api-key": "replacement-token"},
         });
-        expect(await client.authRequired()).toBe(false);
+        expect((await client.readAuthRequirement()).required).toBe(false);
         await expect(client.newSession({cwd: "/workspace", mcpServers: []})).rejects.toThrow("captured replacement");
         const provider = (start.mock.calls[0]![0].config!["model_providers"] as Record<string, Record<string, unknown>>)[CUSTOM_GATEWAY_PROVIDER_ID]!;
         expect(provider).toMatchObject({
@@ -141,7 +143,7 @@ describe("environment gateway bridge routing", () => {
             methodId: "gateway",
             _meta: {gateway: {baseUrl: "https://auth.example/v1", providerName: "Explicit gateway"}},
         });
-        expect(await client.authRequired()).toBe(false);
+        expect((await client.readAuthRequirement()).required).toBe(false);
         await expect(client.newSession({cwd: "/workspace", mcpServers: []})).rejects.toThrow("captured authentication replacement");
         const provider = (start.mock.calls[0]![0].config!["model_providers"] as Record<string, Record<string, unknown>>)[CUSTOM_GATEWAY_PROVIDER_ID]!;
         expect(provider["base_url"]).toBe("https://auth.example/v1");

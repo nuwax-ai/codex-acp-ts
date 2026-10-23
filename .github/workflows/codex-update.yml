@@ -1,4 +1,4 @@
-# Periodically check for new nuwax-codex releases and create a PR to update.
+# Periodically check for new nuwax-harness releases and create a PR to update.
 name: Codex Update
 
 on:
@@ -11,7 +11,7 @@ permissions:
   pull-requests: write
 
 env:
-  CODEX_PACKAGE: "nuwax-codex"
+  CODEX_PACKAGE: "@nuwax-ai/nuwax-harness"
   CODEX_UPDATE_LABEL: "codex-update"
   GITHUB_BOT_USERNAME: "github-actions[bot]"
 
@@ -75,7 +75,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update nuwax-codex to $VERSION"
+          git commit -m "Update nuwax-harness to $VERSION"
 
       - name: Push branch
         run: git push -- origin "$BRANCH"
@@ -84,11 +84,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo -e "[What's new](https://github.com/nuwax-ai/codex/releases/tag/v${VERSION})\n\nAutomated update of nuwax-codex dependency." > pr-body.md
+          echo -e "[What's new](https://github.com/nuwax-ai/codex/releases/tag/v${VERSION})\n\nAutomated update of the @nuwax-ai/nuwax-harness dependency." > pr-body.md
 
           gh pr create \
             --base main \
-            --title "Update nuwax-codex to $VERSION" \
+            --title "Update nuwax-harness to $VERSION" \
             --body-file pr-body.md \
             --label "$CODEX_UPDATE_LABEL"
 

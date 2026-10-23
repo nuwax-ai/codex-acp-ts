@@ -1,0 +1,3 @@
+# Snapshot baselines and test fixtures: recorded ACP traffic, not source. GitHub
+# collapses them in diffs so a behavior change reads as its test, not its data.
+src/__tests__/**/data/** linguist-generated=true
