@@ -22,7 +22,6 @@ export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
 export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
 export const CODEX_PROVIDER_NAME_ENV_VAR = "CODEX_PROVIDER_NAME";
 export const CODEX_DISABLE_THINKING_ENV_VAR = "CODEX_DISABLE_THINKING";
-export const CODEX_PERSONALITY_ENABLED_ENV_VAR = "CODEX_PERSONALITY_ENABLED";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,16 +156,6 @@ export function getEnvProviderId(): string {
 /** Returns true when CODEX_DISABLE_THINKING is set to a truthy value. */
 export function isThinkingDisabled(): boolean {
     const raw = process.env[CODEX_DISABLE_THINKING_ENV_VAR]?.trim()?.toLowerCase();
-    return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
-}
-
-/**
- * Returns true/false when CODEX_PERSONALITY_ENABLED is explicitly set,
- * undefined when absent (let codex decide).
- */
-export function isPersonalityEnabled(): boolean | undefined {
-    const raw = process.env[CODEX_PERSONALITY_ENABLED_ENV_VAR]?.trim()?.toLowerCase();
-    if (raw === undefined || raw === "") return undefined;
     return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
 }
 
