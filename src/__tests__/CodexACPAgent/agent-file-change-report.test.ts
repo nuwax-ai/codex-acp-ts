@@ -19,6 +19,7 @@ const CHILD_THREAD_ID = "child-thread";
 function createTurn(id: string, status: Turn["status"]): Turn {
     return {
         id,
+        rootTurnId: null,
         items: [],
         itemsView: "notLoaded",
         status,
@@ -109,6 +110,8 @@ function spawnChild(rootSessionId: string): ServerNotification[] {
                     kind: "started",
                     agentThreadId: CHILD_THREAD_ID,
                     agentPath: "/root/docs_writer",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         },

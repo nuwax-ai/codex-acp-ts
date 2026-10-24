@@ -43,6 +43,8 @@ describe('subagent and async task updates on ACP v2', () => {
                     kind: "started",
                     agentThreadId: "child-1",
                     agentPath: "/root/researcher",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         });
@@ -58,6 +60,8 @@ describe('subagent and async task updates on ACP v2', () => {
                     kind: "interrupted",
                     agentThreadId: "child-1",
                     agentPath: "/root/researcher",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         });
@@ -87,6 +91,7 @@ describe('subagent and async task updates on ACP v2', () => {
                 threadId: "child-1",
                 turn: {
                     id,
+                    rootTurnId: null,
                     items: [],
                     itemsView: "notLoaded",
                     status,
@@ -110,6 +115,8 @@ describe('subagent and async task updates on ACP v2', () => {
                     kind: "started",
                     agentThreadId: "child-1",
                     agentPath: "/root/researcher",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         });
@@ -153,6 +160,8 @@ describe('subagent and async task updates on ACP v2', () => {
                     kind: "started",
                     agentThreadId: "child-1",
                     agentPath: "/root/researcher",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         });

@@ -9,6 +9,7 @@ import {SESSION_STEERING_METHOD} from "../../AcpExtensions";
 function createTurn(id: string, status: "inProgress" | "completed" | "interrupted") {
     return {
         id,
+        rootTurnId: null,
         items: [],
         itemsView: "notLoaded" as const,
         status,

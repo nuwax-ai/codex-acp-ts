@@ -520,6 +520,7 @@ export function mockPromptTurn(fixture: CodexMockTestFixture, sessionId: string)
     const turnStartSpy = vi.spyOn(codexAppServerClient, "turnStart").mockResolvedValue({
         turn: {
             id: "turn-id",
+            rootTurnId: null,
             items: [],
             itemsView: "notLoaded",
             status: "inProgress",
@@ -533,6 +534,7 @@ export function mockPromptTurn(fixture: CodexMockTestFixture, sessionId: string)
         threadId: sessionId,
         turn: {
             id: "turn-id",
+            rootTurnId: null,
             items: [],
             itemsView: "notLoaded",
             status: "completed",

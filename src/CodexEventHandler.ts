@@ -726,6 +726,12 @@ export class CodexEventHandler {
                 // The server lists the skills again and publishes the commands. The change itself is no update.
                 return null;
             // ignored events
+            case "thread/readState/changed":
+                // The first unread position of a durable thread. ACP has no session update for it, and the
+                // client keeps its own unread marker.
+            case "thread/prediction/updated":
+                // The answer to a `thread/prediction/request`. The adapter never sends that request, so this
+                // notification never arrives; it is named so a future caller cannot miss it.
             case "thread/deleted":
             case "thread/reverted":
             case "thread/queue/changed":
@@ -1220,13 +1226,17 @@ export class CodexEventHandler {
     private sessionFailureKind(error: CodexErrorInfo | null): CodexFailureKind {
         if (this.isAuthenticationRequiredError(error)) return "auth_required";
         if (this.getHttpStatusCode(error) === 429) return "rate_limited";
+        // `CodexErrorInfo` is open upstream, so a newer app-server can send a kind this build does not
+        // know. The tables stay keyed by the kinds they map and the fallback covers anything else.
+        const stringCategories = STRING_CODEX_ERROR_CATEGORIES as Record<string, CodexFailureKind | undefined>;
         if (typeof error === "string") {
-            return STRING_CODEX_ERROR_CATEGORIES[error] ?? "provider_error";
+            return stringCategories[error] ?? "provider_error";
         }
         if (error !== null) {
-            for (const kind of Object.keys(STRUCTURED_CODEX_ERROR_CATEGORIES) as StructuredCodexErrorKind[]) {
+            const structuredCategories = STRUCTURED_CODEX_ERROR_CATEGORIES as Record<string, CodexFailureKind | undefined>;
+            for (const kind of Object.keys(structuredCategories)) {
                 if (kind in error) {
-                    return STRUCTURED_CODEX_ERROR_CATEGORIES[kind] ?? "provider_error";
+                    return structuredCategories[kind] ?? "provider_error";
                 }
             }
         }

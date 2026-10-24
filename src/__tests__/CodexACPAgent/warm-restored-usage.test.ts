@@ -69,7 +69,7 @@ function usageState(agent: Awaited<ReturnType<typeof warmFixture>>["agent"], ses
 async function promptWithUsage(context: Awaited<ReturnType<typeof warmFixture>>, tokenUsage: ThreadTokenUsage | null) {
     const {fixture, appServer, agent} = context;
     const turn = {
-        id: "next-turn", items: [], itemsView: "notLoaded" as const, status: "completed" as const,
+        id: "next-turn", rootTurnId: null, items: [], itemsView: "notLoaded" as const, status: "completed" as const,
         error: null, startedAt: null, completedAt: null, durationMs: null,
     };
     vi.spyOn(appServer, "turnStart").mockResolvedValue({turn: {...turn, status: "inProgress"}});

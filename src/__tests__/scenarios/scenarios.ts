@@ -110,7 +110,7 @@ function turnCompleted(threadId = SESSION_ID, turnId = TURN_ID): Record<string, 
         params: {
             threadId,
             turn: {
-                id: turnId, items: [], itemsView: "notLoaded", status: "completed", error: null,
+                id: turnId, rootTurnId: null, items: [], itemsView: "notLoaded", status: "completed", error: null,
                 startedAt: null, completedAt: null, durationMs: null,
             },
         },
@@ -311,10 +311,14 @@ export const SCENARIOS: Scenario[] = [
             started({
                 type: "subAgentActivity", id: "act-1", kind: "started", agentThreadId: CHILD_THREAD_ID,
                 agentPath: "/root/weather",
+                model: null,
+                reasoningEffort: null,
             }),
             completed({
                 type: "subAgentActivity", id: "act-1", kind: "started", agentThreadId: CHILD_THREAD_ID,
                 agentPath: "/root/weather",
+                model: null,
+                reasoningEffort: null,
             }),
             {notify: {
                 method: "item/agentMessage/delta",
@@ -324,10 +328,14 @@ export const SCENARIOS: Scenario[] = [
             started({
                 type: "subAgentActivity", id: "act-2", kind: "completed", agentThreadId: CHILD_THREAD_ID,
                 agentPath: "/root/weather",
+                model: null,
+                reasoningEffort: null,
             }),
             completed({
                 type: "subAgentActivity", id: "act-2", kind: "completed", agentThreadId: CHILD_THREAD_ID,
                 agentPath: "/root/weather",
+                model: null,
+                reasoningEffort: null,
             }),
         ],
     },

@@ -53,6 +53,7 @@ export function createThread(): Thread {
 export function createTurn(status: TurnStatus, id = turnId): Turn {
     return {
         id,
+        rootTurnId: null,
         items: [],
         itemsView: "notLoaded",
         status,

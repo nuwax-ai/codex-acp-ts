@@ -13,6 +13,7 @@ type TurnCompletion = {
     threadId: string;
     turn: {
         id: string;
+        rootTurnId: string | null;
         items: never[];
         itemsView: "notLoaded";
         status: "completed" | "failed";
@@ -31,6 +32,7 @@ type TurnCompletion = {
 type TurnStartResponse = {
     turn: {
         id: string;
+        rootTurnId: string | null;
         items: never[];
         itemsView: "notLoaded";
         status: "inProgress";
@@ -85,6 +87,7 @@ describe("CodexACPAgent - plan review", () => {
             .mockResolvedValueOnce({
                 turn: {
                     id: "plan-turn",
+                    rootTurnId: null,
                     items: [],
                     itemsView: "notLoaded",
                     status: "inProgress",
@@ -97,6 +100,7 @@ describe("CodexACPAgent - plan review", () => {
             .mockImplementationOnce(() => options.implementationStart ?? Promise.resolve({
                 turn: {
                     id: "implementation-turn",
+                    rootTurnId: null,
                     items: [],
                     itemsView: "notLoaded",
                     status: "inProgress",
@@ -143,6 +147,7 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "plan-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",
@@ -218,6 +223,7 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",
@@ -365,6 +371,7 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",
@@ -412,6 +419,7 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "failed",
@@ -473,6 +481,7 @@ describe("CodexACPAgent - plan review", () => {
         implementationStart.resolve({
             turn: {
                 id: "implementation-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "inProgress",
@@ -486,6 +495,7 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",

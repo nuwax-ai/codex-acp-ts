@@ -32,7 +32,7 @@ describe("CodexACPAgent - loadSession", () => {
         appServer.listModels = vi.fn().mockResolvedValue({data: [model], nextCursor: null});
         const thread = {
             id: "native-input-history", historyMode: "legacy", turns: [{
-                id: "turn-1", itemsView: "full", status: "completed", items: cases.map(({input}, index) => ({
+                id: "turn-1", rootTurnId: null, itemsView: "full", status: "completed", items: cases.map(({input}, index) => ({
                     type: "userMessage", id: `native-${index}`, clientId: null, content: [input],
                 })),
             }],
@@ -71,7 +71,7 @@ describe("CodexACPAgent - loadSession", () => {
         ];
         const thread = {
             id: "attachment-history", historyMode: "legacy", turns: [{
-                id: "turn-1", itemsView: "full", status: "completed", items: texts.map((text, index) => ({
+                id: "turn-1", rootTurnId: null, itemsView: "full", status: "completed", items: texts.map((text, index) => ({
                     type: "userMessage", id: `user-${index}`, clientId: null,
                     content: [
                         ...(index === 3 ? [
@@ -150,6 +150,7 @@ describe("CodexACPAgent - loadSession", () => {
             name: null,
             turns: [{
                 id: `turn-${id}`,
+                rootTurnId: null,
                 itemsView: "full",
                 status: "completed",
                 error: null,
@@ -166,6 +167,8 @@ describe("CodexACPAgent - loadSession", () => {
                 kind: "started",
                 agentThreadId: "child-history",
                 agentPath: "/root/history_child",
+                model: null,
+                reasoningEffort: null,
             },
             {
                 type: "subAgentActivity",
@@ -173,6 +176,8 @@ describe("CodexACPAgent - loadSession", () => {
                 kind: "interrupted",
                 agentThreadId: "child-history",
                 agentPath: "/root/history_child",
+                model: null,
+                reasoningEffort: null,
             },
             {
                 type: "subAgentActivity",
@@ -180,6 +185,8 @@ describe("CodexACPAgent - loadSession", () => {
                 kind: "started",
                 agentThreadId: "child-history",
                 agentPath: "/root/history_child",
+                model: null,
+                reasoningEffort: null,
             },
             {
                 type: "subAgentActivity",
@@ -187,6 +194,8 @@ describe("CodexACPAgent - loadSession", () => {
                 kind: "interrupted",
                 agentThreadId: "child-history",
                 agentPath: "/root/history_child",
+                model: null,
+                reasoningEffort: null,
             },
             {
                 type: "subAgentActivity",
@@ -194,6 +203,8 @@ describe("CodexACPAgent - loadSession", () => {
                 kind: "started",
                 agentThreadId: "orphan-history",
                 agentPath: "/root/orphan_child",
+                model: null,
+                reasoningEffort: null,
             },
         ]);
         const child = makeThread("child-history", [
@@ -225,6 +236,7 @@ describe("CodexACPAgent - loadSession", () => {
         const firstChildTurn = child.turns[0]!;
         child.turns.push({
             id: "turn-child-history-2",
+            rootTurnId: null,
             itemsView: firstChildTurn.itemsView,
             status: firstChildTurn.status,
             error: firstChildTurn.error,
@@ -308,6 +320,7 @@ describe("CodexACPAgent - loadSession", () => {
         appServer.listModels = vi.fn().mockResolvedValue({data: [model], nextCursor: null});
         const turn = (id: string, items: Thread["turns"][number]["items"]): Thread["turns"][number] => ({
             id,
+            rootTurnId: null,
             itemsView: "full",
             status: "completed",
             error: null,
@@ -352,6 +365,8 @@ describe("CodexACPAgent - loadSession", () => {
             kind,
             agentThreadId: "child-history",
             agentPath: "/root/reviewer",
+            model: null,
+            reasoningEffort: null,
         });
         const message = (id: string) => ({
             type: "agentMessage" as const,
@@ -513,6 +528,7 @@ describe("CodexACPAgent - loadSession", () => {
             turns: [
                 {
                     id: "turn-1",
+                    rootTurnId: null,
                     itemsView: "full",
                     status: "completed",
                     error: null,
@@ -622,6 +638,8 @@ describe("CodexACPAgent - loadSession", () => {
                             kind: "started",
                             agentThreadId: "thread-child-1",
                             agentPath: "/root/test_audit",
+                            model: null,
+                            reasoningEffort: null,
                         },
                     ],
                 },

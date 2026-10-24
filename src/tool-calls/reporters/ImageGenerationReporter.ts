@@ -56,12 +56,19 @@ export class ImageGenerationReporter {
  * receives, because the failure detail is the one fact a client must not miss — AIR reads the contract
  * fields and would otherwise see only the status.
  */
+/** The inline image data Codex sent, empty when it referenced a stored file instead. */
+function imageData(item: ImageGenerationItem): string {
+    return "result" in item ? item.result : "";
+}
+
 function resultFacts(item: ImageGenerationItem): Pick<ToolFacts, "opaqueResult" | "standard"> {
     const rawOutput: Record<string, string | ImageGenerationFailure | null> = {
         status: item.status,
         revisedPrompt: item.revisedPrompt,
-        result: item.result,
+        result: imageData(item),
     };
+    // A generation Codex kept as a file carries its id, so the reference is not lost.
+    if ("fileId" in item) rawOutput["fileId"] = item.fileId;
     if ("savedPath" in item) rawOutput["savedPath"] = item.savedPath ?? null;
     if (item.failure !== null) rawOutput["failure"] = item.failure;
     return {
@@ -80,12 +87,13 @@ function imageResult(item: ImageGenerationItem): acp.ToolCallContent[] {
         result.push(textContent(`Revised prompt: ${item.revisedPrompt}`));
     }
     const savedPath = item.savedPath && item.savedPath.trim() !== "" ? item.savedPath : undefined;
-    if (item.result.trim() !== "") {
+    const data = imageData(item);
+    if (data.trim() !== "") {
         result.push({
             type: "content",
             content: {
                 type: "image",
-                data: item.result,
+                data,
                 mimeType: "image/png",
                 ...(savedPath === undefined ? {} : {uri: savedPath}),
             },

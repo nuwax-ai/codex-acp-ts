@@ -18,6 +18,7 @@ function server(overrides: Partial<McpServerStatus> & {name: string}): McpServer
         httpOrigin: null,
         serverInfo: null,
         serverCapabilities: null,
+        toolListMeta: null,
         tools: {},
         toolsError: null,
         resources: [],

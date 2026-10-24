@@ -496,6 +496,8 @@ async function createNativeChildFixture() {
                     kind: "started",
                     agentThreadId: childSessionId,
                     agentPath: "/root/compaction_child",
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         },
@@ -530,6 +532,8 @@ function nativeChildActivityStarted(threadId: string): ServerNotification {
                 kind: "started",
                 agentThreadId: threadId,
                 agentPath: `/root/${threadId}`,
+                model: null,
+                reasoningEffort: null,
             },
         },
     };
@@ -577,6 +581,7 @@ function nativeCompactionLifecycleDump(fixture: CodexMockTestFixture, childId?: 
 function createTurn(status: Turn["status"]): Turn {
     return {
         id: turnId,
+        rootTurnId: null,
         items: [],
         itemsView: "full",
         status,

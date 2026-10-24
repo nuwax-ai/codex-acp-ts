@@ -658,6 +658,7 @@ function turnCompleted(threadId: string) {
             threadId,
             turn: {
                 id: "turn-id",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded" as const,
                 status: "completed" as const,
@@ -692,6 +693,8 @@ function childMaterialized() {
         kind: "started",
         agentThreadId: "child-1",
         agentPath: "/root/worker",
+        model: null,
+        reasoningEffort: null,
     });
 }
 
@@ -702,6 +705,8 @@ function childInterrupted() {
         kind: "interrupted",
         agentThreadId: "child-1",
         agentPath: "/root/worker",
+        model: null,
+        reasoningEffort: null,
     });
 }
 

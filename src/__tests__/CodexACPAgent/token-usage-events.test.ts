@@ -1214,6 +1214,8 @@ describe('Token Usage Events', () => {
                     kind: 'started',
                     agentThreadId: childThreadId,
                     agentPath: '/root/worker',
+                    model: null,
+                    reasoningEffort: null,
                 },
             },
         };
@@ -1224,6 +1226,7 @@ describe('Token Usage Events', () => {
                 threadId: childThreadId,
                 turn: {
                     id: 'child-turn-id',
+                    rootTurnId: null,
                     items: [],
                     itemsView: 'notLoaded',
                     status: 'completed',

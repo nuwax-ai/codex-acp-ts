@@ -40,6 +40,7 @@
     "turns": [
       {
         "id": "first",
+        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",
@@ -72,6 +73,7 @@
       },
       {
         "id": "second",
+        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",
@@ -104,6 +106,7 @@
       },
       {
         "id": "third",
+        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",

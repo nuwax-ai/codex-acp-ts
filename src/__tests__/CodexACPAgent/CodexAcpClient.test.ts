@@ -1488,6 +1488,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
     function createTurn(id: string, status: "inProgress" | "completed" | "interrupted") {
         return {
             id,
+            rootTurnId: null,
             items: [],
             itemsView: "notLoaded" as const,
             status,
@@ -1875,6 +1876,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             threadId: "session-id",
             turn: {
                 id: "turn-id",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",
@@ -4008,6 +4010,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
                     httpOrigin: null,
                     serverInfo: null,
                     serverCapabilities: null,
+                    toolListMeta: null,
                     toolsError: null,
                     tools: {listFiles: {name: "listFiles", inputSchema: {type: "object"}}},
                     resources: [{name: "workspace", uri: "file:///workspace"}],
@@ -4021,6 +4024,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
                     httpOrigin: null,
                     serverInfo: null,
                     serverCapabilities: null,
+                    toolListMeta: null,
                     toolsError: null,
                     tools: {},
                     resources: [],
@@ -4142,6 +4146,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         const turnStartSpy = vi.spyOn(mockFixture.getCodexAppServerClient(), "turnStart").mockResolvedValue({
             turn: {
                 id: "turn-id",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "inProgress",
@@ -4155,6 +4160,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             threadId: sessionState.sessionId,
             turn: {
                 id: "turn-id",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "completed",
@@ -4176,6 +4182,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             reviewThreadId,
             turn: {
                 id: turnId,
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status: "inProgress",
@@ -4192,6 +4199,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             threadId: "session-id",
             turn: {
                 id: "review-turn-id",
+                rootTurnId: null,
                 items: [],
                 itemsView: "notLoaded",
                 status,

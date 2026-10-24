@@ -5,6 +5,7 @@ import {createCodexMockTestFixture, createTestModel} from "../acp-test-utils";
 function messageTurn(id: string): Turn {
     return {
         id,
+        rootTurnId: null,
         items: [{type: "userMessage", id: `${id}-input`, clientId: null, content: [{type: "text", text: `Question ${id}`, text_elements: []}]}, {type: "agentMessage", id: `${id}-message`, text: `Answer ${id}`, phase: "final_answer", memoryCitation: null, delivery: null, questions: null}],
         itemsView: "full",
         status: "completed",

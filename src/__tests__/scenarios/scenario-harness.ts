@@ -67,6 +67,7 @@ function turn(id: string, status: string): Record<string, unknown> {
 function thread(items: Record<string, unknown>[], cwd: string): Record<string, unknown> {
     return {
         id: SESSION_ID, sessionId: SESSION_ID, parentThreadId: null, threadSource: null, originator: null,
+        rootTurnId: null,
         forkedFromId: null, preview: "history", ephemeral: false, modelProvider: "openai", model: null,
         reasoningEffort: null, createdAt: 1, updatedAt: 2, recencyAt: null, status: {type: "idle"}, path: null,
         cwd, cliVersion: "0.0.0", section: null, sectionEnteredAt: null, projectId: null,
