@@ -25,6 +25,7 @@ variables belong in the ACP agent process's environment, not only in the termina
 An explicit `authenticate` (api-key, ChatGPT, gateway) or a `providers/set` replaces the environment gateway,
 its bridge selection and its credentials, following the usual precedence. `NUWAX_*` is the harness CLI's own
 startup group and does not select this gateway; `NUWAX_BRIDGE` is deliberately not an alias for `CODEX_BRIDGE`.
+For a user-facing walkthrough with per-provider setup examples, see [docs/custom-model-gateway.md](docs/custom-model-gateway.md).
 
 | Variable | Purpose |
 | --- | --- |
