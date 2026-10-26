@@ -98,6 +98,7 @@ Responses。走**原生 Responses(GPT 官方 / 中转站)**的控制就是
 | `CODEX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token) |
 | `CODEX_API_KEY` | 平台 Key(回退 `OPENAI_API_KEY`) |
 | `INITIAL_AGENT_MODE` | `read-only` / `workspace-write` / `agent` / `agent-full-access` |
+| `CODEX_TOOL_SEARCH` | 可选:`false` 让 MCP 工具全量直出(自托管/第三方网关不识别 `tool_search` 线格式时)。引擎原生读取、适配器透传;仅接受 `true`/`false`,非法值引擎启动即报错——用旧二进制测不出该行为时先重新 `cargo build` |
 
 ## 4. 端到端冒烟:适配器 + 源码二进制(第三层)
 

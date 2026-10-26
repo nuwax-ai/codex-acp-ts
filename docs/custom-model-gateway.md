@@ -37,6 +37,7 @@ nuwax-codex-acp-ts --version
 | `CODEX_MODEL` | 平台的实际模型 ID。网关激活时会覆盖 Codex 默认模型 | 无 |
 | `CODEX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token 数,正整数)。强烈建议按平台规格填写,本地预算与压缩依赖它 | 无 |
 | `NUWAX_MAX_OUTPUT_TOKENS` | 每次生成的输出上限(正整数,不是上下文窗口)。与 harness CLI 启动组同名,一处配置两侧生效;非法值会在适配器启动时报错 | 不设 |
+| `CODEX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 tool_search/Deferred),用于不支持 tool_search 线格式的自托管/第三方网关或需要确定性工具表的部署;`true`/不设 = 官方默认(跟随模型目录的 `supports_search_tool`)。仅接受大小写不敏感的 `true`/`false`,其他值引擎启动即报错。引擎原生读取,经适配器环境透传生效;`CODEX_CONFIG` 里的 `tools.tool_search` 属显式配置,优先于本变量 | 不设 |
 | `CODEX_PROVIDER_ID` | 网关的 provider ID(可选) | `custom-gateway` |
 | `CODEX_PROVIDER_NAME` | 网关展示名(可选),缺省回退 `CODEX_MODEL`,再回退 `Custom Gateway` | — |
 | `CODEX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`(用于不支持推理的模型) | 不启用 |
@@ -172,6 +173,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | unknown model / 模型不存在 | `CODEX_MODEL` 拼写与平台不一致(注意大小写) |
 | 上下文裁剪异常 | `CODEX_MODEL_CONTEXT_WINDOW` 未设或与实际不符;输出、文本和图片都占窗口 |
 | `CODEX_BRIDGE` 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic;单独设 bridge 不设 base URL 会报错 |
+| 模型不认识 `tool_search` 线格式 / MCP 工具行为异常 | 设 `CODEX_TOOL_SEARCH=false` 让 MCP 工具全量直出(见上表);`false` 字符串非法值会让引擎拒绝启动 |
 | 宿主发送了 `providers/set` 或显式 `authenticate` | 会按优先级**替换**环境网关及其凭据;想继续用部署环境,不要让宿主主动改登录方式 |
 
 4. 日志:设 `APP_SERVER_LOGS=<目录>` 后重试,日志里只有字节数不含凭据,可安全粘贴提问。

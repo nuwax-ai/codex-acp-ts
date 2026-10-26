@@ -40,6 +40,7 @@ For a user-facing walkthrough with per-provider setup examples, see [docs/custom
 | `CODEX_PROVIDER_NAME` | Display name of the gateway (defaults to `CODEX_MODEL`, then `Custom Gateway`). Optional. |
 | `CODEX_DISABLE_THINKING` | Truthy (`true`, `1`, `yes`, `on`) pins the reasoning effort to `none`, for a model that cannot reason. |
 | `NUWAX_MAX_OUTPUT_TOKENS` | Positive integer; caps each generation's output. Shares its name with the harness CLI group, so one value covers both entries. Invalid values fail at adapter startup. |
+| `CODEX_TOOL_SEARCH` | `false` advertises MCP tools directly in the first request instead of deferring them behind `tool_search` — for self-hosted or third-party gateways that do not understand the `tool_search` wire format. Only case-insensitive `true`/`false` is accepted; the engine fails fast on anything else. Read natively by the engine; the adapter passes the environment through. |
 
 `CODEX_BRIDGE` requires `CODEX_BASE_URL`; setting it alone is an error. The protocol and bridge must agree:
 `native` only supports OpenAI Responses, and `genai` only supports chat or Anthropic, so those combinations
