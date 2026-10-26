@@ -36,6 +36,7 @@ nuwax-codex-acp-ts --version
 | `CODEX_BRIDGE` | 传输桥:`rig`、`native`、`genai`。`native` 仅支持 OpenAI Responses;`genai` 仅支持 chat/anthropic;单独设置而不设 `CODEX_BASE_URL` 会报错 | `rig` |
 | `CODEX_MODEL` | 平台的实际模型 ID。网关激活时会覆盖 Codex 默认模型 | 无 |
 | `CODEX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token 数,正整数)。强烈建议按平台规格填写,本地预算与压缩依赖它 | 无 |
+| `NUWAX_MAX_OUTPUT_TOKENS` | 每次生成的输出上限(正整数,不是上下文窗口)。与 harness CLI 启动组同名,一处配置两侧生效;非法值会在适配器启动时报错 | 不设 |
 | `CODEX_PROVIDER_ID` | 网关的 provider ID(可选) | `custom-gateway` |
 | `CODEX_PROVIDER_NAME` | 网关展示名(可选),缺省回退 `CODEX_MODEL`,再回退 `Custom Gateway` | — |
 | `CODEX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`(用于不支持推理的模型) | 不启用 |

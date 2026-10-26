@@ -459,6 +459,8 @@ export interface CodexProcessState {
     codexPath: string;
     config: JsonObject | undefined;
     appServerStartupArgs: string[];
+    /** The environment for app-server spawns; `process.env` when unset. */
+    env?: NodeJS.ProcessEnv;
     modelProvider: string | undefined;
     stderr: string;
     stderrProcess?: CodexConnection["process"];

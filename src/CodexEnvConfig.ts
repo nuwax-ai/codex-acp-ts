@@ -22,6 +22,7 @@ export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
 export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
 export const CODEX_PROVIDER_NAME_ENV_VAR = "CODEX_PROVIDER_NAME";
 export const CODEX_DISABLE_THINKING_ENV_VAR = "CODEX_DISABLE_THINKING";
+export const NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR = "NUWAX_MAX_OUTPUT_TOKENS";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +57,7 @@ export interface EnvGatewayConfig {
         wire_api: GatewayWireApi;
         experimental_bridge?: EnvBridge;
         experimental_bearer_token?: string;
+        max_output_tokens?: number;
     };
 }
 
@@ -103,6 +105,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     const headers: Record<string, string> = {"X-Client-Feature-ID": "codex"};
 
     const apiKey = readAnyApiKey();
+    const maxOutputTokens = getEnvMaxOutputTokens();
 
     logger.log("Auto-configured gateway from env", {
         baseUrlConfigured: true,
@@ -121,6 +124,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
             wire_api: wireApi,
             ...(bridge === undefined ? {} : {experimental_bridge: bridge}),
             ...(apiKey ? {experimental_bearer_token: apiKey} : {}),
+            ...(maxOutputTokens === undefined ? {} : {max_output_tokens: maxOutputTokens}),
         },
     };
 }
@@ -146,6 +150,33 @@ export function getEnvContextWindow(): number | undefined {
     if (!raw) return undefined;
     const n = parseInt(raw, 10);
     return isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Parses `NUWAX_MAX_OUTPUT_TOKENS` — the per-generation output cap, named after
+ * the harness CLI group so one value serves both entries. Invalid values fail
+ * fast: a cap that silently never applies is only noticed on the invoice.
+ */
+export function getEnvMaxOutputTokens(): number | undefined {
+    const raw = process.env[NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR]?.trim();
+    if (raw === undefined || raw === "") return undefined;
+    const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`Invalid ${NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR}="${raw}"; expected a positive integer.`);
+    }
+    return n;
+}
+
+/**
+ * The environment for the app-server child: everything except
+ * `NUWAX_MAX_OUTPUT_TOKENS`. The adapter consumes that variable into the
+ * gateway provider entry; the engine's own `NUWAX_*` reader would reject it as
+ * an orphan of its temporary-provider group and refuse to start.
+ */
+export function childProcessEnv(): NodeJS.ProcessEnv {
+    const env = {...process.env};
+    delete env[NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR];
+    return env;
 }
 
 /** Returns the custom provider id from env, or the default "custom-gateway". */

@@ -2,6 +2,7 @@
 
 import {startCodexConnection} from "./CodexJsonRpcConnection";
 import {resolveCodexBinaryPath} from "./resolveCodexBinary";
+import {childProcessEnv, NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import {CodexAcpServer, type CodexProcessState} from "./CodexAcpServer";
 import {createJsonStream} from "./StdUtils";
 import {isCodexAuthRequest} from "./CodexAuthMethod";
@@ -48,6 +49,9 @@ if (process.argv[2] === "login") {
 async function startAcpServer(): Promise<void> {
     // CODEX_PATH wins; otherwise the nuwax-harness package supplies its own binary, downloading it on demand.
     const codexPath = process.env["CODEX_PATH"] ?? resolveCodexBinaryPath();
+    // Fail fast on a malformed CODEX_* gateway configuration here, at boot, instead of leaving the
+    // error to the first client connect (the gateway is also seeded per client in CodexAcpClient).
+    readGatewayConfigFromEnv();
     const configString = process.env["CODEX_CONFIG"];
     const authRequestString = process.env["DEFAULT_AUTH_REQUEST"];
     const modelProvider = process.env["MODEL_PROVIDER"];
@@ -66,10 +70,12 @@ async function startAcpServer(): Promise<void> {
         defaultAuthMethod: defaultAuthRequest?.methodId ?? null,
     });
 
+    const codexChildEnv = childProcessEnv();
     const codexProcessState: CodexProcessState = {
         // The supervisor disposes the connection itself, after the last output of the process was read.
-        connection: startCodexConnection(codexPath, undefined, hookConfig.appServerStartupArgs, {disposeOnExit: false}),
+        connection: startCodexConnection(codexPath, codexChildEnv, hookConfig.appServerStartupArgs, {disposeOnExit: false}),
         codexPath,
+        env: codexChildEnv,
         config: hookConfig.sessionConfig,
         appServerStartupArgs: hookConfig.appServerStartupArgs,
         modelProvider,

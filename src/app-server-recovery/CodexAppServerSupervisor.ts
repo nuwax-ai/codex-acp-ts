@@ -9,6 +9,8 @@ export interface SupervisedProcessState {
     codexPath: string;
     /** The arguments the app-server starts with, such as the hook trust override; `app-server` alone when unset. */
     appServerStartupArgs?: string[];
+    /** The environment for every spawn of the app-server; `process.env` when unset. */
+    env?: NodeJS.ProcessEnv;
     stderr: string;
 }
 
@@ -87,7 +89,7 @@ export class CodexAppServerSupervisor {
         private readonly state: SupervisedProcessState,
         private readonly spawnConnection: (codexPath: string, appServerStartupArgs?: string[]) => CodexConnection =
             (codexPath, appServerStartupArgs) =>
-                startCodexConnection(codexPath, undefined, appServerStartupArgs, {disposeOnExit: false}),
+                startCodexConnection(codexPath, this.state.env, appServerStartupArgs, {disposeOnExit: false}),
         timings: Partial<SupervisorTimings> = {},
         private readonly now: () => number = Date.now,
     ) {

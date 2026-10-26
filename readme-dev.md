@@ -39,6 +39,7 @@ For a user-facing walkthrough with per-provider setup examples, see [docs/custom
 | `CODEX_PROVIDER_ID` | Provider id for the gateway (default `custom-gateway`). Optional. |
 | `CODEX_PROVIDER_NAME` | Display name of the gateway (defaults to `CODEX_MODEL`, then `Custom Gateway`). Optional. |
 | `CODEX_DISABLE_THINKING` | Truthy (`true`, `1`, `yes`, `on`) pins the reasoning effort to `none`, for a model that cannot reason. |
+| `NUWAX_MAX_OUTPUT_TOKENS` | Positive integer; caps each generation's output. Shares its name with the harness CLI group, so one value covers both entries. Invalid values fail at adapter startup. |
 
 `CODEX_BRIDGE` requires `CODEX_BASE_URL`; setting it alone is an error. The protocol and bridge must agree:
 `native` only supports OpenAI Responses, and `genai` only supports chat or Anthropic, so those combinations

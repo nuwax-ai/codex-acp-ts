@@ -1652,6 +1652,7 @@ export interface GatewayConfig {
         wire_api: WireApi,
         experimental_bridge?: EnvBridge,
         experimental_bearer_token?: string,
+        max_output_tokens?: number,
     };
     /** The models a `providers/set` gateway lists; `null` when it was not listed or the listing failed. */
     listedModels?: GatewayModelIds | null;

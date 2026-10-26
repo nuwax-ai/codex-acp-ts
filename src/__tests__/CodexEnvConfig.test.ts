@@ -5,6 +5,8 @@ import {
     CODEX_BASE_URL_ENV_VAR,
     CODEX_BRIDGE_ENV_VAR,
     CODEX_WIRE_API_ENV_VAR,
+    getEnvMaxOutputTokens,
+    NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
     readGatewayConfigFromEnv,
 } from "../CodexEnvConfig";
 
@@ -16,6 +18,7 @@ const ENV_VARS = [
     CODEX_API_KEY_ENV_VAR,
     "OPENAI_API_KEY",
     "NUWAX_BRIDGE",
+    NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
 ];
 
 function withEnv(overrides: Record<string, string>, run: () => void): void {
@@ -182,6 +185,35 @@ describe("readGatewayConfigFromEnv", () => {
             expect(() => readGatewayConfigFromEnv()).toThrow(/CODEX_API_PROTOCOL/);
         });
     });
+
+    it("carries NUWAX_MAX_OUTPUT_TOKENS into the gateway provider entry", () => {
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR]: "4096",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.max_output_tokens).toBe(4096);
+            expect(getEnvMaxOutputTokens()).toBe(4096);
+        });
+    });
+
+    it("omits max_output_tokens when the cap variable is unset", () => {
+        withEnv({[CODEX_BASE_URL_ENV_VAR]: "https://api.example.com"}, () => {
+            expect(readGatewayConfigFromEnv()?.config).not.toHaveProperty("max_output_tokens");
+            expect(getEnvMaxOutputTokens()).toBeUndefined();
+        });
+    });
+
+    it.each(["abc", "0", "-5", "4.5", "4096 tokens"])(
+        "fails fast on an invalid NUWAX_MAX_OUTPUT_TOKENS value %s",
+        value => {
+            withEnv({
+                [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+                [NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR]: value,
+            }, () => {
+                expect(() => readGatewayConfigFromEnv()).toThrow(/NUWAX_MAX_OUTPUT_TOKENS/);
+            });
+        },
+    );
 
     it("passes the API key through as the bearer token", () => {
         withEnv({
