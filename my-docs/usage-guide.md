@@ -63,6 +63,7 @@ Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设�
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` / `NUWAX_STREAM_IDLE_TIMEOUT_MS` | 可选:请求/流重试与流空闲超时;须随完整启动组使用 |
 | `NUWAX_HOME` | 可选:会话与状态目录(默认 `~/.nuwax-harness`) |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
+| `NUWAX_MODEL_REASONING_EFFORT` / `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:推理力度、自动压缩的 token 阈值 / 窗口比例(具体取值须模型与协议支持;显式 `-c` 优先于这些种子) |
 
 ## 1.4 常用命令
 
