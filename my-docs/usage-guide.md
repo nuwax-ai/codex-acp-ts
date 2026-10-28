@@ -58,7 +58,7 @@ install-scripts 安全门拦截,或提示 binary 未安装,执行一次 `nuwax-h
 | `NUWAX_BRIDGE` | 可选 `rig`(默认)/ `native` / `genai`;`native` 仅支持 Responses,`genai` 仅支持 chat/anthropic |
 | `NUWAX_MAX_OUTPUT_TOKENS` | 可选:每次生成的输出上限(正整数,不是上下文窗口) |
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` / `NUWAX_STREAM_IDLE_TIMEOUT_MS` | 可选:请求/流重试与流空闲超时;须随完整启动组使用 |
-| `CODEX_HOME` | 可选:会话与状态目录(默认 `~/.nuwax-harness`) |
+| `NUWAX_HOME`(别名 `CODEX_HOME`) | 可选:会话与状态目录(默认 `~/.nuwax-harness`);推荐用 `NUWAX_HOME` 拼写 |
 | `NUWAX_MODEL_CONTEXT_WINDOW` / `CODEX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
 
 ### 3.2 常用命令
@@ -113,7 +113,7 @@ nuwax-harness exec '请只回复:OK'
 | `CODEX_MODEL` | 平台的实际模型 ID。网关激活时会覆盖 Codex 默认模型 | 无 |
 | `CODEX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token 数,正整数)。强烈建议按平台规格填写,本地预算与压缩依赖它 | 无 |
 | `NUWAX_MAX_OUTPUT_TOKENS` | 每次生成的输出上限(正整数,不是上下文窗口)。与 CLI 启动组同名,一处配置两侧生效;非法值会在适配器启动时报错 | 不设 |
-| `CODEX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 tool_search/Deferred),用于不支持 tool_search 线格式的自托管/第三方网关或需要确定性工具表的部署;`true`/不设 = 官方默认。仅接受大小写不敏感的 `true`/`false`,其他值引擎启动即报错;`CODEX_CONFIG` 里的 `tools.tool_search` 属显式配置,优先于本变量 | 不设 |
+| `CODEX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 tool_search/Deferred),用于不支持 tool_search 线格式的自托管/第三方网关或需要确定性工具表的部署;`true`/不设 = 官方默认。仅接受大小写不敏感的 `true`/`false`,其他值引擎启动即报错(引擎同义别名 `NUWAX_TOOL_SEARCH`);`CODEX_CONFIG` 里的 `tools.tool_search` 属显式配置,优先于本变量 | 不设 |
 | `CODEX_PROVIDER_ID` | 网关的 provider ID(可选) | `custom-gateway` |
 | `CODEX_PROVIDER_NAME` | 网关展示名(可选),缺省回退 `CODEX_MODEL`,再回退 `Custom Gateway` | — |
 | `CODEX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`(用于不支持推理的模型) | 不启用 |
