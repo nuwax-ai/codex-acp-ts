@@ -1,13 +1,13 @@
 # 自定义模型网关使用指南
 
-本指南介绍如何让 `nuwax-codex-acp`(ACP 适配器)通过环境变量接入自定义模型平台
+本指南介绍如何让 `nuwax-harness-acp-ts`(ACP 适配器)通过环境变量接入自定义模型平台
 (OpenAI Chat / OpenAI Responses / Anthropic Messages 协议均可),无需登录或额外认证流程。
 
 工作链路:
 
 ```
 ACP 宿主(Zed / JetBrains / 自研客户端 ...)
-  └─ stdio ─> nuwax-codex-acp 适配器(本包)
+  └─ stdio ─> nuwax-harness-acp-ts 适配器(本包)
                 └─ JSON-RPC ─> nuwax-harness app-server(rig 桥)
                                 └─ HTTP ─> 你的模型平台
 ```
@@ -147,7 +147,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 
 ```json
 {
-  "nuwax-codex-acp": {
+  "nuwax-harness-acp-ts": {
     "command": "nuwax-harness-acp-ts",
     "env": {
       "CODEX_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
