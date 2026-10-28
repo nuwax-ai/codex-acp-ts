@@ -16,6 +16,50 @@ ACP 宿主 ──stdio──> nuwax-harness-acp-ts 适配器 ──JSON-RPC─�
 两个入口接同一批自定义模型平台(OpenAI Chat / OpenAI Responses / Anthropic Messages
 协议均可),无需登录或额外认证流程。本指南覆盖两者的安装、环境变量、平台示例与排查。
 
+## 快速开始
+
+只配 **4 个变量**就能跑通自定义模型(以 OpenAI Chat 协议为例):
+
+```bash
+export NUWAX_BASE_URL='https://your-provider.example/v1'   # 平台的协议基址
+export NUWAX_WIRE_API='chat'                               # chat / responses / anthropic
+export NUWAX_MODEL='your-model-id'                         # 平台的模型 ID
+export NUWAX_API_KEY='<YOUR_API_KEY>'
+```
+
+**先验证通路(CLI,30 秒):**
+
+```bash
+npm install -g @nuwax-ai/nuwax-harness
+nuwax-harness exec '请只回复:OK'     # 收到 OK 即全链路正常
+```
+
+**再接入宿主(ACP):**
+
+```bash
+npm install -g @nuwax-ai/nuwax-harness-acp-ts
+```
+
+```json
+{
+  "nuwax-harness-acp-ts": {
+    "command": "nuwax-harness-acp-ts",
+    "env": {
+      "NUWAX_BASE_URL": "https://your-provider.example/v1",
+      "NUWAX_WIRE_API": "chat",
+      "NUWAX_MODEL": "your-model-id",
+      "NUWAX_API_KEY": "<YOUR_API_KEY>"
+    }
+  }
+}
+```
+
+在宿主里新建会话,发一句「请只回复:OK」,收到回复即接入完成。
+
+Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设为 `anthropic`,
+其余不变。**建议补设** `NUWAX_MODEL_CONTEXT_WINDOW`(模型真实窗口,token 数)。
+三家平台的现成配置与全部变量见 §4.3 与 §3/§4。
+
 ## 1. 安装
 
 ```bash
