@@ -14,14 +14,15 @@ fork-codex-acp-ts            fork-nuwax-codex
 ACP 适配器(TypeScript)      harness 引擎(Rust)
 说 ACP 协议,管会话/权限/     说 JSON-RPC app-server 协议,
 工具调用渲染,通过 CODEX_*    真正调模型,源码在 codex-rs/,
-环境网关拿路由和凭据          产物是单个原生二进制
+(或 NUWAX_* 别名)环境       产物是单个原生二进制
+网关拿路由和凭据
         └──── CODEX_PATH 指向哪个二进制,适配器就带动哪个引擎 ────┘
 ```
 
-适配器通过两种方式拿到引擎二进制,优先级 `CODEX_PATH` > 包内依赖:
+适配器通过两种方式拿到引擎二进制,优先级 `CODEX_PATH`(别名 `NUWAX_PATH`)> 包内依赖:
 
-- 不设 `CODEX_PATH`:用 npm 依赖 `@nuwax-ai/nuwax-harness`(发布版,装包时自动下载到 `~/.nuwax-harness-cache/`);
-- 设 `CODEX_PATH=<绝对路径>`:直接用你指定的二进制——联调 fork-nuwax-codex 源码构建产物就走这条路。
+- 不设路径变量:用 npm 依赖 `@nuwax-ai/nuwax-harness`(发布版,装包时自动下载到 `~/.nuwax-harness-cache/`);
+- 设 `CODEX_PATH=<绝对路径>`(或 `NUWAX_PATH`):直接用你指定的二进制——联调 fork-nuwax-codex 源码构建产物就走这条路。
 
 ## 1. 构建 fork-nuwax-codex
 
@@ -79,25 +80,35 @@ codex-rs/target/debug/codex exec '请只回复:OK'
 Responses。走**原生 Responses(GPT 官方 / 中转站)**的控制就是
 `NUWAX_WIRE_API=responses` + `NUWAX_BRIDGE=native` 的组合——引擎源码里写明这是
 从进程环境到达原生 Responses 传输的唯一入口,没有另一个独立变量;ACP 侧对应
-`CODEX_BRIDGE=native`。这一层通过,说明引擎、协议、Key 都没问题,再往上层查。
+`CODEX_BRIDGE=native`(或 `NUWAX_BRIDGE=native`)。这一层通过,说明引擎、协议、Key 都没问题,再往上层查。
+
+引擎自己读取的 `CODEX_*` 种子(`CODEX_MODEL_CONTEXT_WINDOW`、
+`CODEX_AUTO_COMPACT_*`、`CODEX_MODEL_REASONING_EFFORT`、`CODEX_TOOL_SEARCH`、
+`CODEX_HOME`)也都有同义 `NUWAX_*` 别名,规则见 harness 仓库
+`docs/nuwax-harness/README.md` §8。
 
 ## 3. 适配器侧配置(第二层)
 
-适配器用的是 **`CODEX_*` 环境网关**(不是 `NUWAX_*`,两套变量互不通用;
-`NUWAX_BRIDGE` 不是 `CODEX_BRIDGE` 的别名)。变量全表见
-[custom-model-gateway.md](custom-model-gateway.md),最小集合:
+适配器用的是 **`CODEX_*` 环境网关**;自 2026-10-28(适配器 `7e65bde`)起,
+每个网关变量都接受同义 **`NUWAX_*` 别名**(解析规则与引擎一致:仅设其一即生效、
+`NUWAX_*` 是推荐写法、双设同值幂等、**双设异值启动即报错并点名两个变量**)。
+适配器消费掉的别名(`NUWAX_BASE_URL/API_PROTOCOL/WIRE_API/API_KEY/BRIDGE/
+MAX_OUTPUT_TOKENS`)会从传给 app-server 子进程的环境里剥掉,因此引擎自己的
+`NUWAX_*` 启动组不会看到孤儿变量——旧文档"两套变量互不通用、NUWAX_BRIDGE
+不是别名"的规则已废止。变量全表见
+[custom-model-gateway.md](custom-model-gateway.md),最小集合(均可用 NUWAX_ 前缀):
 
 | 变量 | 说明 |
 | --- | --- |
-| `CODEX_PATH` | **联调关键**:指向 fork-nuwax-codex 构建出的主程序绝对路径 |
+| `CODEX_PATH` | **联调关键**:指向 fork-nuwax-codex 构建出的主程序绝对路径(别名 `NUWAX_PATH`) |
 | `CODEX_BASE_URL` | 平台协议基址(设置即启用环境网关) |
 | `CODEX_API_PROTOCOL` | `openai`(默认)或 `anthropic` |
 | `CODEX_WIRE_API` | openai 族内 `responses` / `chat`;anthropic 时不设 |
 | `CODEX_BRIDGE` | `rig` / `native` / `genai`,默认 rig |
 | `CODEX_MODEL` | 平台模型 ID |
 | `CODEX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token) |
-| `CODEX_API_KEY` | 平台 Key(回退 `OPENAI_API_KEY`) |
-| `INITIAL_AGENT_MODE` | `read-only` / `workspace-write` / `agent` / `agent-full-access` |
+| `CODEX_API_KEY` | 平台 Key;取键链为 `NUWAX_API_KEY` > `CODEX_API_KEY` > `OPENAI_API_KEY` |
+| `INITIAL_AGENT_MODE` | `read-only` / `workspace-write` / `agent` / `agent-full-access`(无别名) |
 | `CODEX_TOOL_SEARCH` | 可选:`false` 让 MCP 工具全量直出(自托管/第三方网关不识别 `tool_search` 线格式时)。引擎原生读取、适配器透传;仅接受 `true`/`false`,非法值引擎启动即报错——用旧二进制测不出该行为时先重新 `cargo build` |
 
 ## 4. 端到端冒烟:适配器 + 源码二进制(第三层)
@@ -161,6 +172,7 @@ npm test
 | `CODEX_PATH` 指向的二进制行为像旧版 | debug 产物过期,回 fork-nuwax-codex 重新 `cargo build -p codex-cli` |
 | 协议不匹配 / 未字段报错 | 引擎改了协议没重新生成类型,见第 5 节 |
 | `CODEX_BRIDGE`/`CODEX_WIRE_API` 报错 | 组合不合法:`native` 只配 Responses,`genai` 只配 chat/anthropic;anthropic 不设 wire |
+| 启动报 "both set but differ" | 同一变量 NUWAX_/CODEX_ 双前缀都设且值不同;按报错里点名的两个变量删掉一个 |
 | 型号 404 / unknown model | 模型 ID 与平台不符(注意大小写);确认基址与协议同族 |
 | 日志 | 设 `APP_SERVER_LOGS=<目录>`,日志只记字节数不含凭据,可安全粘贴 |
 
@@ -171,8 +183,9 @@ npm test
 
 - **CLI(`NUWAX_*`)**:`NUWAX_MAX_OUTPUT_TOKENS`,随完整启动组使用(引擎自身的约束)。
 - **ACP(`CODEX_*` 环境网关)**:同一个 `NUWAX_MAX_OUTPUT_TOKENS`。适配器读取后写进
-  网关 provider 条目,并把它**从传给 app-server 的环境里剥掉**——引擎自己的
-  `NUWAX_*` 解析器会把孤儿变量当作不完整启动组直接拒绝启动,不剥掉引擎起不来。
+  网关 provider 条目,并把它**连同其他被消费的 NUWAX_* 别名一起从传给 app-server
+  的环境里剥掉**——引擎自己的 `NUWAX_*` 解析器会把孤儿变量当作不完整启动组直接
+  拒绝启动,不剥掉引擎起不来。
 
 注意:`CODEX_CONFIG` 里塞 `model_providers.<id>.max_output_tokens` 没有用——
 环境网关会整体替换自己的 provider 条目,别用这条路白排查。非法值(非正整数)

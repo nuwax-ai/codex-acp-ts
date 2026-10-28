@@ -1,17 +1,23 @@
 This package uses the bundled `@nuwax-ai/nuwax-harness` dependency by default.
-Set `CODEX_PATH` to run a different Codex binary; versions other than the one specified in `package.json` may not be compatible.
+Set `CODEX_PATH` (alias `NUWAX_PATH`) to run a different Codex binary; versions other than the one specified in `package.json` may not be compatible.
 
 ### Runtime environment
 
-- `CODEX_API_KEY` - API key used when the API-key auth method is selected. Takes precedence over `OPENAI_API_KEY`.
+Every user-facing `CODEX_*` variable below also accepts a `NUWAX_-prefixed` alias with the
+same resolution rules (NUWAX wins when only it is set, CODEX stays supported forever,
+both set to the same value is idempotent, both set with differing values fails at startup
+naming both variables). Variables without the codex namespace (`OPENAI_API_KEY`,
+`MODEL_PROVIDER`, `INITIAL_AGENT_MODE`, `NO_BROWSER`, `APP_SERVER_LOGS`) have no alias.
+
+- `CODEX_API_KEY` - API key used when the API-key auth method is selected. Key chain: `NUWAX_API_KEY` > `CODEX_API_KEY` > `OPENAI_API_KEY`.
 - `OPENAI_API_KEY` - fallback API key used when the API-key auth method is selected.
-- `CODEX_PATH` - run a specific nuwax-harness executable instead of the bundled package dependency.
-- `CODEX_CONFIG` - JSON object merged into the Codex session config. `hooks` move to App Server startup (`-c hooks=...`) for AIR review; Codex rejects malformed hooks at startup and `initialize` reports its error.
+- `CODEX_PATH` - run a specific nuwax-harness executable instead of the bundled package dependency. Alias `NUWAX_PATH`.
+- `CODEX_CONFIG` - JSON object merged into the Codex session config. `hooks` move to App Server startup (`-c hooks=...`) for AIR review; Codex rejects malformed hooks at startup and `initialize` reports its error. Alias `NUWAX_CONFIG`.
 - `MODEL_PROVIDER` - model provider to pass to Codex for new sessions.
 - `DEFAULT_AUTH_REQUEST` - ACP auth request JSON used when Codex requires authentication.
 - `INITIAL_AGENT_MODE` - initial mode id: `read-only`, `workspace-write`, `agent`, or `agent-full-access`.
 - `NO_BROWSER` - hide browser-based ChatGPT auth when set.
-- `APP_SERVER_LOGS` - directory for adapter logs. `CODEX_LOG_DIR` is the fallback when this is unset.
+- `APP_SERVER_LOGS` - directory for adapter logs. `CODEX_LOG_DIR` (alias `NUWAX_LOG_DIR`) is the fallback when this is unset.
 - `CODEX_ACP_APP_SERVER_CRASH_LIMIT` - how many crashes of the Codex app-server in the crash window stop its automatic restart (default `5`).
 - `CODEX_ACP_APP_SERVER_CRASH_WINDOW_MS` - the crash window in milliseconds (default `300000`, 5 minutes).
 
@@ -23,14 +29,16 @@ Setting `CODEX_BASE_URL` turns on a gateway the deployment configures through th
 variables belong in the ACP agent process's environment, not only in the terminal that launches the host.
 
 An explicit `authenticate` (api-key, ChatGPT, gateway) or a `providers/set` replaces the environment gateway,
-its bridge selection and its credentials, following the usual precedence. `NUWAX_*` is the harness CLI's own
-startup group and does not select this gateway; `NUWAX_BRIDGE` is deliberately not an alias for `CODEX_BRIDGE`.
+its bridge selection and its credentials, following the usual precedence. Since adapter `7e65bde` (2026-10-28)
+every gateway variable accepts its `NUWAX_*` alias (`NUWAX_BRIDGE` included — the old rule that deliberately
+ignored it is repealed): aliases are consumed into the gateway entry and stripped from the app-server child
+environment, so the harness CLI's own `NUWAX_*` startup group never sees orphan variables through this path.
 For a user-facing walkthrough with per-provider setup examples, see [docs/custom-model-gateway.md](docs/custom-model-gateway.md).
 
 | Variable | Purpose |
 | --- | --- |
 | `CODEX_BASE_URL` | Full http(s) base URL of the platform. Setting it enables the environment gateway. Keep credentials out of the URL user info and pass the key through `CODEX_API_KEY` instead. |
-| `CODEX_API_KEY` | Key for that endpoint. Falls back to `OPENAI_API_KEY`; set only this one to avoid mixing keys. |
+| `CODEX_API_KEY` | Key for that endpoint. Chain: `NUWAX_API_KEY` > `CODEX_API_KEY` > `OPENAI_API_KEY`; set only one to avoid mixing keys. |
 | `CODEX_API_PROTOCOL` | `openai` (default) or `anthropic`. |
 | `CODEX_WIRE_API` | Within the `openai` family: `responses` (default) or `chat`. Not used with `anthropic`, which is selected by `CODEX_API_PROTOCOL` alone. |
 | `CODEX_BRIDGE` | `rig`, `native`, or `genai`. Unset leaves the harness binary's own default. |
