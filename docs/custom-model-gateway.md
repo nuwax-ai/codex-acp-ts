@@ -184,5 +184,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 
 - 显式 CLI 模型/provider 选择 > 显式 `-c` 配置键 > `CODEX_*` 环境网关 > 配置文件。
 - 显式 `authenticate` 或 `providers/set` 会替换环境网关、桥选择与凭据。
-- `NUWAX_*` 是 harness CLI 自己的启动组,`NUWAX_BRIDGE` 不是 `CODEX_BRIDGE` 的别名;
-  日常通过 ACP 使用时只配 `CODEX_*` 这一套即可。
+- 每个网关 `CODEX_*` 变量都有同义 `NUWAX_*` 别名(2026-10-28 起,含 `NUWAX_BRIDGE`——
+  旧文档"不是别名、刻意忽略"的规则已废止):仅设其一即生效、同值幂等、异值启动报错
+  点名两个变量;适配器消费掉的别名会从 app-server 子进程环境剥离,不会触发引擎
+  `NUWAX_*` 启动组的孤儿检测。日常通过 ACP 使用时任选一套拼写即可,不要双设异值。
