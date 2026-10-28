@@ -4,7 +4,7 @@
 [fork-nuwax-codex](https://github.com/nuwax-ai/codex)(harness,即 Codex 引擎的 fork,
 本地路径如 `/Volumes/zhitai/git_workspace/fork-nuwax-codex`)接在一起,
 并用自定义模型平台做端到端验证。日常使用(非开发)只需看
-[custom-model-gateway.md](custom-model-gateway.md)。
+[usage-guide.md](usage-guide.md)。
 
 两个项目的分工:
 
@@ -96,7 +96,7 @@ Responses。走**原生 Responses(GPT 官方 / 中转站)**的控制就是
 MAX_OUTPUT_TOKENS`)会从传给 app-server 子进程的环境里剥掉,因此引擎自己的
 `NUWAX_*` 启动组不会看到孤儿变量——旧文档"两套变量互不通用、NUWAX_BRIDGE
 不是别名"的规则已废止。变量全表见
-[custom-model-gateway.md](custom-model-gateway.md),最小集合(均可用 NUWAX_ 前缀):
+[usage-guide.md](usage-guide.md),最小集合(均可用 NUWAX_ 前缀):
 
 | 变量 | 说明 |
 | --- | --- |
