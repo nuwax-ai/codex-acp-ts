@@ -27,10 +27,15 @@ nuwax-codex-acp-ts --version
 
 ### 2.1 网关配置(设置 `CODEX_BASE_URL` 即启用)
 
+下表每个 `CODEX_*` 变量都有同义 `NUWAX_*` 别名(如 `NUWAX_BASE_URL`):仅设其一即生效、
+`NUWAX_*` 是推荐写法、双设同值幂等、双设异值启动报错点名两个变量。无前缀的
+`OPENAI_API_KEY`、`MODEL_PROVIDER`、`INITIAL_AGENT_MODE`、`NO_BROWSER`、
+`APP_SERVER_LOGS` 不设别名。
+
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `CODEX_BASE_URL` | 平台的协议基址(必填,设置即启用环境网关)。用平台提供的协议基址,**不要**自行拼接 `/chat/completions`、`/responses`、`/messages` | 无 |
-| `CODEX_API_KEY` | 该端点的 Key。未设置时回退 `OPENAI_API_KEY`;建议只设这一个,避免两把 Key 串用 | 无 |
+| `CODEX_API_KEY` | 该端点的 Key。取键链 `NUWAX_API_KEY` > `CODEX_API_KEY` > `OPENAI_API_KEY`;建议只设一个,避免串用 | 无 |
 | `CODEX_API_PROTOCOL` | 协议族:`openai` 或 `anthropic` | `openai` |
 | `CODEX_WIRE_API` | OpenAI 族内的 wire:`responses` 或 `chat`。**Anthropic 协议时不要设置**(由 `CODEX_API_PROTOCOL=anthropic` 选择) | `responses` |
 | `CODEX_BRIDGE` | 传输桥:`rig`、`native`、`genai`。`native` 仅支持 OpenAI Responses;`genai` 仅支持 chat/anthropic;单独设置而不设 `CODEX_BASE_URL` 会报错 | `rig` |
