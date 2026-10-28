@@ -2,7 +2,7 @@ import * as acp from "@agentclientprotocol/sdk/unstable";
 import {describe, expect, it, vi} from "vitest";
 import {ConnectionError, ConnectionErrors, ResponseError} from "vscode-jsonrpc/node";
 import {createRecoveryFixture, defaultAnswer, initialize, MODEL, type RecoveryFixture, requestsOf} from "./recovery-fixture";
-import {AppServerRecovery} from "../../app-server-recovery/AppServerRecovery";
+import {AppServerRecovery, recoveryLimitsFromEnv} from "../../app-server-recovery/AppServerRecovery";
 import type {CodexAcpClient} from "../../CodexAcpClient";
 import {stubGatewayModelListing} from "../acp-test-utils";
 
@@ -1038,5 +1038,42 @@ describe("app-server recovery", () => {
 
         await expect(fixture.agent.setProvider({providerId: "openai", apiType: "openai", baseUrl: "https://gateway.example/v1"}))
             .resolves.toEqual({});
+    });
+});
+
+describe("recoveryLimitsFromEnv NUWAX_* aliases", () => {
+    it("reads the crash overrides from the NUWAX_* spellings alone", () => {
+        const limits = recoveryLimitsFromEnv({
+            NUWAX_ACP_APP_SERVER_CRASH_LIMIT: "3",
+            NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS: "600000",
+        });
+        expect(limits.crashLimit).toBe(3);
+        expect(limits.crashWindowMs).toBe(600000);
+    });
+
+    it("treats both spellings with the same value as idempotent", () => {
+        const limits = recoveryLimitsFromEnv({
+            NUWAX_ACP_APP_SERVER_CRASH_LIMIT: "3",
+            CODEX_ACP_APP_SERVER_CRASH_LIMIT: "3",
+        });
+        expect(limits.crashLimit).toBe(3);
+    });
+
+    it("fails fast naming both spellings when they differ", () => {
+        expect(() =>
+            recoveryLimitsFromEnv({
+                NUWAX_ACP_APP_SERVER_CRASH_LIMIT: "3",
+                CODEX_ACP_APP_SERVER_CRASH_LIMIT: "5",
+            }),
+        ).toThrow(/NUWAX_ACP_APP_SERVER_CRASH_LIMIT.*CODEX_ACP_APP_SERVER_CRASH_LIMIT.*both set but differ/s);
+    });
+
+    it("ignores non-positive or non-numeric overrides either way", () => {
+        const limits = recoveryLimitsFromEnv({
+            NUWAX_ACP_APP_SERVER_CRASH_LIMIT: "0",
+            NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS: "abc",
+        });
+        expect(limits.crashLimit).toBe(5);
+        expect(limits.crashWindowMs).toBe(5 * 60_000);
     });
 });

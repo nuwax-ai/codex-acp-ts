@@ -58,10 +58,20 @@ export interface ResolvedEnvVar {
 }
 
 export function resolveEnvAlias(nuwaxName: string, codexName: string): ResolvedEnvVar {
+    return resolveEnvAliasFrom(process.env, nuwaxName, codexName);
+}
+
+/** Env-parameterized core for callers that take an injected environment
+ * (e.g. `recoveryLimitsFromEnv`); same resolution rules. */
+export function resolveEnvAliasFrom(
+    env: NodeJS.ProcessEnv,
+    nuwaxName: string,
+    codexName: string,
+): ResolvedEnvVar {
     // `|| undefined` folds blank values away so "   " counts as unset instead
     // of shadowing or conflicting with the other spelling.
-    const nuwax = process.env[nuwaxName]?.trim() || undefined;
-    const codex = process.env[codexName]?.trim() || undefined;
+    const nuwax = env[nuwaxName]?.trim() || undefined;
+    const codex = env[codexName]?.trim() || undefined;
     if (nuwax !== undefined && codex !== undefined) {
         if (nuwax === codex) {
             return {value: nuwax, name: nuwaxName};

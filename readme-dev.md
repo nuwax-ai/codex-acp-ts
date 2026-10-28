@@ -18,8 +18,8 @@ naming both variables). Variables without the codex namespace (`OPENAI_API_KEY`,
 - `INITIAL_AGENT_MODE` - initial mode id: `read-only`, `workspace-write`, `agent`, or `agent-full-access`.
 - `NO_BROWSER` - hide browser-based ChatGPT auth when set.
 - `APP_SERVER_LOGS` - directory for adapter logs. `CODEX_LOG_DIR` (alias `NUWAX_LOG_DIR`) is the fallback when this is unset.
-- `CODEX_ACP_APP_SERVER_CRASH_LIMIT` - how many crashes of the Codex app-server in the crash window stop its automatic restart (default `5`).
-- `CODEX_ACP_APP_SERVER_CRASH_WINDOW_MS` - the crash window in milliseconds (default `300000`, 5 minutes).
+- `CODEX_ACP_APP_SERVER_CRASH_LIMIT` - how many crashes of the Codex app-server in the crash window stop its automatic restart (default `5`). Alias `NUWAX_ACP_APP_SERVER_CRASH_LIMIT`.
+- `CODEX_ACP_APP_SERVER_CRASH_WINDOW_MS` - the crash window in milliseconds (default `300000`, 5 minutes). Alias `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS`.
 
 #### Environment gateway (`CODEX_*`)
 

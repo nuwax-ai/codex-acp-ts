@@ -2,6 +2,7 @@ import {ConnectionError, ConnectionErrors, ErrorCodes, ResponseError} from "vsco
 import type {CodexAcpClient} from "../CodexAcpClient";
 import type {CodexConnection} from "../CodexJsonRpcConnection";
 import {isMissingRolloutError} from "../CodexThreadErrors";
+import {resolveEnvAliasFrom} from "../CodexEnvConfig";
 import {logger} from "../Logger";
 import {
     type AppServerExit,
@@ -50,9 +51,13 @@ export const DEFAULT_RECOVERY_LIMITS: RecoveryLimits = {
 /** Reads the overrides of `readme-dev.md` from the environment. */
 export function recoveryLimitsFromEnv(env: NodeJS.ProcessEnv = process.env): RecoveryLimits {
     const limits = {...DEFAULT_RECOVERY_LIMITS};
-    const crashLimit = Number(env["CODEX_ACP_APP_SERVER_CRASH_LIMIT"]);
+    const crashLimit = Number(
+        resolveEnvAliasFrom(env, "NUWAX_ACP_APP_SERVER_CRASH_LIMIT", "CODEX_ACP_APP_SERVER_CRASH_LIMIT").value,
+    );
     if (Number.isInteger(crashLimit) && crashLimit > 0) limits.crashLimit = crashLimit;
-    const windowMs = Number(env["CODEX_ACP_APP_SERVER_CRASH_WINDOW_MS"]);
+    const windowMs = Number(
+        resolveEnvAliasFrom(env, "NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS", "CODEX_ACP_APP_SERVER_CRASH_WINDOW_MS").value,
+    );
     if (Number.isFinite(windowMs) && windowMs > 0) limits.crashWindowMs = windowMs;
     return limits;
 }
