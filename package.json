@@ -1,12 +1,13 @@
 {
-  "name": "@nuwax-ai/nuwax-codex-acp-ts",
+  "name": "@nuwax-ai/nuwax-harness-acp-ts",
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.2.19",
+  "version": "1.2.20",
   "description": "",
   "main": "dist/index.js",
   "bin": {
+    "nuwax-harness-acp-ts": "dist/index.js",
     "nuwax-codex-acp-ts": "dist/index.js"
   },
   "files": [

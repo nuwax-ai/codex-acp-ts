@@ -15,9 +15,12 @@ ACP 宿主(Zed / JetBrains / 自研客户端 ...)
 ## 1. 安装
 
 ```bash
-npm install -g @nuwax-ai/nuwax-codex-acp-ts
-nuwax-codex-acp-ts --version
+npm install -g @nuwax-ai/nuwax-harness-acp-ts
+nuwax-harness-acp-ts --version
 ```
+
+> 旧 npm 包名 `@nuwax-ai/nuwax-codex-acp-ts` 已停止更新(停在 1.2.19)。新包同时提供
+> 旧命令名 `nuwax-codex-acp-ts` 作为兼容别名,既有启动命令不受影响;后续版本会移除。
 
 适配器依赖 `@nuwax-ai/nuwax-harness`,安装时会自动下载对应平台的二进制到
 `~/.nuwax-harness-cache/`。若提示 binary 未安装,执行一次 `nuwax-harness --version`
@@ -145,7 +148,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 ```json
 {
   "nuwax-codex-acp": {
-    "command": "nuwax-codex-acp-ts",
+    "command": "nuwax-harness-acp-ts",
     "env": {
       "CODEX_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
       "CODEX_API_PROTOCOL": "anthropic",
@@ -158,14 +161,14 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 }
 ```
 
-也可以不全局安装,直接 `npx -y @nuwax-ai/nuwax-codex-acp-ts` 作为 command。
+也可以不全局安装,直接 `npx -y @nuwax-ai/nuwax-harness-acp-ts` 作为 command。
 
 切换平台 = 换一组 `CODEX_BASE_URL` / `CODEX_API_PROTOCOL` / `CODEX_WIRE_API` /
 `CODEX_API_KEY` / `CODEX_MODEL`,重启适配器即可。
 
 ## 5. 验证与排查
 
-1. `command -v nuwax-codex-acp-ts`、`--version` 确认安装;
+1. `command -v nuwax-harness-acp-ts`、`--version` 确认安装;
    `nuwax-harness doctor --json` 查看实际 provider / wire / bridge 路由。
 2. 在宿主里新建会话,发一句「请只回复:OK」,确认收到回复即通路正常。
 3. 常见问题:

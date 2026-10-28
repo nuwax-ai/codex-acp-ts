@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "info": {
-    "name": "@nuwax-ai/nuwax-codex-acp-ts",
+    "name": "@nuwax-ai/nuwax-harness-acp-ts",
     "title": "Codex",
     "version": "<version>"
   },
