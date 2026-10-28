@@ -36,7 +36,10 @@ describe("environment gateway bridge routing", () => {
         vi.stubEnv("CODEX_BRIDGE", bridge);
         vi.stubEnv("CODEX_API_PROTOCOL", protocol);
         vi.stubEnv("CODEX_WIRE_API", wire === "anthropic" ? undefined : wire);
-        vi.stubEnv("NUWAX_BRIDGE", bridge === "native" ? "rig" : "native");
+        // Same value through both spellings: NUWAX_BRIDGE is the alias of
+        // CODEX_BRIDGE (it used to be deliberately ignored; differing values
+        // now fail fast — covered in CodexEnvConfig tests).
+        vi.stubEnv("NUWAX_BRIDGE", bridge);
         const fixture = createCodexMockTestFixture();
         const client = fixture.getCodexAcpClient();
         const appServer = fixture.getCodexAppServerClient();

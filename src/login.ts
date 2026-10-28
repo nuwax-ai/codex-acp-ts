@@ -1,6 +1,6 @@
 import {startCodexConnection} from "./CodexJsonRpcConnection";
 import {resolveCodexBinaryPath} from "./resolveCodexBinary";
-import {childProcessEnv} from "./CodexEnvConfig";
+import {childProcessEnv, resolveEnvAlias} from "./CodexEnvConfig";
 import {CodexAppServerClient} from "./CodexAppServerClient";
 import type {ClientInfo} from "./app-server";
 import open from "open";
@@ -65,7 +65,7 @@ function printHelp() {
 }
 
 async function login(options: LoginOptions): Promise<boolean> {
-    const codexPath = process.env["CODEX_PATH"] ?? resolveCodexBinaryPath();
+    const codexPath = resolveEnvAlias("NUWAX_PATH", "CODEX_PATH").value ?? resolveCodexBinaryPath();
 
     logger.log("Starting Codex connection...");
     const codexConnection = startCodexConnection(codexPath, childProcessEnv());

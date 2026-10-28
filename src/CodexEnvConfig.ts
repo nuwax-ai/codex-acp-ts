@@ -3,8 +3,10 @@
  *
  * Reads custom env vars (CODEX_BASE_URL, CODEX_API_PROTOCOL, CODEX_WIRE_API, CODEX_BRIDGE,
  * CODEX_MODEL, CODEX_LOG_DIR) and translates them into Codex gateway config or
- * system env overrides. All custom logic lives here to keep merge conflicts
- * with upstream codex-acp to a minimum.
+ * system env overrides. Every variable also accepts a NUWAX_-prefixed alias
+ * (NUWAX_BASE_URL, ...) with the resolution rules of {@link resolveEnvAlias};
+ * the CODEX_* spellings stay supported forever. All custom logic lives here
+ * to keep merge conflicts with upstream codex-acp to a minimum.
  */
 import {CODEX_API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR} from "./CodexAuthMethod";
 import {logger} from "./Logger";
@@ -23,6 +25,56 @@ export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
 export const CODEX_PROVIDER_NAME_ENV_VAR = "CODEX_PROVIDER_NAME";
 export const CODEX_DISABLE_THINKING_ENV_VAR = "CODEX_DISABLE_THINKING";
 export const NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR = "NUWAX_MAX_OUTPUT_TOKENS";
+
+// NUWAX_-prefixed aliases: the preferred spellings for the gateway variables
+// above (CODEX_* stays supported). Mirrors the Rust binary's env_alias rules.
+export const NUWAX_BASE_URL_ENV_VAR = "NUWAX_BASE_URL";
+export const NUWAX_API_PROTOCOL_ENV_VAR = "NUWAX_API_PROTOCOL";
+export const NUWAX_WIRE_API_ENV_VAR = "NUWAX_WIRE_API";
+export const NUWAX_BRIDGE_ENV_VAR = "NUWAX_BRIDGE";
+export const NUWAX_API_KEY_ENV_VAR = "NUWAX_API_KEY";
+export const NUWAX_MODEL_ENV_VAR = "NUWAX_MODEL";
+export const NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR = "NUWAX_MODEL_CONTEXT_WINDOW";
+export const NUWAX_PROVIDER_ID_ENV_VAR = "NUWAX_PROVIDER_ID";
+export const NUWAX_PROVIDER_NAME_ENV_VAR = "NUWAX_PROVIDER_NAME";
+export const NUWAX_DISABLE_THINKING_ENV_VAR = "NUWAX_DISABLE_THINKING";
+
+/**
+ * One NUWAX_-prefixed / CODEX_-prefixed alias pair, resolved with the same
+ * rules as the Rust binary's `utils/home-dir/src/env_alias.rs`:
+ *
+ * - only `NUWAX_*` set → it wins;
+ * - only `CODEX_*` set → it wins (permanent compatibility);
+ * - both set to the same value → fine (idempotent migration);
+ * - both set with differing values → throws naming both variables: a
+ *   split-brain configuration must not be silently resolved.
+ *
+ * Blank values count as unset. The returned `name` is the variable that
+ * provided the value, so validation errors name what the user actually set.
+ */
+export interface ResolvedEnvVar {
+    value: string | undefined;
+    name: string;
+}
+
+export function resolveEnvAlias(nuwaxName: string, codexName: string): ResolvedEnvVar {
+    // `|| undefined` folds blank values away so "   " counts as unset instead
+    // of shadowing or conflicting with the other spelling.
+    const nuwax = process.env[nuwaxName]?.trim() || undefined;
+    const codex = process.env[codexName]?.trim() || undefined;
+    if (nuwax !== undefined && codex !== undefined) {
+        if (nuwax === codex) {
+            return {value: nuwax, name: nuwaxName};
+        }
+        throw new Error(
+            `${nuwaxName}="${nuwax}" and ${codexName}="${codex}" are both set but differ; ` +
+                `set only one (NUWAX_* is the preferred spelling).`,
+        );
+    }
+    return nuwax !== undefined
+        ? {value: nuwax, name: nuwaxName}
+        : {value: codex, name: codexName};
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,35 +123,35 @@ export interface EnvGatewayConfig {
  * the ACP `authenticate` / `providers/set` flow remains the authority).
  */
 export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
-    const baseUrl = process.env[CODEX_BASE_URL_ENV_VAR]?.trim();
-    const bridge = parseEnvBridge(process.env[CODEX_BRIDGE_ENV_VAR]?.trim());
-    if (!baseUrl) {
+    const baseUrl = resolveEnvAlias(NUWAX_BASE_URL_ENV_VAR, CODEX_BASE_URL_ENV_VAR);
+    const bridge = parseEnvBridge(resolveEnvAlias(NUWAX_BRIDGE_ENV_VAR, CODEX_BRIDGE_ENV_VAR));
+    if (!baseUrl.value) {
         if (bridge !== undefined) {
-            throw new Error(`${CODEX_BRIDGE_ENV_VAR} requires ${CODEX_BASE_URL_ENV_VAR} for the environment gateway.`);
+            throw new Error(`${NUWAX_BASE_URL_ENV_VAR}/${CODEX_BASE_URL_ENV_VAR} is required for the environment gateway when a bridge (${NUWAX_BRIDGE_ENV_VAR}/${CODEX_BRIDGE_ENV_VAR}) is set.`);
         }
         return null;
     }
 
-    const rawApiProtocol = process.env[CODEX_API_PROTOCOL_ENV_VAR]?.trim();
-    const apiProtocol = parseEnvApiProtocol(rawApiProtocol);
-    const rawWireApi = process.env[CODEX_WIRE_API_ENV_VAR]?.trim();
-    const openAiWire = parseEnvWireApi(rawWireApi);
-    if (apiProtocol === "anthropic" && rawWireApi !== undefined && rawWireApi !== "") {
+    const apiProtocolRaw = resolveEnvAlias(NUWAX_API_PROTOCOL_ENV_VAR, CODEX_API_PROTOCOL_ENV_VAR);
+    const apiProtocol = parseEnvApiProtocol(apiProtocolRaw);
+    const wireRaw = resolveEnvAlias(NUWAX_WIRE_API_ENV_VAR, CODEX_WIRE_API_ENV_VAR);
+    const openAiWire = parseEnvWireApi(wireRaw, apiProtocolRaw.value !== undefined);
+    if (apiProtocol === "anthropic" && wireRaw.value !== undefined) {
         logger.log(
-            `${CODEX_WIRE_API_ENV_VAR}="${rawWireApi}" is ignored because ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic selects the Anthropic protocol family`,
+            `${wireRaw.name}="${wireRaw.value}" is ignored because ${apiProtocolRaw.name || CODEX_API_PROTOCOL_ENV_VAR}=anthropic selects the Anthropic protocol family`,
         );
     }
     const wireApi: GatewayWireApi = apiProtocol === "anthropic" ? "anthropic" : openAiWire;
     if (bridge === "native" && wireApi !== "responses") {
-        throw new Error(`${CODEX_BRIDGE_ENV_VAR}=native requires ${CODEX_API_PROTOCOL_ENV_VAR}=openai and ${CODEX_WIRE_API_ENV_VAR}=responses.`);
+        throw new Error(`${CODEX_BRIDGE_ENV_VAR}/NUWAX_BRIDGE=native requires the OpenAI Responses protocol (api protocol "openai", wire "responses").`);
     }
     if (bridge === "genai" && wireApi === "responses") {
-        throw new Error(`${CODEX_BRIDGE_ENV_VAR}=genai requires the chat or anthropic protocol; responses is unsupported.`);
+        throw new Error(`${CODEX_BRIDGE_ENV_VAR}/NUWAX_BRIDGE=genai requires the chat or anthropic protocol; responses is unsupported.`);
     }
 
     const providerName =
-        process.env[CODEX_PROVIDER_NAME_ENV_VAR]?.trim()
-        || process.env[CODEX_MODEL_ENV_VAR]?.trim()
+        resolveEnvAlias(NUWAX_PROVIDER_NAME_ENV_VAR, CODEX_PROVIDER_NAME_ENV_VAR).value
+        || resolveEnvAlias(NUWAX_MODEL_ENV_VAR, CODEX_MODEL_ENV_VAR).value
         || "Custom Gateway";
 
     const headers: Record<string, string> = {"X-Client-Feature-ID": "codex"};
@@ -119,7 +171,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
         modelProvider: getEnvProviderId(),
         config: {
             name: providerName,
-            base_url: baseUrl,
+            base_url: baseUrl.value!,
             http_headers: headers,
             wire_api: wireApi,
             ...(bridge === undefined ? {} : {experimental_bridge: bridge}),
@@ -134,19 +186,20 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 // ---------------------------------------------------------------------------
 
 /**
- * If `CODEX_MODEL` is set in env, returns it. Used to override codex's
- * default model selection when using a custom gateway.
+ * If `CODEX_MODEL` (alias `NUWAX_MODEL`) is set in env, returns it. Used to
+ * override codex's default model selection when using a custom gateway.
  */
 export function getEnvModel(): string | undefined {
-    return process.env[CODEX_MODEL_ENV_VAR]?.trim() || undefined;
+    return resolveEnvAlias(NUWAX_MODEL_ENV_VAR, CODEX_MODEL_ENV_VAR).value || undefined;
 }
 
 /**
- * If `CODEX_MODEL_CONTEXT_WINDOW` is set, returns it parsed as a number.
- * Used to inform codex of a custom model's context window size.
+ * If `CODEX_MODEL_CONTEXT_WINDOW` (alias `NUWAX_MODEL_CONTEXT_WINDOW`) is set,
+ * returns it parsed as a number. Used to inform codex of a custom model's
+ * context window size.
  */
 export function getEnvContextWindow(): number | undefined {
-    const raw = process.env["CODEX_MODEL_CONTEXT_WINDOW"]?.trim();
+    const raw = resolveEnvAlias(NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR, "CODEX_MODEL_CONTEXT_WINDOW").value;
     if (!raw) return undefined;
     const n = parseInt(raw, 10);
     return isFinite(n) && n > 0 ? n : undefined;
@@ -168,25 +221,43 @@ export function getEnvMaxOutputTokens(): number | undefined {
 }
 
 /**
- * The environment for the app-server child: everything except
- * `NUWAX_MAX_OUTPUT_TOKENS`. The adapter consumes that variable into the
- * gateway provider entry; the engine's own `NUWAX_*` reader would reject it as
- * an orphan of its temporary-provider group and refuse to start.
+ * The environment for the app-server child: everything except the NUWAX_*
+ * variables this adapter consumed into the gateway entry. The engine's own
+ * `NUWAX_*` startup-group reader fails fast on orphans (e.g. a lone
+ * NUWAX_BASE_URL or NUWAX_BRIDGE), so every consumed alias is stripped —
+ * the same consume-and-strip pattern NUWAX_MAX_OUTPUT_TOKENS established.
  */
 export function childProcessEnv(): NodeJS.ProcessEnv {
     const env = {...process.env};
-    delete env[NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR];
+    for (const name of CONSUMED_NUWAX_ENV_VARS) {
+        delete env[name];
+    }
     return env;
 }
 
+/** NUWAX_* aliases consumed into the gateway config; never forwarded raw. */
+const CONSUMED_NUWAX_ENV_VARS: readonly string[] = [
+    NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
+    NUWAX_BASE_URL_ENV_VAR,
+    NUWAX_API_PROTOCOL_ENV_VAR,
+    NUWAX_WIRE_API_ENV_VAR,
+    NUWAX_API_KEY_ENV_VAR,
+    NUWAX_BRIDGE_ENV_VAR,
+];
+
 /** Returns the custom provider id from env, or the default "custom-gateway". */
 export function getEnvProviderId(): string {
-    return process.env[CODEX_PROVIDER_ID_ENV_VAR]?.trim() || CUSTOM_GATEWAY_ID;
+    return (
+        resolveEnvAlias(NUWAX_PROVIDER_ID_ENV_VAR, CODEX_PROVIDER_ID_ENV_VAR).value
+        || CUSTOM_GATEWAY_ID
+    );
 }
 
-/** Returns true when CODEX_DISABLE_THINKING is set to a truthy value. */
+/** Returns true when CODEX_DISABLE_THINKING (alias NUWAX_DISABLE_THINKING) is truthy. */
 export function isThinkingDisabled(): boolean {
-    const raw = process.env[CODEX_DISABLE_THINKING_ENV_VAR]?.trim()?.toLowerCase();
+    const raw = resolveEnvAlias(NUWAX_DISABLE_THINKING_ENV_VAR, CODEX_DISABLE_THINKING_ENV_VAR)
+        .value
+        ?.toLowerCase();
     return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
 }
 
@@ -195,11 +266,12 @@ export function isThinkingDisabled(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Try `CODEX_API_KEY` first, then fall back to `OPENAI_API_KEY`. Returns
- * `undefined` when neither is set (callers decide whether this is fatal).
+ * Try `NUWAX_API_KEY`, then `CODEX_API_KEY`, then fall back to
+ * `OPENAI_API_KEY`. Returns `undefined` when none is set (callers decide
+ * whether this is fatal).
  */
 function readAnyApiKey(): string | undefined {
-    for (const envVar of [CODEX_API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR]) {
+    for (const envVar of [NUWAX_API_KEY_ENV_VAR, CODEX_API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR]) {
         const value = process.env[envVar]?.trim();
         if (value) {
             return value;
@@ -209,41 +281,44 @@ function readAnyApiKey(): string | undefined {
 }
 
 /**
- * Parses `CODEX_API_PROTOCOL`. Unset defaults to the OpenAI protocol family.
- * An unknown value is fatal so a typo cannot silently select the wrong family.
+ * Parses the api protocol variable. Unset defaults to the OpenAI protocol
+ * family. An unknown value is fatal so a typo cannot silently select the
+ * wrong family; the error names the variable that was actually set.
  */
-function parseEnvApiProtocol(raw: string | undefined): EnvApiProtocol {
-    if (raw === undefined || raw === "") {
+function parseEnvApiProtocol(raw: ResolvedEnvVar): EnvApiProtocol {
+    if (raw.value === undefined) {
         return "openai";
     }
-    if (raw === "openai" || raw === "anthropic") {
-        return raw;
+    if (raw.value === "openai" || raw.value === "anthropic") {
+        return raw.value;
     }
     throw new Error(
-        `Invalid ${CODEX_API_PROTOCOL_ENV_VAR}; expected "openai" or "anthropic".`,
+        `Invalid ${raw.name}; expected "openai" or "anthropic".`,
     );
 }
 
 /**
- * Parses `CODEX_WIRE_API`, the wire variant within the OpenAI protocol family.
- * Unset defaults to "responses"; an unknown value (including "anthropic") is
- * fatal — select the Anthropic family with ${CODEX_API_PROTOCOL_ENV_VAR}.
+ * Parses the wire-protocol variable, the wire variant within the OpenAI
+ * protocol family. Unset defaults to "responses"; an unknown value (including
+ * "anthropic") is fatal — select the Anthropic family with the api protocol
+ * variable.
  */
-function parseEnvWireApi(raw: string | undefined): EnvWireApi {
-    if (raw === undefined || raw === "") {
+function parseEnvWireApi(raw: ResolvedEnvVar, apiProtocolSet: boolean): EnvWireApi {
+    if (raw.value === undefined) {
         return "responses";
     }
-    if (raw === "responses" || raw === "chat") {
-        return raw;
+    if (raw.value === "responses" || raw.value === "chat") {
+        return raw.value;
     }
     throw new Error(
-        `Invalid ${CODEX_WIRE_API_ENV_VAR}; expected "responses" or "chat" within the OpenAI family, or set ${CODEX_API_PROTOCOL_ENV_VAR}=anthropic for the Anthropic protocol.`,
+        `Invalid ${raw.name}; expected "responses" or "chat" within the OpenAI family` +
+            (apiProtocolSet ? "" : `, or set ${CODEX_API_PROTOCOL_ENV_VAR}/NUWAX_API_PROTOCOL=anthropic for the Anthropic protocol`),
     );
 }
 
-/** CODEX_* owns this gateway. NUWAX_BRIDGE is deliberately not an alias or override. */
-function parseEnvBridge(raw: string | undefined): EnvBridge | undefined {
-    if (raw === undefined || raw === "") return undefined;
-    if (raw === "rig" || raw === "native" || raw === "genai") return raw;
-    throw new Error(`Invalid ${CODEX_BRIDGE_ENV_VAR}; expected "rig", "native", or "genai".`);
+/** Either spelling owns this gateway; the NUWAX alias is consumed and stripped before the engine sees it. */
+function parseEnvBridge(raw: ResolvedEnvVar): EnvBridge | undefined {
+    if (raw.value === undefined) return undefined;
+    if (raw.value === "rig" || raw.value === "native" || raw.value === "genai") return raw.value;
+    throw new Error(`Invalid ${raw.name}; expected "rig", "native", or "genai".`);
 }

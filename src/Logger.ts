@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import {resolveEnvAlias} from "./CodexEnvConfig";
 
 interface LogContext {
     [key: string]: unknown;
@@ -9,7 +10,7 @@ class Logger {
     private readonly logFilePath: string | null;
 
     constructor() {
-        const logDir = process.env["APP_SERVER_LOGS"] || process.env["CODEX_LOG_DIR"];
+        const logDir = process.env["APP_SERVER_LOGS"] || resolveEnvAlias("NUWAX_LOG_DIR", "CODEX_LOG_DIR").value;
         if (!logDir) {
             this.logFilePath = null;
             return;

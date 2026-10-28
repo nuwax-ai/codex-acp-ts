@@ -2,7 +2,7 @@
 
 import {startCodexConnection} from "./CodexJsonRpcConnection";
 import {resolveCodexBinaryPath} from "./resolveCodexBinary";
-import {childProcessEnv, NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR, readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {childProcessEnv, NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR, readGatewayConfigFromEnv, resolveEnvAlias} from "./CodexEnvConfig";
 import {CodexAcpServer, type CodexProcessState} from "./CodexAcpServer";
 import {createJsonStream} from "./StdUtils";
 import {isCodexAuthRequest} from "./CodexAuthMethod";
@@ -32,7 +32,7 @@ if (process.argv[2] === "login") {
         });
 } else if (process.argv[2] === "cli") {
     const args = process.argv.slice(3);
-    runCodexCli(process.env["CODEX_PATH"], args)
+    runCodexCli(resolveEnvAlias("NUWAX_PATH", "CODEX_PATH").value, args)
         .then((exitCode) => process.exit(exitCode))
         .catch((error) => {
             console.error("Codex CLI error:", error.message);
@@ -47,12 +47,13 @@ if (process.argv[2] === "login") {
 }
 
 async function startAcpServer(): Promise<void> {
-    // CODEX_PATH wins; otherwise the nuwax-harness package supplies its own binary, downloading it on demand.
-    const codexPath = process.env["CODEX_PATH"] ?? resolveCodexBinaryPath();
-    // Fail fast on a malformed CODEX_* gateway configuration here, at boot, instead of leaving the
+    // NUWAX_PATH/CODEX_PATH wins; otherwise the nuwax-harness package supplies
+    // its own binary, downloading it on demand.
+    const codexPath = resolveEnvAlias("NUWAX_PATH", "CODEX_PATH").value ?? resolveCodexBinaryPath();
+    // Fail fast on a malformed gateway configuration here, at boot, instead of leaving the
     // error to the first client connect (the gateway is also seeded per client in CodexAcpClient).
     readGatewayConfigFromEnv();
-    const configString = process.env["CODEX_CONFIG"];
+    const configString = resolveEnvAlias("NUWAX_CONFIG", "CODEX_CONFIG").value;
     const authRequestString = process.env["DEFAULT_AUTH_REQUEST"];
     const modelProvider = process.env["MODEL_PROVIDER"];
     const config = configString ? JSON.parse(configString) : undefined;

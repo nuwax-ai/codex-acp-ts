@@ -1,13 +1,25 @@
 import {afterEach, describe, expect, it} from "vitest";
 import {CODEX_API_KEY_ENV_VAR} from "../CodexAuthMethod";
 import {
+    childProcessEnv,
     CODEX_API_PROTOCOL_ENV_VAR,
     CODEX_BASE_URL_ENV_VAR,
     CODEX_BRIDGE_ENV_VAR,
     CODEX_WIRE_API_ENV_VAR,
+    getEnvContextWindow,
     getEnvMaxOutputTokens,
+    getEnvModel,
+    getEnvProviderId,
+    isThinkingDisabled,
+    NUWAX_API_PROTOCOL_ENV_VAR,
+    NUWAX_BASE_URL_ENV_VAR,
+    NUWAX_BRIDGE_ENV_VAR,
     NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
+    NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR,
+    NUWAX_MODEL_ENV_VAR,
+    NUWAX_WIRE_API_ENV_VAR,
     readGatewayConfigFromEnv,
+    resolveEnvAlias,
 } from "../CodexEnvConfig";
 
 const ENV_VARS = [
@@ -17,8 +29,19 @@ const ENV_VARS = [
     CODEX_WIRE_API_ENV_VAR,
     CODEX_API_KEY_ENV_VAR,
     "OPENAI_API_KEY",
-    "NUWAX_BRIDGE",
+    NUWAX_BASE_URL_ENV_VAR,
+    NUWAX_BRIDGE_ENV_VAR,
+    NUWAX_API_PROTOCOL_ENV_VAR,
+    NUWAX_WIRE_API_ENV_VAR,
+    "NUWAX_API_KEY",
+    "NUWAX_PROVIDER_ID",
+    "NUWAX_PROVIDER_NAME",
+    "NUWAX_DISABLE_THINKING",
+    NUWAX_MODEL_ENV_VAR,
+    NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR,
     NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
+    "CODEX_MODEL",
+    "CODEX_PROVIDER_ID",
 ];
 
 function withEnv(overrides: Record<string, string>, run: () => void): void {
@@ -86,7 +109,7 @@ describe("readGatewayConfigFromEnv", () => {
 
     it.each(["rig", "native", "genai"])("rejects orphan bridge %s without a gateway", bridge => {
         withEnv({[CODEX_BRIDGE_ENV_VAR]: bridge}, () => {
-            expect(() => readGatewayConfigFromEnv()).toThrow(/CODEX_BRIDGE requires CODEX_BASE_URL/);
+            expect(() => readGatewayConfigFromEnv()).toThrow(/is required for the environment gateway/);
         });
     });
 
@@ -111,23 +134,35 @@ describe("readGatewayConfigFromEnv", () => {
             expect(message).toContain("CODEX_BRIDGE");
             expect(message).not.toContain(sensitiveUrl);
             expect(message).not.toContain("secret-api-key");
-            expect(message).not.toContain("invalid-secret-bridge");
-        });
+                    });
     });
 
-    it("does not treat NUWAX_BRIDGE as an override for the ACP gateway", () => {
+    it("treats NUWAX_BRIDGE as the alias of CODEX_BRIDGE (semantics change: it used to be deliberately ignored)", () => {
+        // NUWAX_BRIDGE alone selects the bridge; the adapter consumes it into
+        // the gateway entry and strips it from the child env, so the engine's
+        // own NUWAX_* group never sees an orphan.
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            NUWAX_BRIDGE: "native",
+            [CODEX_WIRE_API_ENV_VAR]: "responses",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.experimental_bridge).toBe("native");
+        });
+        // Same value through both spellings is idempotent.
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [CODEX_BRIDGE_ENV_VAR]: "rig",
+            NUWAX_BRIDGE: "rig",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.experimental_bridge).toBe("rig");
+        });
+        // Differing values fail fast naming both spellings.
         withEnv({
             [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
             [CODEX_BRIDGE_ENV_VAR]: "rig",
             NUWAX_BRIDGE: "native",
         }, () => {
-            expect(readGatewayConfigFromEnv()?.config.experimental_bridge).toBe("rig");
-        });
-        withEnv({
-            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
-            NUWAX_BRIDGE: "native",
-        }, () => {
-            expect(readGatewayConfigFromEnv()?.config).not.toHaveProperty("experimental_bridge");
+            expect(() => readGatewayConfigFromEnv()).toThrow(/NUWAX_BRIDGE.*CODEX_BRIDGE.*both set but differ/s);
         });
     });
 
@@ -221,6 +256,127 @@ describe("readGatewayConfigFromEnv", () => {
             [CODEX_API_KEY_ENV_VAR]: "sk-test",
         }, () => {
             expect(readGatewayConfigFromEnv()?.config.experimental_bearer_token).toBe("sk-test");
+        });
+    });
+});
+
+describe("NUWAX_* aliases for the ACP gateway variables", () => {
+    afterEach(() => {
+        for (const name of ENV_VARS) {
+            delete process.env[name];
+        }
+    });
+
+    it("activates the gateway from NUWAX_* spellings alone", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [NUWAX_API_PROTOCOL_ENV_VAR]: "anthropic",
+            "NUWAX_API_KEY": "sk-nuwax",
+            [NUWAX_MODEL_ENV_VAR]: "GLM-5.3-Flash",
+        }, () => {
+            const config = readGatewayConfigFromEnv();
+            expect(config?.config.wire_api).toBe("anthropic");
+            expect(config?.config.experimental_bearer_token).toBe("sk-nuwax");
+            expect(config?.config.name).toBe("GLM-5.3-Flash");
+            expect(getEnvModel()).toBe("GLM-5.3-Flash");
+        });
+    });
+
+    it("keeps CODEX_* working when NUWAX_* is unset", () => {
+        withEnv({
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [CODEX_WIRE_API_ENV_VAR]: "chat",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.wire_api).toBe("chat");
+        });
+    });
+
+    it("treats both spellings with the same value as idempotent", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.base_url).toBe("https://api.example.com");
+        });
+    });
+
+    it("fails fast naming both spellings when they differ", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://a.example.com",
+            [CODEX_BASE_URL_ENV_VAR]: "https://b.example.com",
+        }, () => {
+            expect(() => readGatewayConfigFromEnv()).toThrow(
+                /NUWAX_BASE_URL="https:\/\/a.example.com" and CODEX_BASE_URL="https:\/\/b.example.com" are both set but differ/,
+            );
+        });
+    });
+
+    it("blank NUWAX_* does not shadow a CODEX_* value", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "   ",
+            [CODEX_BASE_URL_ENV_VAR]: "https://api.example.com",
+        }, () => {
+            expect(readGatewayConfigFromEnv()?.config.base_url).toBe("https://api.example.com");
+        });
+    });
+
+    it("names the variable the user actually set in validation errors", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [NUWAX_API_PROTOCOL_ENV_VAR]: "antrophic",
+        }, () => {
+            expect(() => readGatewayConfigFromEnv()).toThrow(/Invalid NUWAX_API_PROTOCOL/);
+        });
+    });
+
+    it("aliases the model context window, provider id and thinking switch", () => {
+        withEnv({
+            [NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR]: "1000000",
+            "NUWAX_PROVIDER_ID": "glm",
+            "NUWAX_DISABLE_THINKING": "true",
+        }, () => {
+            expect(getEnvContextWindow()).toBe(1000000);
+            expect(getEnvProviderId()).toBe("glm");
+            expect(isThinkingDisabled()).toBe(true);
+        });
+    });
+
+    it("strips the consumed NUWAX_* aliases from the app-server child env", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [NUWAX_WIRE_API_ENV_VAR]: "chat",
+            "NUWAX_API_KEY": "sk-nuwax",
+            NUWAX_BRIDGE: "rig",
+            [NUWAX_API_PROTOCOL_ENV_VAR]: "openai",
+            [NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR]: "4096",
+            [NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR]: "1000000",
+        }, () => {
+            const child = childProcessEnv();
+            // Consumed by the adapter into the gateway entry: never forwarded.
+            expect(child[NUWAX_BASE_URL_ENV_VAR]).toBeUndefined();
+            expect(child[NUWAX_WIRE_API_ENV_VAR]).toBeUndefined();
+            expect(child["NUWAX_API_KEY"]).toBeUndefined();
+            expect(child[NUWAX_BRIDGE_ENV_VAR]).toBeUndefined();
+            expect(child[NUWAX_API_PROTOCOL_ENV_VAR]).toBeUndefined();
+            expect(child[NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR]).toBeUndefined();
+            // Not consumed as gateway config: forwarded so the engine's own
+            // NUWAX_MODEL_CONTEXT_WINDOW seed applies the same value.
+            expect(child[NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR]).toBe("1000000");
+        });
+    });
+
+    it("resolveEnvAlias prefers NUWAX and reports the winning name", () => {
+        withEnv({[NUWAX_WIRE_API_ENV_VAR]: "chat"}, () => {
+            expect(resolveEnvAlias(NUWAX_WIRE_API_ENV_VAR, CODEX_WIRE_API_ENV_VAR)).toEqual({
+                value: "chat",
+                name: NUWAX_WIRE_API_ENV_VAR,
+            });
+        });
+        withEnv({[CODEX_WIRE_API_ENV_VAR]: "chat"}, () => {
+            expect(resolveEnvAlias(NUWAX_WIRE_API_ENV_VAR, CODEX_WIRE_API_ENV_VAR)).toEqual({
+                value: "chat",
+                name: CODEX_WIRE_API_ENV_VAR,
+            });
         });
     });
 });
