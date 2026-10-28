@@ -33,7 +33,7 @@ its bridge selection and its credentials, following the usual precedence. Since 
 every gateway variable accepts its `NUWAX_*` alias (`NUWAX_BRIDGE` included — the old rule that deliberately
 ignored it is repealed): aliases are consumed into the gateway entry and stripped from the app-server child
 environment, so the harness CLI's own `NUWAX_*` startup group never sees orphan variables through this path.
-For a user-facing walkthrough (adapter and CLI, with per-provider setup examples), see [docs/usage-guide.md](docs/usage-guide.md).
+For a user-facing walkthrough (adapter and CLI, with per-provider setup examples), see [my-docs/usage-guide.md](my-docs/usage-guide.md).
 
 | Variable | Purpose |
 | --- | --- |
