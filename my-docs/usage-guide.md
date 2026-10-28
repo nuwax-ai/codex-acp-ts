@@ -136,7 +136,8 @@ CLI 拼写换算:CLI 的单变量 `NUWAX_WIRE_API` 在 ACP 侧拆成
 | `INITIAL_AGENT_MODE` | 初始模式:`read-only` / `workspace-write` / `agent` / `agent-full-access` |
 | `NO_BROWSER` | 设置后隐藏浏览器登录入口 |
 | `APP_SERVER_LOGS` | 适配器日志目录。日志不包含 Key 与原始协议内容 |
-| 崩溃重启策略参数 | app-server 崩溃自动重启的次数上限与时间窗口(默认 5 次 / 5 分钟),属适配器内部运维参数,一般无需设置 |
+| `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` | 可选运维参数:引擎 app-server 在崩溃窗口内自动重启的次数上限(默认 `5`),超过后停止自动重启 | `5` |
+| `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | 可选运维参数:上述崩溃计数的时间窗口,毫秒(默认 `300000`,即 5 分钟) | `300000` |
 
 ### 4.3 平台配置示例
 
