@@ -14,7 +14,7 @@ import type {
     CodexAppServerClient,
     ElicitationHandler,
 } from "./CodexAppServerClient";
-import {type EnvBridge, getEnvContextWindow, getEnvModel, isThinkingDisabled, readGatewayConfigFromEnv} from "./CodexEnvConfig";
+import {type EnvBridge, getEnvContextWindow, getEnvModel, getEnvReasoningEffort, getEnvReasoningEffortLevels, isThinkingDisabled, readGatewayConfigFromEnv} from "./CodexEnvConfig";
 import type {McpServerStartupWaitOptions, McpStartupResult} from "./mcp/McpStartupTracker";
 import open from "open";
 import type {Disposable} from "vscode-jsonrpc";
@@ -1232,6 +1232,32 @@ export class CodexAcpClient {
     }
 
     /**
+     * The effort to use when neither the host nor the thinking-disable switch
+     * named one.
+     *
+     * This used to be a bare `"medium"`, which did two kinds of damage. It
+     * overrode the operator's own `NUWAX_MODEL_REASONING_EFFORT`, since the
+     * adapter sends an explicit effort per turn. And `medium` is a tier many
+     * gateways do not have at all — GLM-5.3-Flash takes low/high/max — so a
+     * gateway that does not validate effort accepts it and applies something
+     * else, with a 200 and no error anywhere.
+     *
+     * So: the operator's explicit setting wins; then a tier the gateway
+     * declared it takes; then `medium`, unchanged, for a gateway that declared
+     * nothing. An explicit setting that the declared tiers do not cover is
+     * passed through as asked — substituting here would be the silent remap
+     * the engine now refuses instead.
+     */
+    private fallbackEffort(): string {
+        const asked = getEnvReasoningEffort();
+        if (asked) {
+            return asked;
+        }
+        const firstDeclared = getEnvReasoningEffortLevels()?.[0];
+        return firstDeclared ?? "medium";
+    }
+
+    /**
      * Resolves a ModelId using the provided ID and reasoning effort.
      * Falls back to model defaults if parameters are missing or unsupported.
      */
@@ -1271,7 +1297,7 @@ export class CodexAcpClient {
         // every turn and makes requests to custom-provider endpoints fail with
         // "unknown model".
         if (modelId) {
-            return ModelId.create(modelId, effectiveEffort ?? "medium");
+            return ModelId.create(modelId, effectiveEffort ?? this.fallbackEffort());
         }
 
         const defaultModel = availableModels.find(m => m.isDefault);

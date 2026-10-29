@@ -4136,6 +4136,82 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         expect(result).toEqual(ModelId.create('MiniMax-M3', 'medium'));
     });
 
+    describe('the effort fallback for an uncatalogued model', () => {
+        const withEnv = (overrides: Record<string, string | undefined>, run: () => void) => {
+            const saved: Record<string, string | undefined> = {};
+            for (const [name, value] of Object.entries(overrides)) {
+                saved[name] = process.env[name];
+                if (value === undefined) {
+                    delete process.env[name];
+                } else {
+                    process.env[name] = value;
+                }
+            }
+            try {
+                run();
+            } finally {
+                for (const [name, value] of Object.entries(saved)) {
+                    if (value === undefined) {
+                        delete process.env[name];
+                    } else {
+                        process.env[name] = value;
+                    }
+                }
+            }
+        };
+
+        it('prefers the effort the operator asked for over the old blind medium', () => {
+            withEnv({NUWAX_MODEL_REASONING_EFFORT: 'high'}, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'MiniMax-M3', null);
+                expect(result).toEqual(ModelId.create('MiniMax-M3', 'high'));
+            });
+        });
+
+        it('reads the effort through its CODEX_ alias too', () => {
+            withEnv({CODEX_MODEL_REASONING_EFFORT: 'low'}, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'MiniMax-M3', null);
+                expect(result).toEqual(ModelId.create('MiniMax-M3', 'low'));
+            });
+        });
+
+        it('falls back to a tier the gateway declared it takes', () => {
+            withEnv({NUWAX_REASONING_EFFORT_LEVELS: 'low,high,max'}, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'GLM-5.3-Flash', null);
+                expect(result).toEqual(ModelId.create('GLM-5.3-Flash', 'low'));
+            });
+        });
+
+        it('keeps medium when the gateway declared nothing', () => {
+            withEnv({NUWAX_REASONING_EFFORT_LEVELS: undefined}, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'MiniMax-M3', null);
+                expect(result).toEqual(ModelId.create('MiniMax-M3', 'medium'));
+            });
+        });
+
+        it("does not substitute for an effort the operator asked for explicitly", () => {
+            // Asking for a tier the declared list omits must reach the engine,
+            // which refuses it naming both — substituting here would be the
+            // silent remap that refusal exists to prevent.
+            withEnv({
+                NUWAX_REASONING_EFFORT_LEVELS: 'low,high,max',
+                NUWAX_MODEL_REASONING_EFFORT: 'medium',
+            }, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'GLM-5.3-Flash', null);
+                expect(result).toEqual(ModelId.create('GLM-5.3-Flash', 'medium'));
+            });
+        });
+
+        it("lets the host's own choice win over both", () => {
+            withEnv({
+                NUWAX_REASONING_EFFORT_LEVELS: 'low,high,max',
+                NUWAX_MODEL_REASONING_EFFORT: 'low',
+            }, () => {
+                const result = fixture.getCodexAcpClient().createModelId(mockModels, 'GLM-5.3-Flash', 'max');
+                expect(result).toEqual(ModelId.create('GLM-5.3-Flash', 'max'));
+            });
+        });
+    });
+
     /**
      * Sets up a mock fixture with turnStart/awaitTurnCompleted spied on,
      * and a given session state. Returns the fixture and turnStart spy.

@@ -5,11 +5,14 @@ import {
     CODEX_API_PROTOCOL_ENV_VAR,
     CODEX_BASE_URL_ENV_VAR,
     CODEX_BRIDGE_ENV_VAR,
+    CODEX_MODEL_REASONING_EFFORT_ENV_VAR,
     CODEX_WIRE_API_ENV_VAR,
     getEnvContextWindow,
     getEnvMaxOutputTokens,
     getEnvModel,
     getEnvProviderId,
+    getEnvReasoningEffort,
+    getEnvReasoningEffortLevels,
     isThinkingDisabled,
     NUWAX_API_PROTOCOL_ENV_VAR,
     NUWAX_BASE_URL_ENV_VAR,
@@ -17,6 +20,8 @@ import {
     NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
     NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR,
     NUWAX_MODEL_ENV_VAR,
+    NUWAX_MODEL_REASONING_EFFORT_ENV_VAR,
+    NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR,
     NUWAX_WIRE_API_ENV_VAR,
     readGatewayConfigFromEnv,
     resolveEnvAlias,
@@ -37,6 +42,9 @@ const ENV_VARS = [
     "NUWAX_PROVIDER_ID",
     "NUWAX_PROVIDER_NAME",
     "NUWAX_DISABLE_THINKING",
+    "NUWAX_MODEL_REASONING_EFFORT",
+    "CODEX_MODEL_REASONING_EFFORT",
+    "NUWAX_REASONING_EFFORT_LEVELS",
     NUWAX_MODEL_ENV_VAR,
     NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR,
     NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR,
@@ -362,6 +370,64 @@ describe("NUWAX_* aliases for the ACP gateway variables", () => {
             // Not consumed as gateway config: forwarded so the engine's own
             // NUWAX_MODEL_CONTEXT_WINDOW seed applies the same value.
             expect(child[NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR]).toBe("1000000");
+        });
+    });
+
+    it("reads the effort the operator asked for through either alias", () => {
+        withEnv({[NUWAX_MODEL_REASONING_EFFORT_ENV_VAR]: "high"}, () => {
+            expect(getEnvReasoningEffort()).toBe("high");
+        });
+        withEnv({[CODEX_MODEL_REASONING_EFFORT_ENV_VAR]: "low"}, () => {
+            expect(getEnvReasoningEffort()).toBe("low");
+        });
+        withEnv({}, () => {
+            expect(getEnvReasoningEffort()).toBeUndefined();
+        });
+    });
+
+    it("shape-parses the declared tiers without judging which words are tiers", () => {
+        withEnv({[NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR]: " Low , high ,low,"}, () => {
+            expect(getEnvReasoningEffortLevels()).toEqual(["low", "high"]);
+        });
+        withEnv({}, () => {
+            expect(getEnvReasoningEffortLevels()).toBeUndefined();
+        });
+        // An unspellable word is left for the engine to refuse; this layer only
+        // reads the shape, so it must not invent a second vocabulary.
+        withEnv({[NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR]: "low,hih"}, () => {
+            expect(getEnvReasoningEffortLevels()).toEqual(["low", "hih"]);
+        });
+    });
+
+    it("refuses a set-but-empty tier list rather than reading it as no tiers", () => {
+        for (const value of ["", "   ", ",", " , ,"]) {
+            withEnv({[NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR]: value}, () => {
+                expect(() => getEnvReasoningEffortLevels()).toThrow(/NUWAX_REASONING_EFFORT_LEVELS/);
+            });
+        }
+    });
+
+    it("folds a blank effort away, as every alias pair here does", () => {
+        // A blank alias must not shadow the other spelling, so it counts as
+        // unset rather than as a value the gateway would refuse.
+        withEnv({[NUWAX_MODEL_REASONING_EFFORT_ENV_VAR]: "   "}, () => {
+            expect(getEnvReasoningEffort()).toBeUndefined();
+        });
+        withEnv({
+            [NUWAX_MODEL_REASONING_EFFORT_ENV_VAR]: "  ",
+            [CODEX_MODEL_REASONING_EFFORT_ENV_VAR]: "high",
+        }, () => {
+            expect(getEnvReasoningEffort()).toBe("high");
+        });
+    });
+
+    it("forwards the declared tiers to the app-server child, which enforces them", () => {
+        withEnv({
+            [NUWAX_BASE_URL_ENV_VAR]: "https://api.example.com",
+            [NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR]: "low,high,max",
+        }, () => {
+            const child = childProcessEnv();
+            expect(child[NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR]).toBe("low,high,max");
         });
     });
 

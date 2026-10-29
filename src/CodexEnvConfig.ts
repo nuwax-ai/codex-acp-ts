@@ -24,6 +24,7 @@ export const CODEX_LOG_DIR_ENV_VAR = "CODEX_LOG_DIR";
 export const CODEX_PROVIDER_ID_ENV_VAR = "CODEX_PROVIDER_ID";
 export const CODEX_PROVIDER_NAME_ENV_VAR = "CODEX_PROVIDER_NAME";
 export const CODEX_DISABLE_THINKING_ENV_VAR = "CODEX_DISABLE_THINKING";
+export const CODEX_MODEL_REASONING_EFFORT_ENV_VAR = "CODEX_MODEL_REASONING_EFFORT";
 export const NUWAX_MAX_OUTPUT_TOKENS_ENV_VAR = "NUWAX_MAX_OUTPUT_TOKENS";
 
 // NUWAX_-prefixed aliases: the preferred spellings for the gateway variables
@@ -38,6 +39,17 @@ export const NUWAX_MODEL_CONTEXT_WINDOW_ENV_VAR = "NUWAX_MODEL_CONTEXT_WINDOW";
 export const NUWAX_PROVIDER_ID_ENV_VAR = "NUWAX_PROVIDER_ID";
 export const NUWAX_PROVIDER_NAME_ENV_VAR = "NUWAX_PROVIDER_NAME";
 export const NUWAX_DISABLE_THINKING_ENV_VAR = "NUWAX_DISABLE_THINKING";
+export const NUWAX_MODEL_REASONING_EFFORT_ENV_VAR = "NUWAX_MODEL_REASONING_EFFORT";
+
+/**
+ * The effort tiers the gateway's model actually takes, comma-separated.
+ *
+ * Read but not consumed: the engine enforces it, so it must reach the
+ * app-server child. It has no `CODEX_*` spelling on purpose — there is no
+ * legacy name to stay compatible with — so `NUWAX_` is the only one, unlike
+ * every alias pair above.
+ */
+export const NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR = "NUWAX_REASONING_EFFORT_LEVELS";
 
 /**
  * One NUWAX_-prefixed / CODEX_-prefixed alias pair, resolved with the same
@@ -269,6 +281,58 @@ export function isThinkingDisabled(): boolean {
         .value
         ?.toLowerCase();
     return raw === "true" || raw === "1" || raw === "yes" || raw === "on";
+}
+
+/**
+ * The reasoning effort the operator asked for, or undefined when unset.
+ *
+ * The value is returned unjudged: the engine owns the effort vocabulary and
+ * refuses a tier the gateway's model does not take before a request is sent.
+ * Copying that vocabulary here would be a second list to keep in step, which
+ * is exactly what the engine's own reader avoids.
+ */
+export function getEnvReasoningEffort(): string | undefined {
+    // `resolveEnvAlias` trims and folds a blank value away, so "   " counts as
+    // unset rather than shadowing the other spelling — the convention every
+    // alias pair here follows. The value itself is returned unjudged: the
+    // engine owns the effort vocabulary and refuses a tier the gateway's model
+    // does not take before a request is sent. Copying that vocabulary here
+    // would be a second list to keep in step, which is exactly what the
+    // engine's own reader avoids.
+    return resolveEnvAlias(
+        NUWAX_MODEL_REASONING_EFFORT_ENV_VAR,
+        CODEX_MODEL_REASONING_EFFORT_ENV_VAR,
+    ).value;
+}
+
+/**
+ * The effort tiers the gateway's model actually takes, in the order the
+ * operator listed them, or undefined when unset.
+ *
+ * Shape only, for the same reason: trimmed, lower-cased, blanks and repeats
+ * dropped. A word that is not a tier is left for the engine to refuse, naming
+ * the variable and the words it does take. A value that is set but names no
+ * tier is fatal here — it would otherwise read as "takes no tier", which
+ * refuses every effort.
+ */
+export function getEnvReasoningEffortLevels(): string[] | undefined {
+    const raw = process.env[NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR];
+    if (raw === undefined) {
+        return undefined;
+    }
+    const levels: string[] = [];
+    for (const token of raw.split(",")) {
+        const level = token.trim().toLowerCase();
+        if (level !== "" && !levels.includes(level)) {
+            levels.push(level);
+        }
+    }
+    if (levels.length === 0) {
+        throw new Error(
+            `Invalid ${NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR}="${raw}"; expected a comma-separated list of effort tiers, such as low,high,max.`,
+        );
+    }
+    return levels;
 }
 
 // ---------------------------------------------------------------------------
