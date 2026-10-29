@@ -34,13 +34,17 @@ install-scripts 安全门拦截,或提示 binary 未安装,执行一次 `nuwax-h
 
 ## 1.2 快速开始(30 秒验证)
 
-只配 **4 个变量**(以 OpenAI Chat 协议为例):
+只配 **4 个变量**就能跑通(以 OpenAI Chat 协议为例):
 
 ```bash
 export NUWAX_BASE_URL='https://your-provider.example/v1'   # 平台的协议基址
 export NUWAX_WIRE_API='chat'                               # chat / responses / anthropic
 export NUWAX_MODEL='your-model-id'                         # 平台的模型 ID
 export NUWAX_API_KEY='<YOUR_API_KEY>'
+
+# 建议再显式指定推理力度:自定义模型默认用 medium,不一定是你平台支持的值
+export NUWAX_MODEL_REASONING_EFFORT='high'                 # none|minimal|low|medium|high|xhigh|max
+# 不需要模型思考:NUWAX_MODEL_REASONING_EFFORT=none
 
 nuwax-harness exec '请只回复:OK'     # 收到 OK 即全链路正常
 ```
@@ -66,7 +70,8 @@ Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设�
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` / `NUWAX_STREAM_IDLE_TIMEOUT_MS` | 可选:请求/流重试与流空闲超时;须随完整启动组使用 |
 | `NUWAX_HOME` | 可选:会话与状态目录(默认 `~/.nuwax-harness`) |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
-| `NUWAX_MODEL_REASONING_EFFORT` / `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:推理力度、自动压缩的 token 阈值 / 窗口比例(具体取值须模型与协议支持;显式 `-c` 优先于这些种子) |
+| `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 等。自定义模型默认 `medium`,平台不接受该值时用它覆盖(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) | 不设 |
+| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子) | 不设 |
 
 ## 1.4 常用命令
 
@@ -223,7 +228,8 @@ nuwax-harness-acp-ts --version
 
 ## 2.2 快速开始(宿主最小配置)
 
-**4 个变量**配进宿主的 agent 环境(以 OpenAI Chat 协议为例):
+**4 个必填变量** + **1 个建议显式配置**(推理力度),配进宿主的 agent 环境
+(以 OpenAI Chat 协议为例):
 
 ```json
 {
@@ -233,11 +239,17 @@ nuwax-harness-acp-ts --version
       "NUWAX_BASE_URL": "https://your-provider.example/v1",
       "NUWAX_WIRE_API": "chat",
       "NUWAX_MODEL": "your-model-id",
-      "NUWAX_API_KEY": "<YOUR_API_KEY>"
+      "NUWAX_API_KEY": "<YOUR_API_KEY>",
+      "NUWAX_MODEL_REASONING_EFFORT": "high"
     }
   }
 }
 ```
+
+> 自定义模型默认用 `medium`,不一定是你平台支持的值——按平台换成
+> `none` / `low` / `high` / `max` 等(完整取值见 §2.3)。
+> 不需要模型思考,就把该项换成 `"NUWAX_DISABLE_THINKING": "true"`
+> (等价于把力度固定为 `none`)。
 
 在宿主里新建会话,发一句「请只回复:OK」,收到回复即接入完成。
 也可以不全局安装,直接 `npx -y @nuwax-ai/nuwax-harness-acp-ts` 作为 command。
@@ -263,7 +275,7 @@ nuwax-harness-acp-ts --version
 | `NUWAX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 tool_search/Deferred),用于不支持 tool_search 线格式的自托管/第三方网关或需要确定性工具表的部署;`true`/不设 = 官方默认。仅接受大小写不敏感的 `true`/`false`,其他值引擎启动即报错;`NUWAX_CONFIG` 里的 `tools.tool_search` 属显式配置,优先于本变量 | 不设 |
 | `NUWAX_PROVIDER_ID` | 网关的 provider ID(可选) | `custom-gateway` |
 | `NUWAX_PROVIDER_NAME` | 网关展示名(可选),缺省回退 `NUWAX_MODEL`,再回退 `Custom Gateway` | — |
-| `NUWAX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`(用于不支持推理的模型) | 不启用 |
+| `NUWAX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`,即**关闭思考**(用于不支持推理的模型);这是 ACP 侧关闭思考的开关,CLI 侧用 `NUWAX_MODEL_REASONING_EFFORT=none` | 不启用 |
 
 ## 2.4 通用配置
 
