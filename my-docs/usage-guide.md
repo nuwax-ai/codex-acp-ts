@@ -199,7 +199,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | --- | --- |
 | 报 NUWAX_* 组不完整 / 孤立设置 | CLI 启动组必须成组:`NUWAX_BASE_URL` + `NUWAX_WIRE_API` + `NUWAX_API_KEY` |
 | 报 "Not inside a trusted directory" | 交互式与 `exec` 需在 Git 仓库内运行;非 Git 目录加 `--skip-git-repo-check`(见 §1.4) |
-| 平台报 effort 取值不支持 / 不支持关闭思考 | 自定义模型默认用 `medium`,平台不接受就改 `NUWAX_MODEL_REASONING_EFFORT`(如 `low`/`high`/`max`)。**走自建网关/代理时注意**:网关可能对 effort 有白名单校验(实测有网关放行 `low`/`high`/`max` 但拒 `medium`,报错带网关自己的错误码),同一模型直连官方端点却正常——这类差异只能靠显式设档位规避。另:“关思考”发的是 `thinking:{type:"disabled"}`,始终思考的模型会拒,这时也给显式档位而不是关 |
+| 平台报 effort 取值不支持 / 不支持关闭思考 | 自定义模型默认用 `medium`,平台不接受就改 `NUWAX_MODEL_REASONING_EFFORT`(如 `low`/`high`/`max`)。**更彻底的做法**:设 `NUWAX_REASONING_EFFORT_LEVELS='low,high,max'` 声明该网关模型真实接受的档位,之后选了表里没有的档位(或关思考)会在**请求发出前**就报错并点名可用档位,而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。声明后务必同时给一个真实存在的档位。另:“关思考”发的是 `thinking:{type:"disabled"}`,始终思考的模型会拒,这时也给显式档位而不是关 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐 |
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
@@ -371,7 +371,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | --- | --- |
 | `session/new` 返回 Authentication required | base URL 变量没有进入适配器进程的环境;检查宿主的 env 配置 |
 | 提示 binary is not installed | 运行一次 `nuwax-harness --version` 触发下载,或设 `NUWAX_PATH` 指向已有二进制 |
-| 平台报 effort 取值不支持 / 不支持关闭思考 | 适配器默认把 effort 钉成 `medium`(会话信息显示 `<模型>[medium]`),宿主界面可能不提供 effort 选择器;在宿主 `env` 加 `NUWAX_MODEL_REASONING_EFFORT` 覆盖。**走自建网关/代理时**:网关可能自有 effort 白名单(实测有网关拒 `medium` 而直连官方端点正常),同一模型换端点结果不同,只能显式设档位规避。“关思考”走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
+| 平台报 effort 取值不支持 / 不支持关闭思考 | 适配器默认把 effort 钉成 `medium`(会话信息显示 `<模型>[medium]`),宿主界面可能不提供 effort 选择器;在宿主 `env` 加 `NUWAX_MODEL_REASONING_EFFORT` 覆盖。**推荐同时设 `NUWAX_REASONING_EFFORT_LEVELS`**(如 `'low,high,max'`)声明该网关模型真实接受的档位:之后选了表里没有的档位会在**请求发出前**报错并点名可用档位,不再被网关静默映射。**注意**:声明后适配器那个 `medium` 默认值也会被拒,所以必须同时给 `NUWAX_MODEL_REASONING_EFFORT` 或让宿主选一个真实档位,否则每轮都会失败。“关思考”走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
