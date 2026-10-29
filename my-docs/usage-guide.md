@@ -194,6 +194,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | --- | --- |
 | 报 NUWAX_* 组不完整 / 孤立设置 | CLI 启动组必须成组:`NUWAX_BASE_URL` + `NUWAX_WIRE_API` + `NUWAX_API_KEY` |
 | 报 "Not inside a trusted directory" | 交互式与 `exec` 需在 Git 仓库内运行;非 Git 目录加 `--skip-git-repo-check`(见 §1.4) |
+| 平台报 effort 取值不支持(400 之类) | 自定义模型(不在引擎模型目录里)默认用 `medium`;用 `NUWAX_MODEL_REASONING_EFFORT` 改成平台支持的值(如 `low` / `high` / `max`) |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐 |
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
@@ -358,6 +359,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | --- | --- |
 | `session/new` 返回 Authentication required | base URL 变量没有进入适配器进程的环境;检查宿主的 env 配置 |
 | 提示 binary is not installed | 运行一次 `nuwax-harness --version` 触发下载,或设 `NUWAX_PATH` 指向已有二进制 |
+| 平台报 effort 取值不支持(400 之类) | 适配器对不在引擎模型目录里的模型默认把 effort 钉成 `medium`(会话信息里显示为 `<模型>[medium]`),且宿主界面可能不提供 effort 选择器;在宿主 `env` 里加 `NUWAX_MODEL_REASONING_EFFORT`(如 `low`/`high`/`max`)并重启适配器即可覆盖 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
