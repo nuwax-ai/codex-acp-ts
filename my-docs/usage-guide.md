@@ -78,6 +78,10 @@ nuwax-harness
 nuwax-harness exec '请只回复:OK'
 ```
 
+> **注意**:交互式与 `exec` 需要在 Git 仓库目录内运行(引擎的安全要求),否则会报
+> "Not inside a trusted directory";非 Git 目录可加 `--skip-git-repo-check` 跳过。
+> 通过 ACP 宿主使用不受此限(适配器走 app-server 协议,见第二部分)。
+
 独立 app-server(`nuwax-harness app-server --stdio`)是给客户端的 JSON-RPC 协议口,
 启动本身不发对话,日常使用不需要手动跑它(给 ACP 宿主用时,见第二部分)。
 
@@ -98,6 +102,7 @@ nuwax-harness exec '请只回复:OK'
 | 现象 | 原因与处理 |
 | --- | --- |
 | 报 NUWAX_* 组不完整 / 孤立设置 | CLI 启动组必须成组:`NUWAX_BASE_URL` + `NUWAX_WIRE_API` + `NUWAX_API_KEY` |
+| 报 "Not inside a trusted directory" | 交互式与 `exec` 需在 Git 仓库内运行;非 Git 目录加 `--skip-git-repo-check`(见 §1.4) |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐 |
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
