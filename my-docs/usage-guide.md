@@ -47,6 +47,9 @@ nuwax-harness exec '请只回复:OK'     # 收到 OK 即全链路正常
 
 Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设为 `anthropic`。
 
+上面的 `export` 只对当前终端有效。**长期使用请写进配置文件**(一次配置,所有终端、
+所有项目生效),见 §1.5 全局配置。
+
 三家平台(MiMo / GLM / Step)的现成基址与模型名见第二部分 §2.5;按附录 A 换算:
 基址、Key、模型、桥同名,仅 wire 换成单变量拼法。
 
@@ -78,14 +81,102 @@ nuwax-harness
 nuwax-harness exec '请只回复:OK'
 ```
 
-> **注意**:交互式与 `exec` 需要在 Git 仓库目录内运行(引擎的安全要求),否则会报
-> "Not inside a trusted directory";非 Git 目录可加 `--skip-git-repo-check` 跳过。
-> 通过 ACP 宿主使用不受此限(适配器走 app-server 协议,见第二部分)。
+> **为什么要求 Git 仓库**:交互式与 `exec` 会直接改文件、跑命令,引擎以 Git 仓库作为
+> **可信边界**(改动可 review、可回滚);非 Git 目录里无法判断影响范围,因此拒绝启动。
+> 这不是安装问题,是引擎启动 CLI 时的安全策略。
+>
+> **绕过方式**(任选其一):
+> 1. 在 Git 仓库内运行——最省事,`git init` 一下即可,无需任何参数;
+> 2. 加 `--skip-git-repo-check`(全局 flag,`nuwax-harness --skip-git-repo-check` 或
+>    `nuwax-harness exec --skip-git-repo-check '...'` 都认);
+> 3. 已在外层沙箱/容器中运行时用 `--yolo`,会连同审批沙箱一起绕过。
+>
+> **通过 ACP 宿主使用不受此限**:该检查只在 CLI 的 exec/交互层,适配器走 app-server
+> 协议(见第二部分),任何目录都能用。
 
 独立 app-server(`nuwax-harness app-server --stdio`)是给客户端的 JSON-RPC 协议口,
 启动本身不发对话,日常使用不需要手动跑它(给 ACP 宿主用时,见第二部分)。
 
-## 1.5 协议与桥
+## 1.5 全局配置(config.toml,一次配置长期生效)
+
+上面的 `export` 只对当前终端有效。日常长期使用建议把 provider 写进配置文件,
+**所有终端、所有项目通用**:
+
+```bash
+~/.nuwax-harness/config.toml        # 目录可用 NUWAX_HOME 改到别处(如外接盘)
+```
+
+以 GLM Coding Plan(Anthropic 线)为例:
+
+```toml
+# ~/.nuwax-harness/config.toml
+model = "GLM-5.3-Flash"
+model_provider = "glm"
+
+# 按平台规格填真实窗口;自定义模型的显式覆盖全额生效
+model_context_window = 128000
+
+[model_providers.glm]
+name = "GLM Coding Plan (Anthropic)"
+base_url = "https://open.bigmodel.cn/api/anthropic"
+env_key = "GLM_API_KEY"          # Key 从该环境变量读取,不落盘
+wire_api = "anthropic"           # responses | chat | anthropic
+# max_output_tokens = 8192       # 可选:输出上限
+```
+
+**API Key 不写进配置文件**——用 `env_key` 引用环境变量名,Key 放进受保护的环境文件:
+
+```bash
+mkdir -p "$HOME/.config/nuwax-harness"
+echo "export GLM_API_KEY='<YOUR_API_KEY>'" >> "$HOME/.config/nuwax-harness/agent.env"
+chmod 600 "$HOME/.config/nuwax-harness/agent.env"
+. "$HOME/.config/nuwax-harness/agent.env"    # 每次开终端加载一次(可写进 ~/.zshrc)
+```
+
+之后直接 `nuwax-harness` 即用上该 provider,无需再设任何环境变量。
+
+**多协议线对比**:每条线一个独立配置文件(放在同一目录),启动时用 `--profile` 切:
+
+```bash
+~/.nuwax-harness/mimo-responses.config.toml     # 文件名 = profile 名
+```
+
+```toml
+# ~/.nuwax-harness/mimo-responses.config.toml
+model = "mimo-v2.6-flash"
+model_provider = "mimo-responses"
+
+[model_providers.mimo-responses]
+name = "MiMo (OpenAI Responses)"
+base_url = "https://token-plan-cn.xiaomimimo.com/v1"
+env_key = "MIMO_API_KEY"
+wire_api = "responses"
+```
+
+```bash
+nuwax-harness --profile mimo-responses          # 用该 profile(短写法 -p)
+nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文件
+```
+
+(该 profile 用的 `MIMO_API_KEY` 同样放进上面的环境文件。)
+
+> **不要**在 `config.toml` 里写 `[profiles.<名字>]` 表——该写法已废弃,配 `--profile`
+> 会直接报错;应改用上面的独立配置文件。
+
+**要点**:
+
+- 优先级:显式 CLI(`-m` / `-c`)> 环境种子(`NUWAX_*`)> config.toml。
+- `nuwax_env` 是引擎保留的 provider ID,不要在配置文件里手工定义同名 provider。
+- 自定义 provider 不弹官方登录界面,Key 在环境变量里即可直接进交互式/exec。
+- 常用可选字段:`max_output_tokens`、`request_max_retries`、`stream_max_retries`、
+  `stream_idle_timeout_ms`、`anthropic_prompt_caching`(Anthropic 线 prompt 缓存,
+  默认关);MCP 工具全量直出可写 `[tools] tool_search = false`。
+- 验证配置:`nuwax-harness doctor --json`,看 `checks["config.model_routing"].details`
+  里的 `provider id` / `wire api` / `bridge` / `model` / `effective context window` /
+  `endpoint source` 是否符合预期(`auth.credentials` 一项会显示 Key 环境变量是否被取到)。
+  注意 doctor 输出里端点是打码的(`<redacted>`),可安全粘贴提问。
+
+## 1.6 协议与桥
 
 | 目标 | `NUWAX_WIRE_API` | `NUWAX_BRIDGE` |
 | --- | --- | --- |
@@ -97,7 +188,7 @@ nuwax-harness exec '请只回复:OK'
 `native` 是进程环境到达原生 Responses 传输的唯一方式,且只允许配 `responses`;
 `genai` 备用桥只支持 chat/anthropic。走原生时 `doctor` 显示 `bridge: native transport`。
 
-## 1.6 排查
+## 1.7 排查
 
 | 现象 | 原因与处理 |
 | --- | --- |
@@ -149,6 +240,12 @@ nuwax-harness-acp-ts --version
 
 在宿主里新建会话,发一句「请只回复:OK」,收到回复即接入完成。
 也可以不全局安装,直接 `npx -y @nuwax-ai/nuwax-harness-acp-ts` 作为 command。
+
+> **不想在宿主里配一串变量?** 也可以只用全局配置文件:按第一部分 §1.5 写好
+> `~/.nuwax-harness/config.toml`,宿主 `env` 里只留 Key(如 `GLM_API_KEY`)即可,
+> 其余变量都不用设——适配器的 app-server 同样读该配置(已实测)。
+> 注意:一旦设了 `NUWAX_BASE_URL` 等网关变量,它们会**覆盖**配置文件里的
+> provider 选择(优先级见附录 B),两者不要混用。
 
 ## 2.3 网关变量
 
