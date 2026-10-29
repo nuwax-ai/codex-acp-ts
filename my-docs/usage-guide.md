@@ -34,7 +34,7 @@ install-scripts 安全门拦截,或提示 binary 未安装,执行一次 `nuwax-h
 
 ## 1.2 快速开始(30 秒验证)
 
-只配 **4 个变量**就能跑通(以 OpenAI Chat 协议为例):
+**4 个必填变量** + **1 个建议显式配置**(推理力度),以 OpenAI Chat 协议为例:
 
 ```bash
 export NUWAX_BASE_URL='https://your-provider.example/v1'   # 平台的协议基址
@@ -63,15 +63,15 @@ Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设�
 | --- | --- |
 | `NUWAX_BASE_URL` | 平台协议基址(必填)。用平台提供的协议基址,不要自行拼接 `/chat/completions`、`/responses`、`/messages` |
 | `NUWAX_WIRE_API` | `chat` / `responses` / `anthropic`,必须显式设置 |
-| `NUWAX_API_KEY` | 该端点的 Key,与上两项成组设置(`env_key` 引用,不落配置与诊断) |
+| `NUWAX_API_KEY` | 该端点的 Key,与上两项成组设置(在 config.toml 里用 `env_key` 按名字引用它,Key 不落盘) |
 | `NUWAX_MODEL` | 平台实际模型 ID(完整启动组需要它,或用 `-m` 显式给) |
 | `NUWAX_BRIDGE` | 可选 `rig`(默认)/ `native` / `genai`;`native` 仅支持 Responses,`genai` 仅支持 chat/anthropic |
 | `NUWAX_MAX_OUTPUT_TOKENS` | 可选:每次生成的输出上限(正整数,不是上下文窗口) |
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` / `NUWAX_STREAM_IDLE_TIMEOUT_MS` | 可选:请求/流重试与流空闲超时;须随完整启动组使用 |
 | `NUWAX_HOME` | 可选:会话与状态目录(默认 `~/.nuwax-harness`) |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
-| `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 等。自定义模型默认 `medium`,平台不接受该值时用它覆盖(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) | 不设 |
-| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子) | 不设 |
+| `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 等,不设则自定义模型按 `medium`;平台不接受该值时用它覆盖(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) |
+| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子) |
 
 ## 1.4 常用命令
 
@@ -391,6 +391,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 协议 + wire | 单变量 `NUWAX_WIRE_API`(`chat` / `responses` / `anthropic`) | 拆成两变量:`NUWAX_API_PROTOCOL`(`openai`/`anthropic`)+ `NUWAX_WIRE_API`(`chat`/`responses`,anthropic 时不设) |
 | 基址 / Key / 模型 / 桥 | `NUWAX_BASE_URL` / `NUWAX_API_KEY` / `NUWAX_MODEL` / `NUWAX_BRIDGE` | 同名同义 |
 | 输出上限 | `NUWAX_MAX_OUTPUT_TOKENS` | 同名同义,一处配置两侧通用 |
+| 推理力度 / 关思考 | `NUWAX_MODEL_REASONING_EFFORT`(取 `none` 即关思考) | 档位同上;关思考另有开关 `NUWAX_DISABLE_THINKING=true` |
 
 ## B. 优先级与兼容说明
 
