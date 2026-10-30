@@ -28,6 +28,10 @@ npm install -g @nuwax-ai/nuwax-harness
 nuwax-harness --version
 ```
 
+> 本指南的功能基线是 **0.18.24 及以上**。推理档位表(`NUWAX_REASONING_EFFORT_LEVELS`)
+> 在 0.18.23 上有启动缺陷(设了该变量就报错),在 0.18.22 及更早版本上被静默忽略。
+> 已装旧版先升级:`npm install -g @nuwax-ai/nuwax-harness@latest`。
+
 平台二进制由 postinstall 自动下载到 `~/.nuwax-harness-cache/`。若被 npm 的
 install-scripts 安全门拦截,或提示 binary 未安装,执行一次 `nuwax-harness --version`
 即可补下。
@@ -42,7 +46,8 @@ export NUWAX_WIRE_API='chat'                               # chat / responses / 
 export NUWAX_MODEL='your-model-id'                         # 平台的模型 ID
 export NUWAX_API_KEY='<YOUR_API_KEY>'
 
-# 建议再显式指定推理力度:自定义模型默认用 medium,不一定是你平台支持的值
+# 建议再显式指定推理力度:不设则不发档位字段,由平台按自家默认执行,
+# 不一定是你要的档位
 export NUWAX_MODEL_REASONING_EFFORT='high'                 # none|minimal|low|medium|high|xhigh|max
 # 不需要模型思考:NUWAX_MODEL_REASONING_EFFORT=none
 
@@ -70,8 +75,8 @@ Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设�
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` / `NUWAX_STREAM_IDLE_TIMEOUT_MS` | 可选:请求/流重试与流空闲超时;须随完整启动组使用 |
 | `NUWAX_HOME` | 可选:会话与状态目录(默认 `~/.nuwax-harness`) |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
-| `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 等;平台不接受该值时用它覆盖(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) |
-| `NUWAX_REASONING_EFFORT_LEVELS` | 可选:逗号分隔的档位表,声明该网关的模型**真实接受**的档位(如 GLM-5.3-Flash 是 `low,high,max`)。声明后,选了表里没有的档位、或关思考,都会在**请求发出前**报错并点名该变量与可用档位,而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。没有 `CODEX_` 拼写。不设则保持宽松、不校验 |
+| `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` / `ultra` 等;不设则不发档位字段、由平台默认执行,要控制档位就显式设它(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) |
+| `NUWAX_REASONING_EFFORT_LEVELS` | 可选:逗号分隔的档位表,声明该网关的模型**真实接受**的档位(如 GLM-5.3-Flash 是 `low,high,max`)。档位词只能是 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`(`none`/`off` 不是档位,写进去会报错)。声明后,选了表里没有的档位、或关思考,都会在**请求发出前**报错(指出缺哪个档位;档位表的拼写错误与 Chat 线的拒绝还会点名该变量/配置处),而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。没有 `CODEX_` 拼写。不设则保持宽松、不校验。该变量须随网关启动组使用,或配合 `-c model_provider=<id>`(自动挂到所选 provider 上);纯 config.toml 选 provider 时**不要用**这个环境变量(会报错指路),直接把档位写进该 provider 表的 `reasoning_effort_levels` 字段(见 §1.5) |
 | `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子) |
 
 ## 1.4 常用命令
@@ -128,6 +133,7 @@ base_url = "https://open.bigmodel.cn/api/anthropic"
 env_key = "GLM_API_KEY"          # Key 从该环境变量读取,不落盘
 wire_api = "anthropic"           # responses | chat | anthropic
 # max_output_tokens = 8192       # 可选:输出上限
+# reasoning_effort_levels = ["low", "high", "max"]   # 可选:声明 GLM-5.3 系列真实档位
 ```
 
 **API Key 不写进配置文件**——用 `env_key` 引用环境变量名,Key 放进受保护的环境文件:
@@ -175,8 +181,10 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 - `nuwax_env` 是引擎保留的 provider ID,不要在配置文件里手工定义同名 provider。
 - 自定义 provider 不弹官方登录界面,Key 在环境变量里即可直接进交互式/exec。
 - 常用可选字段:`max_output_tokens`、`request_max_retries`、`stream_max_retries`、
-  `stream_idle_timeout_ms`、`anthropic_prompt_caching`(Anthropic 线 prompt 缓存,
-  默认关);MCP 工具全量直出可写 `[tools] tool_search = false`。
+  `stream_idle_timeout_ms`、`reasoning_effort_levels`(档位表,声明后选错档位在本地
+  即报错,取值同 `NUWAX_REASONING_EFFORT_LEVELS`)、`anthropic_prompt_caching`
+  (Anthropic 线 prompt 缓存,默认关);MCP 工具全量直出可写
+  `[tools] tool_search = false`。
 - 验证配置:`nuwax-harness doctor --json`,看 `checks["config.model_routing"].details`
   里的 `provider id` / `wire api` / `bridge` / `model` / `effective context window` /
   `endpoint source` 是否符合预期(`auth.credentials` 一项会显示 Key 环境变量是否被取到)。
@@ -200,7 +208,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | --- | --- |
 | 报 NUWAX_* 组不完整 / 孤立设置 | CLI 启动组必须成组:`NUWAX_BASE_URL` + `NUWAX_WIRE_API` + `NUWAX_API_KEY` |
 | 报 "Not inside a trusted directory" | 交互式与 `exec` 需在 Git 仓库内运行;非 Git 目录加 `--skip-git-repo-check`(见 §1.4) |
-| 平台报 effort 取值不支持 / 不支持关闭思考 | 自定义模型默认用 `medium`,平台不接受就改 `NUWAX_MODEL_REASONING_EFFORT`(如 `low`/`high`/`max`)。**更彻底的做法**:设 `NUWAX_REASONING_EFFORT_LEVELS='low,high,max'` 声明该网关模型真实接受的档位,之后选了表里没有的档位(或关思考)会在**请求发出前**就报错并点名可用档位,而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。声明后务必同时给一个真实存在的档位。另:“关思考”发的是 `thinking:{type:"disabled"}`,始终思考的模型会拒,这时也给显式档位而不是关 |
+| 平台报 effort 取值不支持 / 不支持关闭思考 | CLI 侧不设 `NUWAX_MODEL_REASONING_EFFORT` 时不发档位字段(由平台默认执行);设了平台不接受的值就换掉(如 `low`/`high`/`max`)。**更彻底的做法**:设 `NUWAX_REASONING_EFFORT_LEVELS='low,high,max'` 声明该网关模型真实接受的档位,之后选了表里没有的档位(或关思考)会在**请求发出前**就报错,而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。声明后务必同时给一个真实存在的档位。另:”关思考”发的是 `thinking:{type:”disabled”}`,始终思考的模型会拒,这时也给显式档位而不是关 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐 |
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
@@ -219,6 +227,11 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 npm install -g @nuwax-ai/nuwax-harness-acp-ts
 nuwax-harness-acp-ts --version
 ```
+
+> 本指南的功能基线是 **1.2.24 及以上**(其内置引擎为 0.18.24)。推理档位表
+> (`NUWAX_REASONING_EFFORT_LEVELS`)在 1.2.23 及更早版本上不生效(内置引擎
+> 不认识该变量,会被静默忽略)。已装旧版先升级:
+> `npm install -g @nuwax-ai/nuwax-harness-acp-ts@latest`。
 
 适配器自带 `@nuwax-ai/nuwax-harness` 依赖,postinstall 自动下载平台二进制到
 `~/.nuwax-harness-cache/`;若提示 binary 未安装,执行一次 `nuwax-harness --version` 补下
@@ -248,7 +261,7 @@ nuwax-harness-acp-ts --version
 ```
 
 > 自定义模型默认用 `medium`,不一定是你平台支持的值——按平台换成
-> `none` / `low` / `high` / `max` 等(完整取值见 §2.3)。
+> `none` / `minimal` / `low` / `high` / `max` 等。
 > 不需要模型思考,就把该项换成 `"NUWAX_DISABLE_THINKING": "true"`
 > (等价于把力度固定为 `none`)。
 
@@ -278,7 +291,7 @@ nuwax-harness-acp-ts --version
 | `NUWAX_PROVIDER_NAME` | 网关展示名(可选),缺省回退 `NUWAX_MODEL`,再回退 `Custom Gateway` | — |
 | `NUWAX_DISABLE_THINKING` | 设为 `true`/`1`/`yes`/`on` 时把推理力度固定为 `none`,即**关闭思考**(用于不支持推理的模型);这是 ACP 侧关闭思考的开关,CLI 侧用 `NUWAX_MODEL_REASONING_EFFORT=none` | 不启用 |
 | `NUWAX_MODEL_REASONING_EFFORT` | 推理力度(同义 `CODEX_MODEL_REASONING_EFFORT`)。宿主界面没提供 effort 选择器时,适配器用它作为兜底,不再无条件钉 `medium` | 不设 |
-| `NUWAX_REASONING_EFFORT_LEVELS` | 逗号分隔的档位表,声明该网关模型真实接受的档位(如 `low,high,max`)。适配器在需要兜底时取**你列出的第一个档位**;更重要的是它透传给引擎,之后选了表里没有的档位会在**请求发出前**报错。没有 `CODEX_` 拼写 | 不设(宽松) |
+| `NUWAX_REASONING_EFFORT_LEVELS` | 逗号分隔的档位表,声明该网关模型真实接受的档位(如 `low,high,max`);档位词只能是 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`(`none`/`off` 不是档位,写进去会报错)。适配器在需要兜底时取**你列出的第一个档位**;更重要的是它透传给引擎,之后选了表里没有的档位、或关思考,会在**请求发出前**报错。没有 `CODEX_` 拼写 | 不设(宽松) |
 
 ## 2.4 通用配置
 
@@ -340,6 +353,10 @@ export NUWAX_WIRE_API='chat'
 export NUWAX_API_KEY='<YOUR_API_KEY>'
 export NUWAX_MODEL='GLM-5.3-Flash'
 export NUWAX_MODEL_CONTEXT_WINDOW='128000'
+# 推荐声明真实档位并显式选一个(GLM-5.3/5.3-Flash/5.3-FlashX 只有 low/high/max,
+# 都不设时适配器兜底 medium,会被网关静默降档):
+# export NUWAX_REASONING_EFFORT_LEVELS='low,high,max'
+# export NUWAX_MODEL_REASONING_EFFORT='high'
 ```
 
 #### Step(阶跃)
@@ -374,7 +391,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | --- | --- |
 | `session/new` 返回 Authentication required | base URL 变量没有进入适配器进程的环境;检查宿主的 env 配置 |
 | 提示 binary is not installed | 运行一次 `nuwax-harness --version` 触发下载,或设 `NUWAX_PATH` 指向已有二进制 |
-| 平台报 effort 取值不支持 / 不支持关闭思考 | 宿主界面可能不提供 effort 选择器,这时适配器的兜底顺序是:`NUWAX_MODEL_REASONING_EFFORT` > `NUWAX_REASONING_EFFORT_LEVELS` 的第一个档位 > `medium`。**推荐设 `NUWAX_REASONING_EFFORT_LEVELS`**(如 `'low,high,max'`)声明该网关模型真实接受的档位:它既让兜底落在真实档位上,又透传给引擎——之后选了表里没有的档位会在**请求发出前**报错并点名可用档位,不再被网关静默映射(直连官方端点也可能不校验,实测对 `medium`/`minimal`/`ultra` 一律 200,所以 200 不代表档位被采纳)。若显式给了 `NUWAX_MODEL_REASONING_EFFORT` 而它不在档位表里,适配器**不代为替换**,按你给的值发出去,由引擎拒绝并说明——静默改写比报错更糟。“关思考”走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
+| 平台报 effort 取值不支持 / 不支持关闭思考 | 宿主界面可能不提供 effort 选择器,这时适配器的兜底顺序是:`NUWAX_MODEL_REASONING_EFFORT` > `NUWAX_REASONING_EFFORT_LEVELS` 的第一个档位 > `medium`。**推荐设 `NUWAX_REASONING_EFFORT_LEVELS`**(如 `'low,high,max'`)声明该网关模型真实接受的档位:它既让兜底落在真实档位上,又透传给引擎——之后选了表里没有的档位、或关思考,会在**请求发出前**报错(指出缺哪个档位;档位表的拼写错误与 Chat 线的拒绝还会点名变量与全部可用档位),不再被网关静默映射(直连官方端点也可能不校验,实测对 `medium`/`minimal`/`ultra` 一律 200,所以 200 不代表档位被采纳)。若显式给了 `NUWAX_MODEL_REASONING_EFFORT` 而它不在档位表里,适配器**不代为替换**,按你给的值发出去,由引擎拒绝并说明——静默改写比报错更糟。“关思考”走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
