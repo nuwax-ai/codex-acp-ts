@@ -77,7 +77,7 @@ Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设�
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token) |
 | `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` / `ultra` 等;不设则不发档位字段、由平台默认执行,要控制档位就显式设它(ACP 侧的等效开关是 `NUWAX_DISABLE_THINKING`,见第二部分) |
 | `NUWAX_REASONING_EFFORT_LEVELS` | 可选:逗号分隔的档位表,声明该网关的模型**真实接受**的档位(如 GLM-5.3-Flash 是 `low,high,max`)。档位词只能是 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`(`none`/`off` 不是档位,写进去会报错)。声明后,选了表里没有的档位、或关思考,都会在**请求发出前**报错(指出缺哪个档位;档位表的拼写错误与 Chat 线的拒绝还会点名该变量/配置处),而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。没有 `CODEX_` 拼写。不设则保持宽松、不校验。该变量须随网关启动组使用,或配合 `-c model_provider=<id>`(自动挂到所选 provider 上);纯 config.toml 选 provider 时**不要用**这个环境变量(会报错指路),直接把档位写进该 provider 表的 `reasoning_effort_levels` 字段(见 §1.5) |
-| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子) |
+| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 可选:自动压缩的 token 阈值 / 窗口比例(显式 `-c` 优先于这些种子;未配置时默认按窗口 **80%** 触发,显式阈值直接生效不封顶) |
 
 ## 1.4 常用命令
 
@@ -125,7 +125,7 @@ model = "GLM-5.3-Flash"
 model_provider = "glm"
 
 # 按平台规格填真实窗口;自定义模型的显式覆盖全额生效
-model_context_window = 128000
+model_context_window = 1000000  # GLM-5.3-Flash 实测窗口 ~1M(2026-11-02 探针:81.5 万 token 通过、约 98 万被拒)
 
 [model_providers.glm]
 name = "GLM Coding Plan (Anthropic)"
@@ -212,6 +212,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐 |
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
+| 上下文窗口耗尽报错 "ran out of room in the model's context window" | 0.18.25/1.2.25 起该场景会**自动压缩后重试**(事前:轮前判断把本轮待加入输入计入窗口上限,大输入先压缩再发;事后:网关拒绝或本地闸门超限时压缩一次重试一次),正常使用不应再见到该错误。若仍出现:自动压缩被显式禁用,或会话只剩单条超大消息(无可压缩)——开新会话,并把单条输入控制在 1MiB 字符以内 |
 | 上下文裁剪异常 | 设 `NUWAX_MODEL_CONTEXT_WINDOW` 为模型真实窗口;输出、文本和图片都占窗口 |
 
 ---
@@ -352,7 +353,7 @@ export NUWAX_WIRE_API='chat'
 
 export NUWAX_API_KEY='<YOUR_API_KEY>'
 export NUWAX_MODEL='GLM-5.3-Flash'
-export NUWAX_MODEL_CONTEXT_WINDOW='128000'
+export NUWAX_MODEL_CONTEXT_WINDOW='1000000'    # GLM-5.3-Flash 实测 ~1M(非 128k)
 # 推荐声明真实档位并显式选一个(GLM-5.3/5.3-Flash/5.3-FlashX 只有 low/high/max,
 # 都不设时适配器兜底 medium,会被网关静默降档):
 # export NUWAX_REASONING_EFFORT_LEVELS='low,high,max'
@@ -394,6 +395,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 平台报 effort 取值不支持 / 不支持关闭思考 | 宿主界面可能不提供 effort 选择器,这时适配器的兜底顺序是:`NUWAX_MODEL_REASONING_EFFORT` > `NUWAX_REASONING_EFFORT_LEVELS` 的第一个档位 > `medium`。**推荐设 `NUWAX_REASONING_EFFORT_LEVELS`**(如 `'low,high,max'`)声明该网关模型真实接受的档位:它既让兜底落在真实档位上,又透传给引擎——之后选了表里没有的档位、或关思考,会在**请求发出前**报错(指出缺哪个档位;档位表的拼写错误与 Chat 线的拒绝还会点名变量与全部可用档位),不再被网关静默映射(直连官方端点也可能不校验,实测对 `medium`/`minimal`/`ultra` 一律 200,所以 200 不代表档位被采纳)。若显式给了 `NUWAX_MODEL_REASONING_EFFORT` 而它不在档位表里,适配器**不代为替换**,按你给的值发出去,由引擎拒绝并说明——静默改写比报错更糟。“关思考”走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
+| 上下文窗口耗尽报错 "ran out of room in the model's context window" | 1.2.25 起(内置引擎 0.18.25)该场景会**自动压缩后重试**,正常使用不应再见到该错误;若仍出现,见第一部分 §1.7 同名行 |
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic;单独设 bridge 不设 base URL 会报错 |
 | 模型不认识 `tool_search` 线格式 / MCP 工具行为异常 | 设 `NUWAX_TOOL_SEARCH=false` 让 MCP 工具全量直出(见上表);非法值会让引擎拒绝启动 |
