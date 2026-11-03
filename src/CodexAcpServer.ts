@@ -100,6 +100,7 @@ import {
 import type {TokenCount} from "./TokenCount";
 import {PromptTokenUsage, toPromptUsage, toTokenCount, ZERO_TOKEN_COUNT} from "./TokenCount";
 import {CodexCommands} from "./CodexCommands";
+import {SessionOpenQueue} from "./SessionOpenQueue";
 import {SteeringQueue} from "./SteeringQueue";
 import type {QuotaMeta} from "./QuotaMeta";
 import {logger} from "./Logger";
@@ -527,7 +528,7 @@ export class CodexAcpServer {
     private readonly closingSessions: Map<string, number>;
     private readonly sessionGenerations: Map<string, number>;
     private readonly sessionOpenGenerations: Map<string, number>;
-    private readonly sessionOpenQueues = new Map<string, {generation: number; completion: Promise<void>}>();
+    private readonly sessionOpenQueue = new SessionOpenQueue();
     private readonly permissionLifecycleContexts: WeakMap<SessionState, PermissionLifecycleContext>;
     private readonly codexProcessState: CodexProcessState | null;
     /** Brings the app-server back after a crash; `null` without a process state (tests). */
@@ -996,32 +997,13 @@ export class CodexAcpServer {
     }
 
     /** Keep one resume replay and state installation in flight per session. */
-    private async serializeSessionOpen<T>(sessionId: string, open: () => Promise<T>): Promise<T> {
-        const generation = this.beginSessionOpen(sessionId);
-        const pending = this.sessionOpenQueues.get(sessionId);
-        const previous = pending?.generation === generation ? pending.completion : undefined;
-        let release: () => void = () => {};
-        const current = {
-            generation,
-            completion: new Promise<void>((resolve) => { release = resolve; }),
-        };
-        this.sessionOpenQueues.set(sessionId, current);
-        try {
-            if (previous !== undefined) {
-                await previous;
-            }
-            // A queued open predates this close. Do not revive the closed
-            // session when the preceding open eventually releases the queue.
-            if (!this.sessionOpenCanInstall(sessionId, generation)) {
-                throw RequestError.invalidRequest(`Session ${sessionId} is closing`);
-            }
-            return await open();
-        } finally {
-            release();
-            if (this.sessionOpenQueues.get(sessionId) === current) {
-                this.sessionOpenQueues.delete(sessionId);
-            }
-        }
+    private serializeSessionOpen<T>(sessionId: string, open: () => Promise<T>): Promise<T> {
+        return this.sessionOpenQueue.enqueue(
+            sessionId,
+            () => this.beginSessionOpen(sessionId),
+            (generation) => this.sessionOpenCanInstall(sessionId, generation),
+            open,
+        );
     }
 
     /**

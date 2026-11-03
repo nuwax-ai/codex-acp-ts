@@ -1,9 +1,9 @@
 import {type MessageConnection, RequestType} from "vscode-jsonrpc/node";
 import {AppServerConnectionLostError, ConnectionLoss} from "./app-server-recovery/ConnectionLoss";
 import {explainCodexError} from "./CodexErrorExplanations";
-import {logger} from "./Logger";
 import {McpOauthCompletions} from "./mcp/McpOauthCompletions";
 import {McpStartupTracker} from "./mcp/McpStartupTracker";
+import {RestoredTokenUsageTracker} from "./RestoredTokenUsageTracker";
 import type {
     ClientRequest,
     InitializeParams,
@@ -153,32 +153,6 @@ const ToolRequestUserInputRequest = new RequestType<
 >('item/tool/requestUserInput');
 
 const GOAL_RUNTIME_EFFECTS_GRACE_MS = 1_000;
-
-/**
- * A per-load capture of the restored `thread/tokenUsage/updated` replay.
- * Entries exist only while a load armed them (see
- * {@link CodexAppServerClient.armRestoredTokenUsageCapture}); handler-less
- * threads never accumulate entries on their own.
- */
-type RestoredTokenUsageCapture = {
-    readonly owner: symbol;
-    /** Latest replayed snapshot; null until the notification arrives. */
-    snapshot: ThreadTokenUsageUpdatedNotification | null;
-    /** True while the resume request that armed this capture is still in flight. */
-    inFlight: boolean;
-};
-
-/**
- * How many restored-usage snapshots a thread remembers as already applied. The app-server replays a
- * snapshot after every resume, so a load that follows an earlier one can be sent that older replay
- * again; a snapshot the adapter already applied carries no news and must not roll the state back.
- */
-const APPLIED_RESTORED_USAGE_MEMORY = 8;
-
-// Retention target for restored-usage captures. In-flight loads are pinned and
-// may temporarily exceed it; settling a request makes its entry evictable.
-// Normal load/resume installation consumes the capture immediately.
-const RESTORED_TOKEN_USAGE_CAPTURE_CAP = 64;
 
 /** The number of turns in one page of a full history read. */
 const HISTORY_PAGE_TURNS = 5;
@@ -332,8 +306,7 @@ export class CodexAppServerClient {
         this.approvalHandlers.delete(threadId);
         this.elicitationHandlers.delete(threadId);
         this.threadSettings.delete(threadId);
-        this.pendingRestoredTokenUsage.delete(threadId);
-        this.appliedRestoredTokenUsage.delete(threadId);
+        this.restoredTokenUsage.forget(threadId);
     }
 
     async initialize(params: InitializeParams): Promise<InitializeResponse> {
@@ -1016,10 +989,7 @@ export class CodexAppServerClient {
      * created only by this explicit arming, never passively.
      */
     armRestoredTokenUsageCapture(threadId: string): symbol {
-        const owner = Symbol("restored token usage capture");
-        this.pendingRestoredTokenUsage.set(threadId, {owner, snapshot: null, inFlight: true});
-        this.evictSettledRestoredUsageCaptures();
-        return owner;
+        return this.restoredTokenUsage.arm(threadId);
     }
 
     /**
@@ -1028,24 +998,17 @@ export class CodexAppServerClient {
      * thread unsubscribes) but becomes evictable under the global cap.
      */
     settleRestoredTokenUsageCapture(threadId: string, owner: symbol): void {
-        const capture = this.pendingRestoredTokenUsage.get(threadId);
-        if (capture?.owner === owner) {
-            capture.inFlight = false;
-            this.evictSettledRestoredUsageCaptures();
-        }
+        this.restoredTokenUsage.settle(threadId, owner);
     }
 
     /** Drops an armed capture without consuming it — the arming load did not complete. */
     clearRestoredTokenUsageCapture(threadId: string, owner: symbol): void {
-        if (this.pendingRestoredTokenUsage.get(threadId)?.owner === owner) {
-            this.pendingRestoredTokenUsage.delete(threadId);
-        }
+        this.restoredTokenUsage.clear(threadId, owner);
     }
 
     /** Releases every per-load capture; call when this client is discarded. */
     dispose(): void {
-        this.pendingRestoredTokenUsage.clear();
-        this.appliedRestoredTokenUsage.clear();
+        this.restoredTokenUsage.dispose();
     }
 
     /**
@@ -1063,43 +1026,11 @@ export class CodexAppServerClient {
         threadId: string,
         handler: (event: ServerNotification) => void | Promise<void>,
     ): void {
-        const pending = this.pendingRestoredTokenUsage.get(threadId);
-        if (pending === undefined) return;
-        this.pendingRestoredTokenUsage.delete(threadId);
-        if (pending.snapshot !== null) {
-            void Promise.resolve(handler({method: "thread/tokenUsage/updated", params: pending.snapshot}))
-                .catch((error: unknown) =>
-                    logger.error(`Failed to replay a restored token usage snapshot for ${threadId}`, error));
-        }
+        this.restoredTokenUsage.release(threadId, handler);
     }
 
     takePendingRestoredTokenUsage(threadId: string): ThreadTokenUsageUpdatedNotification | null {
-        const pending = this.pendingRestoredTokenUsage.get(threadId);
-        if (pending === undefined) {
-            return null;
-        }
-        this.pendingRestoredTokenUsage.delete(threadId);
-        this.rememberAppliedRestoredTokenUsage(threadId, pending.snapshot);
-        return pending.snapshot;
-    }
-
-    /** Records a snapshot this thread already applied, so a replay of it is recognized as a duplicate. */
-    private rememberAppliedRestoredTokenUsage(
-        threadId: string,
-        snapshot: ThreadTokenUsageUpdatedNotification | null,
-    ): void {
-        if (snapshot === null) return;
-        const applied = this.appliedRestoredTokenUsage.get(threadId) ?? [];
-        applied.push(snapshot);
-        if (applied.length > APPLIED_RESTORED_USAGE_MEMORY) applied.shift();
-        this.appliedRestoredTokenUsage.set(threadId, applied);
-    }
-
-    /** Whether `snapshot` is one this thread already applied, so delivering it again would be a rollback. */
-    private isReplayedRestoredTokenUsage(threadId: string, snapshot: ThreadTokenUsageUpdatedNotification): boolean {
-        const encoded = JSON.stringify(snapshot);
-        return (this.appliedRestoredTokenUsage.get(threadId) ?? [])
-            .some(applied => JSON.stringify(applied) === encoded);
+        return this.restoredTokenUsage.take(threadId);
     }
 
     private codexEventHandlers: Array<(event: CodexConnectionEvent) => void> = [];
@@ -1112,25 +1043,12 @@ export class CodexAppServerClient {
     }
 
     private notificationHandlers = new Map<string, (event: ServerNotification) => void>();
-    private readonly pendingRestoredTokenUsage = new Map<string, RestoredTokenUsageCapture>();
-    private readonly appliedRestoredTokenUsage = new Map<string, ThreadTokenUsageUpdatedNotification[]>();
+    private readonly restoredTokenUsage = new RestoredTokenUsageTracker();
     private notify(notification: ServerNotification) {
         const threadId = extractThreadId(notification);
         if (threadId !== null) {
             if (notification.method === "thread/tokenUsage/updated") {
-                const capture = this.pendingRestoredTokenUsage.get(threadId);
-                if (capture !== undefined) {
-                    // The load that armed this thread owns the restored
-                    // snapshot: it applies the snapshot to the session state it
-                    // installs. Suppress delivery so a handler registered before
-                    // the load cannot write the state it is about to replace or
-                    // emit a duplicate usage_update.
-                    capture.snapshot = notification.params;
-                    return;
-                }
-                // A replay of a snapshot an earlier load already applied would roll the reloaded
-                // state back to stale totals.
-                if (this.isReplayedRestoredTokenUsage(threadId, notification.params)) return;
+                if (this.restoredTokenUsage.intercept(threadId, notification.params)) return;
             }
             const handler = this.notificationHandlers.get(threadId);
             if (handler) {
@@ -1140,25 +1058,6 @@ export class CodexAppServerClient {
         }
         for (const notificationHandler of this.notificationHandlers.values()) {
             notificationHandler(notification);
-        }
-    }
-
-    private evictSettledRestoredUsageCaptures(): void {
-        if (this.pendingRestoredTokenUsage.size <= RESTORED_TOKEN_USAGE_CAPTURE_CAP) {
-            return;
-        }
-        for (const [threadId, capture] of this.pendingRestoredTokenUsage) {
-            if (this.pendingRestoredTokenUsage.size <= RESTORED_TOKEN_USAGE_CAPTURE_CAP) {
-                return;
-            }
-            if (capture.inFlight) {
-                continue;
-            }
-            this.pendingRestoredTokenUsage.delete(threadId);
-            logger.log("Evicted a settled restored token usage capture over the capture cap", {
-                threadId,
-                captureCap: RESTORED_TOKEN_USAGE_CAPTURE_CAP,
-            });
         }
     }
 

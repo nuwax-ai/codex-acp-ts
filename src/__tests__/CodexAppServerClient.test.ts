@@ -57,7 +57,7 @@ function createMockConnection() {
 }
 
 function armedCaptures(client: CodexAppServerClient): Map<string, unknown> {
-    return (client as unknown as {pendingRestoredTokenUsage: Map<string, unknown>}).pendingRestoredTokenUsage;
+    return (client as unknown as {restoredTokenUsage: {pending: Map<string, unknown>}}).restoredTokenUsage.pending;
 }
 
 describe("CodexAppServerClient restored token usage capture", () => {
