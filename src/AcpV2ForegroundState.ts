@@ -1,7 +1,7 @@
 import type * as acpV2 from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import {logger} from "./Logger";
 
-type Activity = "idle" | "running" | "requires_action";
+type Activity = "idle" | "running" | "requires_action" | "unknown";
 
 /** Session state and its wire order are independent of prompt acceptance and individual requests. */
 export class AcpV2ForegroundState {
@@ -9,20 +9,21 @@ export class AcpV2ForegroundState {
     private readonly items = new Set<string>();
     private readonly actions = new Map<symbol, string | undefined>();
     private sending: Promise<void> = Promise.resolve();
+    private disposed = false;
 
     constructor(
         private readonly notify: (state: acpV2.StateUpdate) => Promise<void>,
-        running = false,
+        running: boolean | "unknown" = false,
     ) {
-        this.activity = running ? "running" : "idle";
+        this.activity = running === "unknown" ? "unknown" : running ? "running" : "idle";
     }
 
     async update(state: acpV2.StateUpdate): Promise<void> {
-        if (state.state === "idle") {
+        if (state.state === "idle" || state.state === "unknown") {
             this.items.clear();
             this.actions.clear();
-            if (this.activity === "idle") return this.sending;
-            this.activity = "idle";
+            if (this.activity === state.state) return this.sending;
+            this.activity = state.state;
         } else if (state.state === "running" || state.state === "requires_action") {
             if (this.activity === state.state) return this.sending;
             this.activity = state.state;
@@ -44,6 +45,8 @@ export class AcpV2ForegroundState {
                 return this.publish({state: "running"});
             case "requires_action":
                 return this.publish({state: "requires_action"});
+            case "unknown":
+                return this.publish({state: "unknown"});
         }
     }
 
@@ -74,7 +77,14 @@ export class AcpV2ForegroundState {
     }
 
     dispose(): void {
+        this.disposed = true;
         this.activity = "idle";
+        this.items.clear();
+        this.actions.clear();
+    }
+
+    invalidate(): void {
+        this.activity = "unknown";
         this.items.clear();
         this.actions.clear();
     }
@@ -97,7 +107,11 @@ export class AcpV2ForegroundState {
     }
 
     private publish(state: acpV2.StateUpdate): Promise<void> {
-        const sent = this.sending.then(() => this.notify(state));
+        return this.serializePublication(() => this.notify(state));
+    }
+
+    serializePublication(publish: () => Promise<void>): Promise<void> {
+        const sent = this.sending.then(() => this.disposed ? undefined : publish());
         this.sending = sent.catch(() => {});
         return sent;
     }

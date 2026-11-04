@@ -293,7 +293,9 @@ export function createCodexMockTestFixture(
     };
 
     const mockCodexConnection = {
-        sendRequest: () => Promise.resolve(undefined),
+        sendRequest: (method: string) => Promise.resolve(
+            method === "thread/backgroundTerminals/list" ? {data: [], nextCursor: null} : undefined,
+        ),
         onUnhandledNotification: (handler: (notification: any) => void) => {
             unhandledNotificationHandler = handler;
         },
@@ -454,6 +456,7 @@ export function createTestSessionState(overrides?: Partial<SessionState>): Sessi
             false,
             new ACPSessionConnection({notify: vi.fn(), request: vi.fn()} as AcpClientConnection, sessionId),
             () => {},
+            () => ({currentModel: null, availableModels: []}),
         ),
         asyncTasks: new CodexBackgroundTerminalTasks(
             false,

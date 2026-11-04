@@ -1210,12 +1210,12 @@ describe('Token Usage Events', () => {
                 startedAtMs: 0,
                 item: {
                     type: 'subAgentActivity',
+                    model: null,
+                    reasoningEffort: null,
                     id: 'activity-started',
                     kind: 'started',
                     agentThreadId: childThreadId,
                     agentPath: '/root/worker',
-                    model: null,
-                    reasoningEffort: null,
                 },
             },
         };
@@ -1252,6 +1252,7 @@ describe('Token Usage Events', () => {
                 true,
                 new ACPSessionConnection(mockFixture.getAcpConnection(), sessionId),
                 () => {},
+                () => ({currentModel: null, availableModels: []}),
             );
             mockFixture.getCodexAppServerClient().turnStart = vi.fn().mockResolvedValue({
                 turn: { id: 'turn-id', items: [], status: 'inProgress', error: null },

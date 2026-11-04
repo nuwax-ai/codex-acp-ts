@@ -128,12 +128,12 @@ describe("session notices", () => {
                 startedAtMs: 0,
                 item: {
                     type: "subAgentActivity",
+                    model: null,
+                    reasoningEffort: null,
                     id: "notice-child-activity",
                     kind: "started",
                     agentThreadId: childSessionId,
                     agentPath: "/root/notice_child",
-                    model: null,
-                    reasoningEffort: null,
                 },
             },
         }, {
@@ -216,6 +216,7 @@ async function createFixture(clientCapabilities?: unknown, nativeSubagents = fal
             true,
             new ACPSessionConnection(fixture.getAcpConnection(), sessionId),
             () => {},
+            () => ({currentModel: null, availableModels: []}),
         );
     }
     vi.spyOn(agent, "getSessionState").mockReturnValue(sessionState);

@@ -700,8 +700,8 @@ function createWireFixture(options: {exitCode?: number | null; stderr?: string} 
 function createTurn(status: "inProgress" | "completed") {
     return {
         id: "turn-id",
-        rootTurnId: null,
         items: [],
+        rootTurnId: null,
         itemsView: "notLoaded" as const,
         status,
         error: null,

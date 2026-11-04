@@ -2,6 +2,7 @@ import * as acp from "@agentclientprotocol/sdk/unstable";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {PLAN_COLLABORATION_MODE} from "../../CollaborationModeConfig";
 import {ClientCapabilities} from "../../tool-calls/ClientCapabilities";
+import {SESSION_STEERING_METHOD} from "../../AcpExtensions";
 import {
     createCodexMockTestFixture,
     createTestSessionState,
@@ -13,8 +14,8 @@ type TurnCompletion = {
     threadId: string;
     turn: {
         id: string;
-        rootTurnId: string | null;
         items: never[];
+        rootTurnId: null;
         itemsView: "notLoaded";
         status: "completed" | "failed";
         error: null | {
@@ -32,8 +33,8 @@ type TurnCompletion = {
 type TurnStartResponse = {
     turn: {
         id: string;
-        rootTurnId: string | null;
         items: never[];
+        rootTurnId: null;
         itemsView: "notLoaded";
         status: "inProgress";
         error: null;
@@ -87,8 +88,8 @@ describe("CodexACPAgent - plan review", () => {
             .mockResolvedValueOnce({
                 turn: {
                     id: "plan-turn",
-                    rootTurnId: null,
                     items: [],
+                    rootTurnId: null,
                     itemsView: "notLoaded",
                     status: "inProgress",
                     error: null,
@@ -100,8 +101,8 @@ describe("CodexACPAgent - plan review", () => {
             .mockImplementationOnce(() => options.implementationStart ?? Promise.resolve({
                 turn: {
                     id: "implementation-turn",
-                    rootTurnId: null,
                     items: [],
+                    rootTurnId: null,
                     itemsView: "notLoaded",
                     status: "inProgress",
                     error: null,
@@ -147,8 +148,8 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "plan-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "completed",
                 error: null,
@@ -164,6 +165,43 @@ describe("CodexACPAgent - plan review", () => {
 
         return {promptPromise, sessionState, turnStart, implementationTurn};
     }
+
+    it.each(["revise", "cancel"])("returns host-owned steering immediately during plan approval, allowing %s", async (action) => {
+        const permission = deferred<acp.RequestPermissionResponse>();
+        const {promptPromise, turnStart} = await startPlanPrompt(null, {
+            permissionResponse: permission.promise,
+            emitCompletionNotification: true,
+        });
+        await vi.waitFor(() => expect(fixture.getAcpConnectionEvents([])
+            .some(event => event.method === "requestPermission")).toBe(true));
+        // The plan turn has finished, but its prompt still owns the approval.
+        // Codex rejects steering even if the adapter's cached turn id remains.
+        vi.spyOn(fixture.getCodexAppServerClient(), "turnSteer")
+            .mockRejectedValue(new Error("no active turn to steer"));
+        let promptFinished = false;
+        void promptPromise.then(() => { promptFinished = true; });
+        try {
+            await expect(fixture.getCodexAcpAgent().extMethod(SESSION_STEERING_METHOD, {
+                sessionId,
+                prompt: [{type: "text", text: "revise this plan"}],
+                _meta: {steering: {idleBehavior: "promptRequired"}},
+            })).resolves.toEqual({outcome: "promptRequired", reason: "noRunningTurn"});
+            expect(promptFinished).toBe(false);
+            expect(turnStart).toHaveBeenCalledTimes(1);
+            if (action === "cancel") {
+                await fixture.getCodexAcpAgent().cancel({sessionId});
+                // Cancelling the completed turn does not answer its pending permission request.
+                permission.resolve({outcome: {outcome: "cancelled"}});
+                await expect(promptPromise).resolves.toMatchObject({stopReason: "end_turn"});
+            } else {
+                permission.resolve({outcome: {outcome: "selected", optionId: "revise_plan"}});
+                await expect(promptPromise).resolves.toMatchObject({stopReason: "end_turn"});
+            }
+            expect(turnStart).toHaveBeenCalledTimes(1);
+        } finally {
+            permission.resolve({outcome: {outcome: "cancelled"}});
+        }
+    }, 2000);
 
     it("requests plan permission and starts one implementation turn when approved", async () => {
         const {promptPromise, sessionState, turnStart, implementationTurn} = await startPlanPrompt("implement_plan");
@@ -223,8 +261,8 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "completed",
                 error: null,
@@ -371,8 +409,8 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "completed",
                 error: null,
@@ -419,8 +457,8 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "failed",
                 error: implementationError,
@@ -481,8 +519,8 @@ describe("CodexACPAgent - plan review", () => {
         implementationStart.resolve({
             turn: {
                 id: "implementation-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "inProgress",
                 error: null,
@@ -495,8 +533,8 @@ describe("CodexACPAgent - plan review", () => {
             threadId: sessionId,
             turn: {
                 id: "implementation-turn",
-                rootTurnId: null,
                 items: [],
+                rootTurnId: null,
                 itemsView: "notLoaded",
                 status: "completed",
                 error: null,

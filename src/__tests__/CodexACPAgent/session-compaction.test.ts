@@ -443,6 +443,7 @@ async function createFixture(clientCapabilities: acp.ClientCapabilities = compac
             true,
             new ACPSessionConnection(fixture.getAcpConnection(), sessionId),
             () => {},
+            () => ({currentModel: null, availableModels: []}),
         );
     }
     vi.spyOn(agent, "getSessionState").mockReturnValue(sessionState);
@@ -492,12 +493,12 @@ async function createNativeChildFixture() {
                 startedAtMs: 0,
                 item: {
                     type: "subAgentActivity",
+                    model: null,
+                    reasoningEffort: null,
                     id: "activity-compaction-child",
                     kind: "started",
                     agentThreadId: childSessionId,
                     agentPath: "/root/compaction_child",
-                    model: null,
-                    reasoningEffort: null,
                 },
             },
         },
@@ -528,12 +529,12 @@ function nativeChildActivityStarted(threadId: string): ServerNotification {
             startedAtMs: 0,
             item: {
                 type: "subAgentActivity",
+                model: null,
+                reasoningEffort: null,
                 id: `activity-${threadId}`,
                 kind: "started",
                 agentThreadId: threadId,
                 agentPath: `/root/${threadId}`,
-                model: null,
-                reasoningEffort: null,
             },
         },
     };
@@ -581,8 +582,8 @@ function nativeCompactionLifecycleDump(fixture: CodexMockTestFixture, childId?: 
 function createTurn(status: Turn["status"]): Turn {
     return {
         id: turnId,
-        rootTurnId: null,
         items: [],
+        rootTurnId: null,
         itemsView: "full",
         status,
         error: null,

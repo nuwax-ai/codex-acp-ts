@@ -15,17 +15,43 @@ export class SessionOpenQueue {
 
     /**
      * Serialises a session open behind any prior open for the same session.
-     * `beginGeneration` allocates and returns the caller's generation (and
-     * throws if the session is already closing). `canInstall` re-checks that
-     * the session can still be installed after waiting for the previous open.
+     * `beginGeneration` allocates and returns the caller's generation (may be
+     * async; throws if the session is already closing). `canInstall` re-checks
+     * that the session can still be installed after waiting for the previous open.
      */
     async enqueue<T>(
         sessionId: string,
-        beginGeneration: () => number,
+        beginGeneration: () => number | Promise<number>,
         canInstall: (generation: number) => boolean,
         open: () => Promise<T>,
     ): Promise<T> {
-        const generation = beginGeneration();
+        const requested = beginGeneration();
+        if (!(requested instanceof Promise)) {
+            // A synchronous begin must register the open and pass the install
+            // gate before this method first suspends: a close request that
+            // starts in the caller's next statement would otherwise win the
+            // race, and the open would die unregistered, skipping the
+            // stale-open cleanup.
+            if (!canInstall(requested)) {
+                throw RequestError.invalidRequest(`Session ${sessionId} is closing`);
+            }
+            return await this.runQueued(sessionId, requested, canInstall, open);
+        }
+        const generation = await requested;
+        // Re-check after the async begin so a close that raced it cannot slip
+        // past the install gate.
+        if (!canInstall(generation)) {
+            throw RequestError.invalidRequest(`Session ${sessionId} is closing`);
+        }
+        return await this.runQueued(sessionId, generation, canInstall, open);
+    }
+
+    private async runQueued<T>(
+        sessionId: string,
+        generation: number,
+        canInstall: (generation: number) => boolean,
+        open: () => Promise<T>,
+    ): Promise<T> {
         const pending = this.queues.get(sessionId);
         const previous = pending?.generation === generation ? pending.completion : undefined;
         let release: () => void = () => {};

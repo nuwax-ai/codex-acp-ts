@@ -36,7 +36,7 @@ lines.on("line", (line) => {
             authenticated = request.params.apiKey === ${JSON.stringify(apiKey)};
             fs.writeFileSync(${JSON.stringify(acknowledged)}, JSON.stringify({authenticated}));
             send({id: request.id, result: {type: "apiKey"}});
-            send({method: "account/login/completed", params: {loginId: "dummy", success: authenticated, error: null, onboardingEntrypoint: null}});
+            send({method: "account/login/completed", params: {success: authenticated, error: null, onboardingEntrypoint: null}});
             return;
         case "config/read": result = {config: {}, layers: []}; break;
         case "skills/list": result = {data: []}; break;

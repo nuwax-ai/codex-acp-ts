@@ -19,8 +19,8 @@ const CHILD_THREAD_ID = "child-thread";
 function createTurn(id: string, status: Turn["status"]): Turn {
     return {
         id,
-        rootTurnId: null,
         items: [],
+        rootTurnId: null,
         itemsView: "notLoaded",
         status,
         error: null,
@@ -106,12 +106,12 @@ function spawnChild(rootSessionId: string): ServerNotification[] {
                 startedAtMs: 0,
                 item: {
                     type: "subAgentActivity",
+                    model: null,
+                    reasoningEffort: null,
                     id: "activity-child",
                     kind: "started",
                     agentThreadId: CHILD_THREAD_ID,
                     agentPath: "/root/docs_writer",
-                    model: null,
-                    reasoningEffort: null,
                 },
             },
         },
@@ -167,6 +167,7 @@ async function setupNativeSubagentPrompt(): Promise<{
         true,
         new ACPSessionConnection(fixture.getAcpConnection(), sessionState.sessionId),
         () => {},
+        () => ({currentModel: null, availableModels: []}),
     );
     vi.spyOn(fixture.getCodexAcpAgent(), "getSessionState").mockReturnValue(sessionState);
     vi.spyOn(fixture.getCodexAppServerClient(), "turnStart")

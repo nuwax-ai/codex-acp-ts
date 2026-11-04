@@ -40,7 +40,6 @@
     "turns": [
       {
         "id": "first",
-        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",
@@ -64,6 +63,7 @@
             "questions": null
           }
         ],
+        "rootTurnId": null,
         "itemsView": "full",
         "status": "completed",
         "error": null,
@@ -73,7 +73,6 @@
       },
       {
         "id": "second",
-        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",
@@ -97,6 +96,7 @@
             "questions": null
           }
         ],
+        "rootTurnId": null,
         "itemsView": "full",
         "status": "completed",
         "error": null,
@@ -106,7 +106,6 @@
       },
       {
         "id": "third",
-        "rootTurnId": null,
         "items": [
           {
             "type": "userMessage",
@@ -130,6 +129,7 @@
             "questions": null
           }
         ],
+        "rootTurnId": null,
         "itemsView": "full",
         "status": "completed",
         "error": null,

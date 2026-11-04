@@ -44,7 +44,7 @@ These files do not exist upstream. They never conflict on merge.
 | `src/RestoredTokenUsageTracker.ts` | Captures and replays restored `thread/tokenUsage/updated` snapshots on resume. |
 | `src/SessionOpenQueue.ts` | Serialises concurrent session open/resume calls per session. |
 | `src/resolveCodexBinary.ts` | Locates the harness binary inside `~/.nuwax-harness-cache`. |
-| `vitest.config.ts` | Test runner config. |
+| `vitest.config.mjs` | Test runner config. Upstream's file with one fork delta: `scripts/acp-validation/` and `scripts/live-validation/` are in the exclude list because they run on node:test, not Vitest. The old fork-owned `vitest.config.ts` was dropped because the `.mjs` extension wins Vitest's resolution order and would shadow it. |
 | `scripts/acp-validation/` | Mock-wire validation scripts. |
 | `scripts/live-validation/` | Live engine validation scripts. |
 | `my-docs/` | User guide (`usage-guide.md`) and dev testing guide. |

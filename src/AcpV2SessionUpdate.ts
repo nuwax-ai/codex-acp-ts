@@ -16,8 +16,8 @@ export function toV2AvailableCommands(commands: acp.AvailableCommand[]): acpV2.A
     return commands.map((command) => {
         const {input, ...withoutInput} = command;
         return input === undefined
-            ? withoutInput
-            : {...command, input: input && {...input, type: "text" as const}};
+            ? {...withoutInput, type: "command" as const}
+            : {...command, type: "command" as const, input: input && {...input, type: "text" as const}};
     });
 }
 
@@ -120,8 +120,9 @@ export function toV2SessionUpdate(update: AcpSessionUpdate): acpV2.SessionUpdate
                 ...(content !== undefined ? {content: content && content.map(toV2ToolCallContent)} : {}),
             };
         }
-        // Preserve AIR's existing subagent contract. The standard schema uses different fields
-        // and work states; that migration is separate. The AIR capability gate already ran upstream.
+        case "subagent_update":
+            return update;
+        // AIR's private contract is selected independently upstream.
         case "subagent_spawned": {
             const {subagentSessionId, name, task, _meta} = update;
             return {
