@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "~2.4.0",
-    "@nuwax-ai/nuwax-harness": "0.18.28",
+    "@nuwax-ai/nuwax-harness": "0.18.29",
     "diff": "^9.0.0",
     "open": "^11.0.1",
     "vscode-jsonrpc": "^9.0.1",
