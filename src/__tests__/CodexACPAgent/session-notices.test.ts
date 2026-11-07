@@ -241,6 +241,33 @@ async function sendNotifications(fixture: CodexMockTestFixture, notifications: S
     await fixture.getCodexAcpClient().waitForSessionNotifications(sessionId);
 }
 
+describe("engine fallback-metadata warnings", () => {
+    it.each([
+        ["notice capability", noticeCapabilities],
+        ["no capability (message chunk fallback)", undefined],
+    ])("is suppressed with %s", async (_label, capabilities) => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+            const fixture = await createFixture(capabilities);
+            await sendNotifications(fixture, [
+                {
+                    method: "warning",
+                    params: {
+                        threadId: sessionId,
+                        message:
+                            "Model metadata for `deepseek-v4.1-flash-1017` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                    },
+                },
+            ]);
+            const dump = await fixture.getAcpConnectionDump([]);
+            expect(JSON.stringify(dump)).not.toContain("Defaulting to fallback metadata");
+            expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("suppressed engine warning"));
+        } finally {
+            warnSpy.mockRestore();
+        }
+    });
+});
+
 function advisoryNotifications(): ServerNotification[] {
     return [
         {method: "warning", params: {threadId: sessionId, message: "Optional integration unavailable"}},

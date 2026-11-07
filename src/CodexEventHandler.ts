@@ -873,7 +873,15 @@ export class CodexEventHandler {
         );
     }
 
-    private createWarningEvent(event: WarningNotification): UpdateSessionEvent {
+    private createWarningEvent(event: WarningNotification): UpdateSessionEvent | null {
+        if (isFallbackModelMetadataWarning(event.message)) {
+            // Fork: fallback metadata is a documented engine state for any slug
+            // the built-in catalog does not know (third-party gateways serve
+            // dated snapshot slugs). Not user-actionable; log it instead of
+            // rendering engine internals into the chat stream.
+            console.warn(`[codex] suppressed engine warning: ${event.message.trim()}`);
+            return null;
+        }
         if (this.supportsNotices) {
             return createSessionNotice("warning", event.message.trim() || "Codex warning");
         }
@@ -1420,4 +1428,14 @@ function isModelOutputItem(item: ThreadItem): boolean {
 function toolCallTitle(update: UpdateSessionEvent | null | undefined): string | undefined {
     if (update?.sessionUpdate !== "tool_call") return undefined;
     return update.title;
+}
+
+/**
+ * Engine warnings that state a model has no built-in catalog metadata and
+ * falls back to placeholder metadata. A documented state for third-party
+ * gateway slugs (dated snapshot names never appear in a catalog snapshot);
+ * never actionable by the end user mid-chat, so it is logged and dropped.
+ */
+function isFallbackModelMetadataWarning(message: string): boolean {
+    return /^Model metadata for `.+` not found\. Defaulting to fallback metadata/.test(message);
 }
