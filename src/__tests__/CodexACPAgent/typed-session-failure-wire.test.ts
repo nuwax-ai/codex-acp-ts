@@ -208,6 +208,57 @@ describe("typed session failures over ACP transport", () => {
         });
     });
 
+    it("recognizes the v2 inputTooLarge wire tag", async () => {
+        const fixture = createWireFixture();
+        await fixture.initialize({});
+        const sessionState = createTestSessionState({
+            sessionId: "wire-v2-input-too-large",
+            account: {type: "apiKey"},
+        });
+        vi.spyOn(fixture.server, "getSessionState").mockReturnValue(sessionState);
+        vi.spyOn(fixture.appServer, "turnStart").mockResolvedValue({
+            turn: createTurn("inProgress"),
+        });
+        vi.spyOn(fixture.appServer, "awaitTurnCompleted").mockImplementation(async () => {
+            fixture.sendServerNotification({
+                method: "error",
+                params: {
+                    threadId: sessionState.sessionId,
+                    turnId: "turn-id",
+                    willRetry: false,
+                    error: {
+                        message:
+                            "The request cannot fit the model's 190000-token context window even after omitting older history.",
+                        // The v2 app-server translates the harness InvalidPrompt
+                        // into this dedicated tag (0.18.34+).
+                        codexErrorInfo: "inputTooLarge",
+                        additionalDetails: null,
+                    },
+                },
+            });
+            return {
+                threadId: sessionState.sessionId,
+                turn: createTurn("completed"),
+            };
+        });
+
+        const response = await fixture.client.request(acp.methods.agent.session.prompt, {
+            sessionId: sessionState.sessionId,
+            prompt: [{type: "text", text: "huge paste"}],
+        });
+        await fixture.codexClient.waitForSessionNotifications(sessionState.sessionId);
+
+        expect(response._meta).toMatchObject({
+            codex: {
+                sessionFailure: {
+                    kind: "input_too_large",
+                    category: "request",
+                    actions: [],
+                },
+            },
+        });
+    });
+
     it("delivers an idle terminal error as a decoded session update", async () => {
         const fixture = createWireFixture();
         await fixture.initialize();

@@ -172,6 +172,7 @@ type StructuredCodexErrorKind = KeysOfUnion<StructuredCodexErrorInfo>;
 const STRING_CODEX_ERROR_CATEGORIES: Partial<Record<StringCodexErrorInfo, CodexFailureKind>> = {
     contextWindowExceeded: "context_exhausted",
     invalidPrompt: "input_too_large",
+    inputTooLarge: "input_too_large",
     sessionBudgetExceeded: "budget_exhausted",
     usageLimitExceeded: "quota_exhausted",
     rateLimitExceeded: "rate_limited",
