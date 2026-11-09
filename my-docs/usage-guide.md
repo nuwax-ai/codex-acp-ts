@@ -28,7 +28,8 @@ npm install -g @nuwax-ai/nuwax-harness
 nuwax-harness --version
 ```
 
-> 本指南的功能基线是 **0.18.24 及以上**。推理档位表(`NUWAX_REASONING_EFFORT_LEVELS`)
+> 本指南的功能基线是 **0.18.30 及以上**(含迁移压缩与会话级 provider 路由修复)。
+> 推理档位表(`NUWAX_REASONING_EFFORT_LEVELS`)
 > 在 0.18.23 上有启动缺陷(设了该变量就报错),在 0.18.22 及更早版本上被静默忽略。
 > 已装旧版先升级:`npm install -g @nuwax-ai/nuwax-harness@latest`。
 
@@ -185,6 +186,13 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
   即报错,取值同 `NUWAX_REASONING_EFFORT_LEVELS`)、`anthropic_prompt_caching`
   (Anthropic 线 prompt 缓存,默认关);MCP 工具全量直出可写
   `[tools] tool_search = false`。
+- 迁移压缩调参(0.18.30 起;`config.toml` 顶层键,**没有环境变量**,默认无需调整):
+  `migration_compact_ratio`(默认 `0.8`,迁移预算 = 历史+固定前缀可占窗口比例)、
+  `migration_compact_retain_ratio`(默认 `0.16`,原样保留的尾部占比)、
+  `migration_compact_max_span_ratio`(默认 `0.5`,单次摘要请求占窗口上限)、
+  `migration_compact_max_ranges`(默认 `8`,单次迁移最多摘要段数,1–64)。
+  越界值启动即报错并点名键。本地小窗口(16K)模型建议 `migration_compact_ratio = 0.7`
+  (固定前缀已占 4–5K)。何时触发见 §1.7「切到小窗口模型」行。
 - 验证配置:`nuwax-harness doctor --json`,看 `checks["config.model_routing"].details`
   里的 `provider id` / `wire api` / `bridge` / `model` / `effective context window` /
   `endpoint source` 是否符合预期(`auth.credentials` 一项会显示 Key 环境变量是否被取到)。
@@ -213,6 +221,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
 | 上下文窗口耗尽报错 "ran out of room in the model's context window" | 0.18.25/1.2.25 起该场景会**自动压缩后重试**(事前:轮前判断把本轮待加入输入计入窗口上限,大输入先压缩再发;事后:网关拒绝或本地闸门超限时压缩一次重试一次),正常使用不应再见到该错误。若仍出现:自动压缩被显式禁用,或会话只剩单条超大消息(无可压缩)——开新会话,并把单条输入控制在 1MiB 字符以内 |
+| 大窗口会话切到小窗口模型后卡住 / 报超窗 | 0.18.30 起**迁移压缩**自动处理:历史由**目标模型**逐段摘要(隐藏最老连续区间+保留尾部),在单个 turn 内循环直到装进预算(硬上限 32 个 pass);摘要不可收敛时只告警并回退旧路径,不静默丢内容。默认参数无需调整,调参键见 §1.5 |
 | 上下文裁剪异常 | 设 `NUWAX_MODEL_CONTEXT_WINDOW` 为模型真实窗口;输出、文本和图片都占窗口 |
 
 ---
@@ -229,7 +238,7 @@ npm install -g @nuwax-ai/nuwax-harness-acp-ts
 nuwax-harness-acp-ts --version
 ```
 
-> 本指南的功能基线是 **1.2.24 及以上**(其内置引擎为 0.18.24)。推理档位表
+> 本指南的功能基线是 **1.2.29 及以上**(其内置引擎为 0.18.32)。推理档位表
 > (`NUWAX_REASONING_EFFORT_LEVELS`)在 1.2.23 及更早版本上不生效(内置引擎
 > 不认识该变量,会被静默忽略)。已装旧版先升级:
 > `npm install -g @nuwax-ai/nuwax-harness-acp-ts@latest`。
@@ -396,6 +405,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
 | 上下文窗口耗尽报错 "ran out of room in the model's context window" | 1.2.25 起(内置引擎 0.18.25)该场景会**自动压缩后重试**,正常使用不应再见到该错误;若仍出现,见第一部分 §1.7 同名行 |
+| 大窗口会话切到小窗口模型后卡住 / 报超窗 | 内置引擎 0.18.30 起由**迁移压缩**自动处理(宿主侧无需任何配置);若仍出现,见第一部分 §1.7 同名行 |
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic;单独设 bridge 不设 base URL 会报错 |
 | 模型不认识 `tool_search` 线格式 / MCP 工具行为异常 | 设 `NUWAX_TOOL_SEARCH=false` 让 MCP 工具全量直出(见上表);非法值会让引擎拒绝启动 |
