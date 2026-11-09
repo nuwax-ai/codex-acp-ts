@@ -83,7 +83,7 @@ export type CompletedPlan = {
 
 type CodexFailureKind =
     | "transport_lost" | "auth_required" | "rate_limited" | "quota_exhausted" | "overloaded"
-    | "context_exhausted" | "budget_exhausted" | "policy_denied" | "bad_request"
+    | "context_exhausted" | "budget_exhausted" | "input_too_large" | "policy_denied" | "bad_request"
     | "provider_error" | "internal_error";
 
 type SessionFailurePolicy = {
@@ -117,6 +117,13 @@ const SESSION_FAILURE_POLICY: Record<CodexFailureKind, SessionFailurePolicy> = {
     context_exhausted: {
         category: "limit",
         actions: ["new_session"],
+    },
+    // The input (instructions + tools + the prompt itself) cannot fit the
+    // window no matter how much older history is omitted. A new session does
+    // not help; the caller must shorten the input or switch models.
+    input_too_large: {
+        category: "request",
+        actions: [],
     },
     budget_exhausted: {
         category: "limit",
@@ -161,6 +168,7 @@ type StructuredCodexErrorKind = KeysOfUnion<StructuredCodexErrorInfo>;
  */
 const STRING_CODEX_ERROR_CATEGORIES: Partial<Record<StringCodexErrorInfo, CodexFailureKind>> = {
     contextWindowExceeded: "context_exhausted",
+    invalidPrompt: "input_too_large",
     sessionBudgetExceeded: "budget_exhausted",
     usageLimitExceeded: "quota_exhausted",
     rateLimitExceeded: "rate_limited",
@@ -326,7 +334,8 @@ export class CodexEventHandler {
     private legacyContextExhaustionMeta(
         failure: NonNullable<SessionState["sessionFailure"]>,
     ): Record<string, unknown> | null {
-        if (this.failureKindById.get(failure.id) !== "context_exhausted") {
+        const kind = this.failureKindById.get(failure.id);
+        if (kind !== "context_exhausted" && kind !== "input_too_large") {
             return null;
         }
         return {
@@ -1200,10 +1209,12 @@ export class CodexEventHandler {
             this.recordTypedSessionFailure(params);
             return null;
         }
-        if (this.sessionFailureKind(params.error) === "context_exhausted") {
+        const legacyKind = this.sessionFailureKind(params.error);
+        if (legacyKind === "context_exhausted" || legacyKind === "input_too_large") {
             // Legacy clients still receive the text below, but recording the
             // failure lets `terminalFailurePromptResponse` attach the generic
-            // `_meta.codex.sessionFailure` action.
+            // `_meta.codex.sessionFailure` metadata (new session vs. shorten the
+            // input are different actions, so the client needs both tags).
             this.recordTypedSessionFailure(params);
         }
         if (error === "usageLimitExceeded") {
