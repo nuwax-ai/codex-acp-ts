@@ -145,8 +145,11 @@ describe("typed session failures over ACP transport", () => {
         expect(response._meta).toMatchObject({
             codex: {
                 sessionFailure: {
+                    kind: "context_exhausted",
                     category: "limit",
-                    actions: ["new_session"],
+                    // A new session is never the remedy: the harness keeps the
+                    // conversation and trims before retrying.
+                    actions: ["retry"],
                 },
             },
         });
@@ -192,11 +195,12 @@ describe("typed session failures over ACP transport", () => {
         });
         await fixture.codexClient.waitForSessionNotifications(sessionState.sessionId);
 
-        // Distinct from context exhaustion: no `new_session` action, because a
-        // fresh thread would hit the same wall with the same input.
+        // Distinct from context exhaustion: a request-level failure, not a
+        // retry of the same conversation.
         expect(response._meta).toMatchObject({
             codex: {
                 sessionFailure: {
+                    kind: "input_too_large",
                     category: "request",
                     actions: [],
                 },

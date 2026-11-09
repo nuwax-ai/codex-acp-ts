@@ -114,9 +114,12 @@ const SESSION_FAILURE_POLICY: Record<CodexFailureKind, SessionFailurePolicy> = {
         category: "service",
         actions: ["retry"],
     },
+    // The harness keeps the conversation and trims/summarizes before retrying,
+    // so a new session is never the remedy: the caller retries, or switches to
+    // a model with a larger window.
     context_exhausted: {
         category: "limit",
-        actions: ["new_session"],
+        actions: ["retry"],
     },
     // The input (instructions + tools + the prompt itself) cannot fit the
     // window no matter how much older history is omitted. A new session does
@@ -341,6 +344,7 @@ export class CodexEventHandler {
         return {
             codex: {
                 sessionFailure: {
+                    kind,
                     category: failure.category,
                     actions: failure.actions,
                     message: failure.title,
