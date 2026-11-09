@@ -101,6 +101,59 @@ describe("typed session failures over ACP transport", () => {
         expect(fixture.updates).toEqual([]);
     });
 
+    it("exposes a context exhaustion action to legacy clients on the prompt result", async () => {
+        const fixture = createWireFixture();
+        // A legacy client: no typed session-failure capability, so the failure
+        // cannot be delivered as a `session_failure` update.
+        await fixture.initialize({});
+        const sessionState = createTestSessionState({
+            sessionId: "wire-legacy-context-exhaustion",
+            account: {type: "apiKey"},
+        });
+        vi.spyOn(fixture.server, "getSessionState").mockReturnValue(sessionState);
+        vi.spyOn(fixture.appServer, "turnStart").mockResolvedValue({
+            turn: createTurn("inProgress"),
+        });
+        vi.spyOn(fixture.appServer, "awaitTurnCompleted").mockImplementation(async () => {
+            fixture.sendServerNotification({
+                method: "error",
+                params: {
+                    threadId: sessionState.sessionId,
+                    turnId: "turn-id",
+                    willRetry: false,
+                    error: {
+                        message: "nuwax-harness ran out of room in the model's context window.",
+                        codexErrorInfo: "contextWindowExceeded",
+                        additionalDetails: null,
+                    },
+                },
+            });
+            return {
+                threadId: sessionState.sessionId,
+                turn: createTurn("completed"),
+            };
+        });
+
+        const response = await fixture.client.request(acp.methods.agent.session.prompt, {
+            sessionId: sessionState.sessionId,
+            prompt: [{type: "text", text: "keep going"}],
+        });
+        await fixture.codexClient.waitForSessionNotifications(sessionState.sessionId);
+
+        // Generic namespace: any client can act on it without the JetBrains
+        // extension negotiation.
+        expect(response._meta).toMatchObject({
+            codex: {
+                sessionFailure: {
+                    category: "limit",
+                    actions: ["new_session"],
+                },
+            },
+        });
+        // The legacy contract (human-readable text) is unchanged.
+        expect(JSON.stringify(fixture.updates)).toContain("ran out of room");
+    });
+
     it("delivers an idle terminal error as a decoded session update", async () => {
         const fixture = createWireFixture();
         await fixture.initialize();

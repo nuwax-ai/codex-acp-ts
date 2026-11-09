@@ -200,6 +200,8 @@ export class CodexEventHandler {
     private readonly sessionFailureEpoch: string;
     private readonly pendingErrors: ErrorNotification[] = [];
     private readonly failuresById = new Map<string, SessionFailure>();
+    /** Failure kind by id, so later meta can tell an actionable context exhaustion apart. */
+    private readonly failureKindById = new Map<string, CodexFailureKind>();
     private readonly activeFailureIdByScope = new Map<string, string>();
     private readonly failureTurnIdById = new Map<string, string | undefined>();
     private readonly allocatedFailureScopes = new Set<string>();
@@ -297,14 +299,45 @@ export class CodexEventHandler {
         allowUnattributed = false,
     ): Record<string, unknown> | null {
         const failure = this.sessionState.sessionFailure;
-        if (!this.supportsTypedSessionFailures
-            || failure === undefined
+        if (failure === undefined
             || (this.failureTurnIdById.get(failure.id) === undefined
                 ? !allowUnattributed
                 : turnId === null || this.failureTurnIdById.get(failure.id) !== turnId)) {
             return null;
         }
+        if (!this.supportsTypedSessionFailures) {
+            // Legacy clients get no `session_failure` update, but a context
+            // exhaustion is actionable: expose it on the prompt result under
+            // `_meta.codex.sessionFailure` so the client can start a new
+            // session instead of only rendering the error text
+            // (nuwax-harness 2026-11-09 incident: the text alone was stored as
+            // history and replayed forever).
+            return this.legacyContextExhaustionMeta(failure);
+        }
         return this.createSessionFailureMeta(failure);
+    }
+
+    /**
+     * `_meta.codex.sessionFailure` for clients that do not understand typed
+     * session failures. Only context exhaustion is surfaced: it is the one
+     * terminal failure whose recovery is a client-side action (a new session),
+     * and other errors keep their text-only contract.
+     */
+    private legacyContextExhaustionMeta(
+        failure: NonNullable<SessionState["sessionFailure"]>,
+    ): Record<string, unknown> | null {
+        if (this.failureKindById.get(failure.id) !== "context_exhausted") {
+            return null;
+        }
+        return {
+            codex: {
+                sessionFailure: {
+                    category: failure.category,
+                    actions: failure.actions,
+                    message: failure.title,
+                },
+            },
+        };
     }
 
     recordSyntheticTerminalFailure(kind: "transport_lost" | "internal_error", turnId: string | null): void {
@@ -1167,6 +1200,12 @@ export class CodexEventHandler {
             this.recordTypedSessionFailure(params);
             return null;
         }
+        if (this.sessionFailureKind(params.error) === "context_exhausted") {
+            // Legacy clients still receive the text below, but recording the
+            // failure lets `terminalFailurePromptResponse` attach the generic
+            // `_meta.codex.sessionFailure` action.
+            this.recordTypedSessionFailure(params);
+        }
         if (error === "usageLimitExceeded") {
             this.failure = RequestError.internalError(
                 this.createTurnErrorData(params.error),
@@ -1205,6 +1244,7 @@ export class CodexEventHandler {
             actions: actionsOverride ?? policy.actions,
         };
         this.failuresById.set(id, failure);
+        this.failureKindById.set(id, kind);
         this.failureTurnIdById.set(id, attributeToTurn ? turnId : undefined);
         this.activeFailureIdByScope.set(scope, id);
         this.sessionState.sessionFailure = failure;
