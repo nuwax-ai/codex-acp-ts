@@ -14,7 +14,7 @@
             }
           ],
           "approvalPolicy": "on-request",
-          "approvalsReviewer": "auto_review",
+          "approvalsReviewer": "user",
           "sandboxPolicy": {
             "type": "workspaceWrite",
             "writableRoots": [],
@@ -102,7 +102,7 @@
             }
           ],
           "approvalPolicy": "on-request",
-          "approvalsReviewer": "auto_review",
+          "approvalsReviewer": "user",
           "sandboxPolicy": {
             "type": "workspaceWrite",
             "writableRoots": [],

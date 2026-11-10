@@ -1,7 +1,7 @@
 [
   {
     "id": "mode",
-    "currentValue": "agent",
+    "currentValue": "workspace-write",
     "values": [
       "read-only",
       "workspace-write",

@@ -11,7 +11,7 @@
         }
       ],
       "approvalPolicy": "on-request",
-      "approvalsReviewer": "auto_review",
+      "approvalsReviewer": "user",
       "sandboxPolicy": {
         "type": "workspaceWrite",
         "writableRoots": [],
@@ -119,7 +119,7 @@
     "sessionUpdate": {
       "configOptions": [
         {
-          "currentValue": "agent",
+          "currentValue": "workspace-write",
           "options": [
             {
               "value": "read-only",
@@ -213,7 +213,7 @@
         }
       ],
       "approvalPolicy": "on-request",
-      "approvalsReviewer": "auto_review",
+      "approvalsReviewer": "user",
       "sandboxPolicy": {
         "type": "workspaceWrite",
         "writableRoots": [],

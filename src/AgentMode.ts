@@ -92,7 +92,23 @@ export class AgentMode {
         "danger-full-access",
     );
 
-    static DEFAULT_AGENT_MODE = AgentMode.Agent;
+    /**
+     * Fork (nuwax-codex, 2026-11-10): the default is `workspace-write`, whose
+     * reviewer is `user` — NOT `agent` ("Auto review"), whose reviewer is
+     * `auto_review`.
+     *
+     * The `agent` preset routes every approval-needing action to the engine's
+     * guardian reviewer (a model call per action) instead of asking the user.
+     * nuwax-client already owns that decision: its `agent_mode` (ask/yolo)
+     * answers `session/request_permission` locally, so with `agent` as the
+     * default the guardian pre-empts it — the client's ask dialogs never
+     * appeared (measured: 842 guardian reviews, 0 permission requests) and
+     * yolo still paid a model call per action. Both presets share the same
+     * `workspaceWrite` sandbox, so only the decision-maker changes.
+     *
+     * `Agent` stays selectable for clients that want the reviewer.
+     */
+    static DEFAULT_AGENT_MODE = AgentMode.WorkspaceWrite;
 
     /** Only AIR gets the mode kind, in `_meta.jetbrains.air.kind`. */
     toSessionMode(airClient: boolean): SessionMode {

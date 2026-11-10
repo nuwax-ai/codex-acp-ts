@@ -6,7 +6,7 @@
       "description": "Approval and sandboxing preset for the session",
       "category": "mode",
       "type": "select",
-      "currentValue": "agent",
+      "currentValue": "workspace-write",
       "options": [
         {
           "value": "read-only",

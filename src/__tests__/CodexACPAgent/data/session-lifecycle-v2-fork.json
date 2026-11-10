@@ -3,7 +3,7 @@
     "sessionId": "fork-1",
     "configOptions": [
       {
-        "currentValue": "agent",
+        "currentValue": "workspace-write",
         "options": [
           {
             "value": "read-only",
