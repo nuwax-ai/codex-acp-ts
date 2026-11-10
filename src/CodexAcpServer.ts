@@ -82,6 +82,8 @@ import type {
 } from "./app-server/v2";
 import type {RateLimitsMap} from "./RateLimitsMap";
 import {ModelId} from "./ModelId";
+import {DEFAULT_EFFORT, isDefaultEffort} from "./ReasoningEffortDefault";
+import {isThinkingDisabled} from "./CodexEnvConfig";
 import {normalizeSessionTitle} from "./SessionTitle";
 import {AgentMode, MODE_CONFIG_ID} from "./AgentMode";
 import {
@@ -2960,11 +2962,18 @@ export class CodexAcpServer {
     }
 
     private applyReasoningEffortChange(sessionState: SessionState, value: string): void {
+        const {model} = ModelId.fromString(sessionState.currentModelId);
+        // Fork (2026-11-10): selecting "vendor default" clears the explicit
+        // tier. The engine then omits the field and the gateway applies its own
+        // default — the state a fresh session starts in.
+        if (isDefaultEffort(value)) {
+            sessionState.currentModelId = ModelId.withDefaultEffort(model).toString();
+            return;
+        }
         const effort = findSupportedEffort(sessionState.supportedReasoningEfforts, value);
         if (!effort) {
             throw RequestError.invalidParams();
         }
-        const {model} = ModelId.fromString(sessionState.currentModelId);
         sessionState.currentModelId = ModelId.create(model, effort).toString();
     }
 
@@ -2976,7 +2985,9 @@ export class CodexAcpServer {
         await this.updateSessionConfig(sessionState, () => {
             const {model, effort} = ModelId.fromString(sessionState.currentModelId);
             sessionState.availableModels = resumed.models;
-            sessionState.currentModelId = client.createModelId(resumed.models, model, effort as ReasoningEffort).toString();
+            // `effort` may be the no-explicit-tier sentinel; `createModelId`
+            // keeps it as the sentinel rather than inventing a tier (2026-11-10).
+            sessionState.currentModelId = client.createModelId(resumed.models, model, effort).toString();
             const currentModel = this.findCurrentModel(resumed.models, sessionState.currentModelId);
             sessionState.supportedReasoningEfforts = currentModel?.supportedReasoningEfforts ?? [];
             sessionState.supportedInputModalities = currentModel?.inputModalities ?? ["text", "image"];
@@ -2985,6 +2996,19 @@ export class CodexAcpServer {
     }
 
     private applyModelAndEffort(sessionState: SessionState, model: Model, effort: ReasoningEffort): void {
+        // Fork (2026-11-10): turning thinking off on a model that cannot is a
+        // configuration error, not a request-time surprise. Fail here, where
+        // the model and the operator's intent are both known, and name the knob
+        // to fix — the engine's tier gate would otherwise reject the first
+        // request with a tier list and no hint about NUWAX_DISABLE_THINKING.
+        if (effort === "none" && isThinkingDisabled() && model.supportedReasoningEfforts.length > 0
+            && !model.supportedReasoningEfforts.some(option => option.reasoningEffort === "none")) {
+            throw new Error(
+                `NUWAX_DISABLE_THINKING is set, but model \`${model.id}\` always thinks and cannot turn it off `
+                + `(it takes ${model.supportedReasoningEfforts.map(option => option.reasoningEffort).join(", ")}). `
+                + "Unset NUWAX_DISABLE_THINKING, or pick a model that supports disabling thinking.",
+            );
+        }
         sessionState.currentModelId = ModelId.fromComponents(model, effort).toString();
         sessionState.supportedReasoningEfforts = model.supportedReasoningEfforts;
         sessionState.supportedInputModalities = model.inputModalities;
@@ -3007,15 +3031,22 @@ export class CodexAcpServer {
         const model = models.find(m => m.id === requestedModelName);
         if (!model) throw new Error(`Unknown model ${params.modelId}`);
 
+        // Fork (2026-11-10): no explicit tier — a bare `modelId` or the
+        // `[default]` sentinel — means the model's own default. It used to fall
+        // back to `model.defaultReasoningEffort`, which the engine fills with a
+        // `none` placeholder for every catalog model; that placeholder then
+        // reached gateways that always think (GLM-5.3) as an explicit "turn
+        // thinking off" and was rejected. The sentinel keeps the session in the
+        // omit-on-the-wire state instead.
         let reasoningEffort: ReasoningEffort;
-        if (requestedEffort) {
+        if (isDefaultEffort(requestedEffort)) {
+            reasoningEffort = DEFAULT_EFFORT;
+        } else {
             const matchedEffort = findSupportedEffort(model.supportedReasoningEfforts, requestedEffort);
             if (!matchedEffort) {
                 throw new Error(`Unsupported reasoning effort ${requestedEffort} for model ${requestedModelName}`);
             }
             reasoningEffort = matchedEffort;
-        } else {
-            reasoningEffort = model.defaultReasoningEffort;
         }
 
         await this.updateSessionConfig(sessionState, () => {

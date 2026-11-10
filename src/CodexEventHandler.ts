@@ -921,7 +921,7 @@ export class CodexEventHandler {
     }
 
     private createWarningEvent(event: WarningNotification): UpdateSessionEvent | null {
-        if (isFallbackModelMetadataWarning(event.message)) {
+        if (isFallbackModelMetadataWarning(event.message) || isModelSwitchResumeWarning(event.message)) {
             // Fork: fallback metadata is a documented engine state for any slug
             // the built-in catalog does not know (third-party gateways serve
             // dated snapshot slugs). Not user-actionable; log it instead of
@@ -1494,4 +1494,14 @@ function toolCallTitle(update: UpdateSessionEvent | null | undefined): string | 
  */
 function isFallbackModelMetadataWarning(message: string): boolean {
     return /^Model metadata for `.+` not found\. Defaulting to fallback metadata/.test(message);
+}
+
+/**
+ * Fork: "recorded with model X but is resuming with Y" resume notices. Model
+ * switching inside one session is a supported product flow, so this warning
+ * (which suggests switching back) is not user-actionable; engines older than
+ * the log-only fix still emit it, so it is filtered here as well.
+ */
+function isModelSwitchResumeWarning(message: string): boolean {
+    return /^This session was recorded with model `.+` but is resuming with `.+`/.test(message);
 }

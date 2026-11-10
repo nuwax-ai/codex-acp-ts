@@ -2,6 +2,7 @@ import type {SessionConfigOption} from "@agentclientprotocol/sdk/unstable";
 import type {ReasoningEffort} from "./app-server";
 import type {Model, ReasoningEffortOption} from "./app-server/v2";
 import {AIR_RECOMMENDED_CONFIG_VALUE_KEY, withAirMeta} from "./AirExtension";
+import {DEFAULT_EFFORT} from "./ReasoningEffortDefault";
 
 export const MODEL_CONFIG_ID = "model";
 export const REASONING_EFFORT_CONFIG_ID = "reasoning_effort";
@@ -82,6 +83,22 @@ export function createReasoningEffortConfigOption(
     recommendedEffort?: string,
 ): SessionConfigOption {
     const recommendation = findSupportedEffort(supportedReasoningEfforts, recommendedEffort);
+    // Fork (2026-11-10): when the session carries no explicit tier the current
+    // value is the sentinel, which no gateway lists. Offer it as its own entry
+    // so the picker shows a truthful "Vendor default" instead of a value with
+    // no matching option.
+    const options = supportedReasoningEfforts.map(option => ({
+        value: option.reasoningEffort,
+        name: capitalize(option.reasoningEffort),
+        description: option.description,
+    }));
+    if (currentEffort === DEFAULT_EFFORT) {
+        options.unshift({
+            value: DEFAULT_EFFORT,
+            name: "Vendor default",
+            description: "No explicit tier; the model applies its own default",
+        });
+    }
     return {
         id: REASONING_EFFORT_CONFIG_ID,
         name: "Reasoning effort",
@@ -89,11 +106,7 @@ export function createReasoningEffortConfigOption(
         category: "thought_level",
         type: "select",
         currentValue: currentEffort,
-        options: supportedReasoningEfforts.map(option => ({
-            value: option.reasoningEffort,
-            name: capitalize(option.reasoningEffort),
-            description: option.description,
-        })),
+        options,
         ...(recommendation
             ? {_meta: withAirMeta(undefined, AIR_RECOMMENDED_CONFIG_VALUE_KEY, recommendation)}
             : {}),

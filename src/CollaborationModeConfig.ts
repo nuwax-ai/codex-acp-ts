@@ -2,6 +2,7 @@ import type * as acp from "@agentclientprotocol/sdk/unstable";
 import type {ReasoningEffort} from "./app-server";
 import type {ModeKind} from "./app-server/ModeKind";
 import {ModelId} from "./ModelId";
+import {isDefaultEffort} from "./ReasoningEffortDefault";
 
 export const COLLABORATION_MODE_CONFIG_ID = "collaboration_mode";
 export const DEFAULT_COLLABORATION_MODE: ModeKind = "default";
@@ -34,7 +35,15 @@ export function createCodexCollaborationMode(mode: ModeKind, currentModelId: str
         mode,
         settings: {
             model: modelId.model,
-            reasoning_effort: modelId.effort as ReasoningEffort | null,
+            // Fork (2026-11-10): the no-explicit-tier sentinel must reach the
+            // engine as `null`, not as a tier. This function is the resume and
+            // mode-switch path that writes the thread settings, so forwarding
+            // the sentinel verbatim would send `reasoning_effort: "default"` —
+            // an unknown custom tier the engine's tier gate rejects. `null`
+            // leaves the field unset and the gateway applies its own default.
+            reasoning_effort: isDefaultEffort(modelId.effort)
+                ? null
+                : (modelId.effort as ReasoningEffort),
             developer_instructions: null,
         },
     };

@@ -63,6 +63,7 @@ import type {
 import packageJson from "../package.json";
 import type {AuthenticationStatusResponse} from "./AcpExtensions";
 import {createCodexCollaborationMode} from "./CollaborationModeConfig";
+import {DEFAULT_EFFORT, hasExplicitEffort} from "./ReasoningEffortDefault";
 import type {ModeKind} from "./app-server/ModeKind";
 import {arePathBasenamesEqual, arePathsEqual, isAbsolutePathLike, isAbsoluteProtocolPath} from "./PathUtils";
 import {CodexSubagentSubscriptions} from "./subagents/CodexSubagentSubscriptions";
@@ -1280,13 +1281,25 @@ export class CodexAcpClient {
      * passed through as asked — substituting here would be the silent remap
      * the engine now refuses instead.
      */
+    /**
+     * Fork (2026-11-10): the effort a session carries when neither the engine
+     * nor the operator named one. The operator's explicit env setting wins,
+     * then the first tier the operator declared for this gateway, and only
+     * then the no-explicit-tier sentinel — never an invented tier.
+     *
+     * The hardcoded `medium` this replaces was the `medium` incident: it became
+     * the session's effort through the collaboration-mode apply and gateways
+     * whose catalog has no `medium` (GLM-5.3 takes low/high/max) rejected every
+     * request. With the sentinel the engine omits the field on the wire and the
+     * vendor applies its own default (GLM-5.3 = max).
+     */
     private fallbackEffort(): string {
         const asked = getEnvReasoningEffort();
         if (asked) {
             return asked;
         }
         const firstDeclared = getEnvReasoningEffortLevels()?.[0];
-        return firstDeclared ?? "medium";
+        return firstDeclared ?? DEFAULT_EFFORT;
     }
 
     /**
@@ -1300,7 +1313,16 @@ export class CodexAcpClient {
 
         const selectedModel = availableModels.find(m => m.id === modelId);
         if (selectedModel) {
-            return ModelId.create(selectedModel.id, effectiveEffort ?? selectedModel.defaultReasoningEffort);
+            // No explicit tier (and no operator env/declared ladder) means the
+            // model's own default — the sentinel, not `defaultReasoningEffort`.
+            // The engine fills that field with a `none` placeholder for every
+            // catalog model (`unwrap_or(ReasoningEffort::None)` in
+            // openai_models.rs), which is not a tier the session asked for;
+            // sending it would turn thinking off on always-thinking gateways.
+            return ModelId.create(
+                selectedModel.id,
+                hasExplicitEffort(effectiveEffort) ? effectiveEffort : this.fallbackEffort(),
+            );
         }
 
         // The gateway narrowed the models, so a model it does not list must not be used. A model it lists but Codex
@@ -1314,8 +1336,10 @@ export class CodexAcpClient {
                 model: modelId,
                 defaultModel: defaultModel.id,
             });
-            const effort = findSupportedEffort(defaultModel.supportedReasoningEfforts, effectiveEffort ?? undefined)
-                ?? defaultModel.defaultReasoningEffort;
+            const effort = hasExplicitEffort(effectiveEffort)
+                ? (findSupportedEffort(defaultModel.supportedReasoningEfforts, effectiveEffort)
+                    ?? defaultModel.defaultReasoningEffort)
+                : this.fallbackEffort();
             return ModelId.create(defaultModel.id, effort);
         }
 
@@ -1329,7 +1353,10 @@ export class CodexAcpClient {
         // every turn and makes requests to custom-provider endpoints fail with
         // "unknown model".
         if (modelId) {
-            return ModelId.create(modelId, effectiveEffort ?? this.fallbackEffort());
+            return ModelId.create(
+                modelId,
+                hasExplicitEffort(effectiveEffort) ? effectiveEffort : this.fallbackEffort(),
+            );
         }
 
         const defaultModel = availableModels.find(m => m.isDefault);
@@ -1337,7 +1364,10 @@ export class CodexAcpClient {
             throw new Error(`Model selection failed: No model found for ID "${modelId}" and no default model is defined.`);
         }
 
-        return ModelId.create(defaultModel.id, effectiveEffort ?? defaultModel.defaultReasoningEffort);
+        return ModelId.create(
+            defaultModel.id,
+            hasExplicitEffort(effectiveEffort) ? effectiveEffort : this.fallbackEffort(),
+        );
     }
 
     async subscribeToSessionEvents(

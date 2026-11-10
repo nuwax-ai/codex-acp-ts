@@ -4158,8 +4158,12 @@ describe('ACP server test', { timeout: 40_000 }, () => {
     });
 
     it('should fallback to the model-specific effort when reasoningEffort is null', () => {
+        // Fork (2026-11-10): no explicit tier means the model's own default.
+        // The engine reports `defaultReasoningEffort` as a `none` placeholder
+        // for every catalog model, which is not a tier the session asked for,
+        // so the identity carries the no-explicit-tier sentinel instead.
         const result = fixture.getCodexAcpClient().createModelId(mockModels, '5.2-codex', null);
-        expect(result).toEqual(ModelId.create('5.2-codex', 'medium'));
+        expect(result).toEqual(ModelId.withDefaultEffort('5.2-codex'));
     });
 
     it('should keep a model id that is not in the advertised catalog (custom provider)', () => {
@@ -4169,7 +4173,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
 
     it('should default the effort for an uncatalogued model when reasoningEffort is null', () => {
         const result = fixture.getCodexAcpClient().createModelId(mockModels, 'MiniMax-M3', null);
-        expect(result).toEqual(ModelId.create('MiniMax-M3', 'medium'));
+        expect(result).toEqual(ModelId.withDefaultEffort('MiniMax-M3'));
     });
 
     describe('the effort fallback for an uncatalogued model', () => {
@@ -4217,10 +4221,13 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             });
         });
 
-        it('keeps medium when the gateway declared nothing', () => {
+        it('keeps the no-explicit-tier sentinel when the gateway declared nothing', () => {
+            // The hardcoded `medium` this replaces invented a tier the gateway
+            // may not take (GLM-5.3 takes low/high/max); the sentinel lets the
+            // engine omit the field so the vendor applies its own default.
             withEnv({NUWAX_REASONING_EFFORT_LEVELS: undefined}, () => {
                 const result = fixture.getCodexAcpClient().createModelId(mockModels, 'MiniMax-M3', null);
-                expect(result).toEqual(ModelId.create('MiniMax-M3', 'medium'));
+                expect(result).toEqual(ModelId.withDefaultEffort('MiniMax-M3'));
             });
         });
 
