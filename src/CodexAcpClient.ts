@@ -63,7 +63,7 @@ import type {
 import packageJson from "../package.json";
 import type {AuthenticationStatusResponse} from "./AcpExtensions";
 import {createCodexCollaborationMode} from "./CollaborationModeConfig";
-import {DEFAULT_EFFORT, hasExplicitEffort} from "./ReasoningEffortDefault";
+import {DEFAULT_EFFORT, hasExplicitEffort, isDefaultEffort} from "./ReasoningEffortDefault";
 import type {ModeKind} from "./app-server/ModeKind";
 import {arePathBasenamesEqual, arePathsEqual, isAbsolutePathLike, isAbsoluteProtocolPath} from "./PathUtils";
 import {CodexSubagentSubscriptions} from "./subagents/CodexSubagentSubscriptions";
@@ -1462,7 +1462,14 @@ export class CodexAcpClient {
         clientUserMessageId?: string,
     ): Promise<TurnCompletedNotification | null> {
         const input = buildPromptItems(request.prompt);
-        const effort = modelId.effort as ReasoningEffort | null; //TODO remove unsafe conversion
+        // Fork (2026-11-11 fix): the sentinel must not reach the engine as a
+        // tier. `model[default]` means "no explicit tier; the engine omits the
+        // field on the wire". Passing it verbatim made the engine send
+        // `reasoning_effort: "default"` to gateways, which reject it as an
+        // unknown value. Same mapping as createCodexCollaborationMode.
+        const effort: ReasoningEffort | null = isDefaultEffort(modelId.effort)
+            ? null
+            : (modelId.effort as ReasoningEffort);
         await this.refreshSkills(cwd, additionalDirectories);
         if (shouldCancel?.()) {
             return null;
