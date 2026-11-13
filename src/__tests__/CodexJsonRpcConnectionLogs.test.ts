@@ -31,9 +31,10 @@ describe("attachLogs", () => {
         vi.resetModules();
     });
 
-    it("never turns app-server traffic into strings, whatever the log level", () => {
+    it("never turns protocol traffic into strings, whatever the log level", () => {
         for (const enabled of [false, true]) {
             vi.spyOn(logger, "enabled", "get").mockReturnValue(enabled);
+            vi.spyOn(logger, "engineStderrEnabled", "get").mockReturnValue(false);
             const proc = fakeProcess();
             const input = chunk("{\"id\":1}\n");
             const output = chunk("{\"id\":1,\"result\":{}}\n");
@@ -52,6 +53,24 @@ describe("attachLogs", () => {
             expect(written).toEqual(["{\"id\":1}\n"]);
             vi.restoreAllMocks();
         }
+    });
+
+    it("mirrors engine stderr text into its own log when engine logging is on", () => {
+        vi.spyOn(logger, "enabled", "get").mockReturnValue(true);
+        vi.spyOn(logger, "engineStderrEnabled", "get").mockReturnValue(true);
+        vi.spyOn(logger, "log").mockImplementation(() => {});
+        const engine = vi.spyOn(logger, "engine").mockImplementation(() => {});
+        const proc = fakeProcess();
+        const stderr = chunk("DEBUG codex_core: streaming response\n");
+        const stdout = chunk("{\"id\":1,\"result\":{}}\n");
+
+        proc.stderr.emit("data", stderr);
+        proc.stdout.emit("data", stdout);
+
+        // Engine tracing text is the one stream worth reading; protocol traffic stays bytes.
+        expect(stderr.toString).toHaveBeenCalled();
+        expect(stdout.toString).not.toHaveBeenCalled();
+        expect(engine).toHaveBeenCalledWith("DEBUG codex_core: streaming response\n");
     });
 
     it("logs the same lines as before when logging is on", () => {

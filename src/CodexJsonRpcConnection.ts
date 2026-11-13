@@ -85,8 +85,14 @@ export function attachLogs(proc: ChildProcessWithoutNullStreams) {
         return originalWrite(chunk, encoding, callback);
     };
 
-    proc.stderr.on("data", (data) => {
+    // Engine stderr carries the `tracing` log stream (level controlled by RUST_LOG).
+    // Mirror the text into `engine.<date>.log`; the byte count alone is unreadable
+    // when someone has to explain what the engine did during a session.
+    proc.stderr.on("data", (data: Buffer) => {
         logger.log("[ERR]", {bytes: data.length});
+        // Decode only when the engine log is on: a disabled logger must not pay for
+        // turning every stderr chunk into a string.
+        if (logger.engineStderrEnabled) logger.engine(data.toString("utf8"));
     });
     proc.stdout.on("data", (data: Buffer) => {
         logger.log("[OUT]", {bytes: data.length});
