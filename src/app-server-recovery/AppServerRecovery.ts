@@ -292,7 +292,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
         if (exit !== undefined) return this.exitError(exit);
         if (supervisor.shuttingDown) return this.shuttingDownError();
         return new AppServerUnavailableError(
-            "The connection to the Codex app-server was lost. The agent starts it again on the next request.",
+            "The connection to the nuwax-harness app-server was lost. The agent starts it again on the next request.",
             {exitCode: null, signal: null, restartable: true},
         );
     }
@@ -336,7 +336,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
             : "crashed";
         const count = this.threadGuard.count(threadId);
         throw new ThreadRefusedError(
-            `The Codex app-server ${cause} ${count} times while opening session ${threadId}, so the agent does not open `
+            `The nuwax-harness app-server ${cause} ${count} times while opening session ${threadId}, so the agent does not open `
             + `this session again for ${formatDuration(this.threadGuard.retryAfterMs(threadId))}, to keep the other `
             + "sessions working. The session may be too large for the available memory.",
             {exitCode: exit?.code ?? null, signal: exit?.signal ?? null, restartable: false,
@@ -408,7 +408,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
         pending.release();
         if (pending.timedOut) {
             throw new AppServerUnavailableError(
-                `The restarted Codex app-server did not answer initialize within ${formatDuration(this.limits.handshakeTimeoutMs)}. `
+                `The restarted nuwax-harness app-server did not answer initialize within ${formatDuration(this.limits.handshakeTimeoutMs)}. `
                 + "The agent starts it again on the next request.",
                 {exitCode: null, signal: null, restartable: true},
             );
@@ -446,8 +446,8 @@ export class AppServerRecovery<S extends RecoverableSession> {
             this.state = this.host.supervisor.shuttingDown ? "shutdown" : "dead";
             this.crashGuard.record();
             const message = error instanceof Error ? error.message : String(error);
-            logger.error("[APP-SERVER RESTART] The Codex app-server could not be started", error);
-            throw new AppServerUnavailableError(`The Codex app-server could not be started: ${message}`, {
+            logger.error("[APP-SERVER RESTART] The nuwax-harness app-server could not be started", error);
+            throw new AppServerUnavailableError(`The nuwax-harness app-server could not be started: ${message}`, {
                 exitCode: null,
                 signal: null,
                 restartable: !this.crashGuard.tripped(),
@@ -570,7 +570,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
             timer = setTimeout(() => {
                 onTimeout();
                 reject(new AppServerUnavailableError(
-                    `The restarted Codex app-server did not answer initialize within ${formatDuration(this.limits.handshakeTimeoutMs)}. `
+                    `The restarted nuwax-harness app-server did not answer initialize within ${formatDuration(this.limits.handshakeTimeoutMs)}. `
                     + "The agent starts it again on the next request.",
                     {exitCode: null, signal: null, restartable: true},
                 ));
@@ -685,7 +685,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
         }
         const message = error instanceof Error ? error.message : String(error);
         return new AppServerUnavailableError(
-            `Could not reopen session ${sessionId} after the Codex app-server restarted: ${message}`,
+            `Could not reopen session ${sessionId} after the nuwax-harness app-server restarted: ${message}`,
             {exitCode: null, signal: null, restartable: true},
         );
     }
@@ -759,7 +759,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
         }
         if (exit.intentional) {
             return new AppServerUnavailableError(
-                "The Codex app-server was restarted for a provider change while this request ran. Try again.",
+                "The nuwax-harness app-server was restarted for a provider change while this request ran. Try again.",
                 {exitCode: exit.code, signal: exit.signal, restartable: true},
             );
         }
@@ -777,7 +777,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
         const last = exit !== undefined ? ` (last: it ${describeExit(exit)})` : "";
         const stderr = exit?.stderrTail.trim() ?? "";
         return new AppServerUnavailableError(
-            `The Codex app-server crashed ${this.crashGuard.count()} times in the last `
+            `The nuwax-harness app-server crashed ${this.crashGuard.count()} times in the last `
             + `${formatDuration(this.limits.crashWindowMs)}${last}, so the agent stopped restarting it. `
             + `Restart the agent, or try again in ${formatDuration(retryAfterMs)}.${stderr ? `\n${stderr}` : ""}`,
             {exitCode: exit?.code ?? null, signal: exit?.signal ?? null, restartable: false, retryAfterMs},
@@ -785,7 +785,7 @@ export class AppServerRecovery<S extends RecoverableSession> {
     }
 
     private shuttingDownError(): AppServerUnavailableError {
-        return new AppServerUnavailableError("The Codex app-server is not available: the agent is shutting down.", {
+        return new AppServerUnavailableError("The nuwax-harness app-server is not available: the agent is shutting down.", {
             exitCode: null,
             signal: null,
             restartable: false,

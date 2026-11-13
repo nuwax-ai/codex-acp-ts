@@ -317,7 +317,7 @@ describe('session/request_permission over ACP v2', () => {
             },
             options: [
                 {optionId: "implement_plan", name: "Yes, implement this plan", kind: "allow_once"},
-                {optionId: "revise_plan", name: "No, and tell Codex what to do differently", kind: "reject_once"},
+                {optionId: "revise_plan", name: "No, and tell nuwax-harness what to do differently", kind: "reject_once"},
             ],
         })]);
         // The prompt's own `running` (from insertion) brackets the whole exchange. The plan

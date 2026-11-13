@@ -10,11 +10,11 @@
     },
     {
       "code": 1001,
-      "message": "Connection to Codex was lost."
+      "message": "Connection to nuwax-harness was lost."
     },
     {
       "code": -32603,
-      "message": "Codex encountered an internal error."
+      "message": "nuwax-harness encountered an internal error."
     }
   ],
   "failed": {

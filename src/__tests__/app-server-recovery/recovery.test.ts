@@ -866,7 +866,7 @@ describe("app-server recovery", () => {
 
         const mapped = recovery.mapError(new ConnectionError(ConnectionErrors.Closed, "Connection is closed."), client);
 
-        expect(mapped.message).toBe("The connection to the Codex app-server was lost. The agent starts it again on the next request.");
+        expect(mapped.message).toBe("The connection to the nuwax-harness app-server was lost. The agent starts it again on the next request.");
     });
 
     it("lets requests that waited for a provider update go on when its app-server died during the resumes", async () => {

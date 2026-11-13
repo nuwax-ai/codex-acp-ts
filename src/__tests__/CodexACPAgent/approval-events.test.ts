@@ -224,7 +224,7 @@ describe("Approval Events", () => {
                     {optionId: "decline", name: "No, continue without running it", kind: "reject_once"},
                     {
                         optionId: "cancel",
-                        name: "No, and tell Codex what to do differently",
+                        name: "No, and tell nuwax-harness what to do differently",
                         kind: "reject_once",
                     },
                 ],
@@ -386,7 +386,7 @@ describe("Approval Events", () => {
                 "Yes, and allow this host in the future",
                 "No, and block this host in the future",
                 "No, continue without running it",
-                "No, and tell Codex what to do differently",
+                "No, and tell nuwax-harness what to do differently",
             ]);
             await finish(prompt);
         });
@@ -509,7 +509,7 @@ describe("Approval Events", () => {
                 options: [
                     {name: "Yes, proceed"},
                     {name: "Yes, and allow these permissions for this session"},
-                    {name: "No, and tell Codex what to do differently"},
+                    {name: "No, and tell nuwax-harness what to do differently"},
                 ],
             });
             expect(permissionRequest()._meta.jetbrains.air.permission.description).toBe("Needed to verify the changes.");

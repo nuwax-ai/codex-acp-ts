@@ -271,7 +271,7 @@ describe('session/prompt over ACP v2', () => {
                 expect(idle._meta?.["jetbrains"]?.air?.sessionFailure).toMatchObject({category: "connection"});
             } else {
                 expect(agentMessages).toEqual([expect.objectContaining({
-                    content: {type: "text", text: "Connection to Codex was lost."},
+                    content: {type: "text", text: "Connection to nuwax-harness was lost."},
                 })]);
                 expect(idle._meta?.["jetbrains"]).toBeUndefined();
             }

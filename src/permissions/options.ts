@@ -50,7 +50,7 @@ export function commandDecisionOptions(
         } else if (decision === "cancel") {
             options.push(decisionOption(
                 ApprovalOptionId.Cancel,
-                "No, and tell Codex what to do differently",
+                "No, and tell nuwax-harness what to do differently",
                 "reject_once",
                 decision,
             ));
@@ -103,7 +103,7 @@ export function fileChangeDecisionOptions(): DecisionOption<FileChangeApprovalDe
         ),
         decisionOption(
             ApprovalOptionId.Cancel,
-            "No, and tell Codex what to do differently",
+            "No, and tell nuwax-harness what to do differently",
             "reject_once",
             "cancel",
         ),

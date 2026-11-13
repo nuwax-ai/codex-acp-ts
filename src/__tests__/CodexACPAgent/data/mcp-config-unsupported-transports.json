@@ -5,7 +5,7 @@
   },
   "v2 custom": {
     "code": -32602,
-    "message": "Invalid params: Codex doesn't support MCP '_custom' transport protocol"
+    "message": "Invalid params: nuwax-harness doesn't support MCP '_custom' transport protocol"
   },
   "v1 sse": {
     "code": -32602,

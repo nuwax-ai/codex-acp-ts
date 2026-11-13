@@ -75,7 +75,7 @@ export function normalizeMcpServer(server: AcpMcpServer): NormalizedMcpServer {
             throw RequestError.invalidParams(undefined, "nuwax-harness doesn't support MCP SSE transport protocol");
         default:
             // v2 allows custom and future transport types.
-            throw RequestError.invalidParams(undefined, `Codex doesn't support MCP '${server.type}' transport protocol`);
+            throw RequestError.invalidParams(undefined, `nuwax-harness doesn't support MCP '${server.type}' transport protocol`);
     }
 }
 

@@ -30,7 +30,7 @@ export class PlanReviewReporter {
                 {optionId: IMPLEMENT_PLAN_OPTION_ID, name: "Yes, implement this plan", kind: "allow_once"},
                 {
                     optionId: REVISE_PLAN_OPTION_ID,
-                    name: "No, and tell Codex what to do differently",
+                    name: "No, and tell nuwax-harness what to do differently",
                     kind: "reject_once",
                 },
             ],

@@ -35,7 +35,7 @@ if (process.argv[2] === "login") {
     runCodexCli(resolveEnvAlias("NUWAX_PATH", "CODEX_PATH").value, args)
         .then((exitCode) => process.exit(exitCode))
         .catch((error) => {
-            console.error("Codex CLI error:", error.message);
+            console.error("nuwax-harness CLI error:", error.message);
             process.exit(1);
         });
 } else {

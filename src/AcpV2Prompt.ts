@@ -101,11 +101,11 @@ export function toV2IdleState(response: acp.PromptResponse, failure?: acpV2.Erro
 export function toV2Failure(error: unknown): acpV2.Error {
     if (error instanceof acp.RequestError || error instanceof ResponseError) {
         if (error.code === CODEX_PROCESS_EXITED_ERROR_CODE) {
-            return {code: error.code, message: "Connection to Codex was lost."};
+            return {code: error.code, message: "Connection to nuwax-harness was lost."};
         }
         return {code: error.code, message: readableServiceErrorMessage(error.message)};
     }
-    return {code: -32603, message: "Codex encountered an internal error."};
+    return {code: -32603, message: "nuwax-harness encountered an internal error."};
 }
 
 /**

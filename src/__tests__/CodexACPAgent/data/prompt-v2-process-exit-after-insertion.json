@@ -63,7 +63,7 @@
         "sessionUpdate": {
           "messageId": "<agentMessageId>",
           "content": {
-            "text": "Connection to Codex was lost.",
+            "text": "Connection to nuwax-harness was lost.",
             "type": "text"
           },
           "sessionUpdate": "agent_message_chunk"
@@ -73,7 +73,7 @@
         "sessionUpdate": {
           "error": {
             "code": 1001,
-            "message": "Connection to Codex was lost."
+            "message": "Connection to nuwax-harness was lost."
           },
           "stopReason": "error",
           "_meta": {
@@ -152,7 +152,7 @@
         "sessionUpdate": {
           "error": {
             "code": 1001,
-            "message": "Connection to Codex was lost."
+            "message": "Connection to nuwax-harness was lost."
           },
           "stopReason": "error",
           "_meta": {
