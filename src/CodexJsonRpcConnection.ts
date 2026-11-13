@@ -85,14 +85,18 @@ export function attachLogs(proc: ChildProcessWithoutNullStreams) {
         return originalWrite(chunk, encoding, callback);
     };
 
-    // Engine stderr carries the `tracing` log stream (level controlled by RUST_LOG).
-    // Mirror the text into `engine.<date>.log`; the byte count alone is unreadable
-    // when someone has to explain what the engine did during a session.
+    // Engine stderr carries the `tracing` log stream (level controlled by RUST_LOG),
+    // not protocol payload. When that capture is on, the text goes to
+    // `engine.<date>.log` and the byte count would only duplicate it — a singleton
+    // byte-count line per chunk is what once grew `app-server.log` to 91 MB of numbers.
     proc.stderr.on("data", (data: Buffer) => {
-        logger.log("[ERR]", {bytes: data.length});
-        // Decode only when the engine log is on: a disabled logger must not pay for
+        // Decode only when the capture is on; a disabled engine log must not pay for
         // turning every stderr chunk into a string.
-        if (logger.engineStderrEnabled) logger.engine(data.toString("utf8"));
+        if (logger.engineStderrEnabled) {
+            logger.engine(data.toString("utf8"));
+        } else {
+            logger.log("[ERR]", {bytes: data.length});
+        }
     });
     proc.stdout.on("data", (data: Buffer) => {
         logger.log("[OUT]", {bytes: data.length});

@@ -165,8 +165,8 @@ The fork writes the text instead, into its own file next to the adapter log:
 
 | File | Contents |
 |---|---|
-| `app-server.<YYYY-MM-DD>.log` | Adapter traffic: `[IN]`/`[OUT]` byte counts, `[ERR]` byte counts, `[SYS]` lifecycle lines. |
-| `engine.<YYYY-MM-DD>.log` | Engine stderr verbatim (ANSI stripped): `tracing` lines from `RUST_LOG`. |
+| `app-server.<YYYY-MM-DD>.log` | Adapter traffic: `[IN]`/`[OUT]` byte counts, `[SYS]` lifecycle lines, and `[ERR]` byte counts **only while engine capture is off**. |
+| `engine.<YYYY-MM-DD>.log` | Engine stderr verbatim (ANSI stripped): `tracing` lines from `RUST_LOG`, opened per process by `=== engine log opened pid=… ===`. |
 
 - Both roll **by local calendar date only**; there is no size-based rotation, so a single day
   always maps to a single file per stream.
@@ -174,7 +174,9 @@ The fork writes the text instead, into its own file next to the adapter log:
   Electron client points it at its own log directory, so both files sit next to
   `electron-dev.log` and can be exported as one folder.
 - `NUWAX_LOG_ENGINE_STDERR=0` (also `false`/`no`/`off`) disables engine capture; the chunk is
-  then not even stringified.
+  then not even stringified and the adapter falls back to `[ERR] {bytes: N}` lines.
+- A failing write (log directory removed, disk full) reports once and then stops trying for the
+  rest of the process: one dead directory must not emit an error per stderr chunk.
 - **Sensitivity**: engine logs contain workspace content and request URLs. Credentials are not
   written by design (the adapter never stringifies protocol payloads), but the engine's own
   lines are verbatim, so treat the log directory as sensitive data.

@@ -43,7 +43,24 @@ describe("engine stderr log", () => {
         const logger = await freshLogger();
 
         logger.engine("\u001b[1m\u001b[33mwarning\u001b[0m: unused variable\n");
-        expect(fs.readFileSync(path.join(dir, `engine.${dayStamp()}.log`), "utf8")).toBe("warning: unused variable\n");
+        const written = fs.readFileSync(path.join(dir, `engine.${dayStamp()}.log`), "utf8");
+        // A per-process marker opens the file; the payload itself carries no escapes.
+        expect(written).toContain("=== engine log opened pid=");
+        expect(written.slice(written.indexOf("\n") + 1)).toBe("warning: unused variable\n");
+    });
+
+    it("reports a dead log directory once and then stops trying", async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-log-"));
+        vi.stubEnv("APP_SERVER_LOGS", dir);
+        const logger = await freshLogger();
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        // Remove the directory: every append now fails.
+        fs.rmSync(dir, {recursive: true, force: true});
+
+        for (let i = 0; i < 5; i += 1) logger.engine(`chunk ${i}\n`);
+
+        expect(error).toHaveBeenCalledTimes(1);
+        error.mockRestore();
     });
 
     it("can be switched off with NUWAX_LOG_ENGINE_STDERR=0", async () => {

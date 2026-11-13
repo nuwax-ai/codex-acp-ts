@@ -12,6 +12,10 @@ const ENGINE_STDERR_SWITCH = "NUWAX_LOG_ENGINE_STDERR";
 class Logger {
     private readonly logFilePath: string | null;
     private readonly logDir: string | null;
+    /** Day whose engine log this process has already announced itself in. */
+    private engineLogAnnouncedDay: string | null = null;
+    /** Set after the first failed engine write so a dead directory cannot spam stderr. */
+    private engineLogDisabled = false;
 
     constructor() {
         const logDir = process.env["APP_SERVER_LOGS"] || resolveEnvAlias("NUWAX_LOG_DIR", "CODEX_LOG_DIR").value;
@@ -58,14 +62,24 @@ class Logger {
      * the same day's file.
      */
     engine(chunk: string): void {
-        if (this.logDir === null || !this.engineStderrEnabled) return;
+        if (this.logDir === null || !this.engineStderrEnabled || this.engineLogDisabled) return;
         const text = stripAnsi(chunk);
         if (text.length === 0) return;
+        const day = formatLogDay(new Date());
         try {
-            const day = formatLogDay(new Date());
-            fs.appendFileSync(path.join(this.logDir as string, `engine.${day}.log`), text, "utf8");
+            const file = path.join(this.logDir, `engine.${day}.log`);
+            if (this.engineLogAnnouncedDay !== day) {
+                // Several adapters may append to the same daily file; the marker
+                // says which process the following lines belong to.
+                fs.appendFileSync(file, `=== engine log opened pid=${process.pid} at ${new Date().toISOString()} ===\n`, "utf8");
+                this.engineLogAnnouncedDay = day;
+            }
+            fs.appendFileSync(file, text, "utf8");
         } catch (ex) {
-            console.error("Engine log write failed", ex);
+            // One report, then silence: a removed/unwritable directory would
+            // otherwise emit an error for every stderr chunk of the session.
+            this.engineLogDisabled = true;
+            console.error("Engine log write failed; engine stderr capture disabled", ex);
         }
     }
 

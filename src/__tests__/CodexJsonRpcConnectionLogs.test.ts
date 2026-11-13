@@ -113,9 +113,11 @@ describe("attachLogs", () => {
             proc.stderr.emit("data", Buffer.from("warning\n"));
             proc.emit("exit", 0);
 
+            // stderr goes to the engine log while that capture is on, so this file
+            // only carries adapter traffic and lifecycle lines.
             const lines = fs.readFileSync(adapterLogPath(directory), "utf8").split("\n")
                 .map(line => line.replace(/^\S+ \S+ /, "").replace(/\{"pid":\d+,/g, "{").replace(/ \{"pid":\d+\}$/, ""));
-            expect(lines.slice(1)).toEqual(["[IN] {\"bytes\":9}", "[OUT] {\"bytes\":21}", "[ERR] {\"bytes\":8}", "[EXIT] code: 0", ""]);
+            expect(lines.slice(1)).toEqual(["[IN] {\"bytes\":9}", "[OUT] {\"bytes\":21}", "[EXIT] code: 0", ""]);
         } finally {
             fs.rmSync(directory, {recursive: true, force: true});
         }
