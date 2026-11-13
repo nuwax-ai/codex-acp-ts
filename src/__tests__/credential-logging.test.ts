@@ -85,7 +85,9 @@ lines.on("line", (line) => {
         expect(await rpc(1, "initialize", {protocolVersion: 1})).toHaveProperty("result");
         await rpc(2, "session/new", {cwd: root, mcpServers: []});
         expect(JSON.parse(fs.readFileSync(acknowledged, "utf8"))).toEqual({authenticated: true});
-        const log = fs.readFileSync(path.join(root, "app-server.log"), "utf8");
+        const adapterLog = fs.readdirSync(root).find(name => /^app-server\.\d{4}-\d{2}-\d{2}\.log$/.test(name));
+        expect(adapterLog).toBeDefined();
+        const log = fs.readFileSync(path.join(root, adapterLog as string), "utf8");
         expect(log).toContain("Startup");
         expect(log).toContain("Authenticating with default auth request");
         expect(log).toContain('"defaultAuthMethod":"api-key"');

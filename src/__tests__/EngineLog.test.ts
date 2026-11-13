@@ -33,7 +33,7 @@ describe("engine stderr log", () => {
 
         const engineFile = path.join(dir, `engine.${dayStamp()}.log`);
         expect(fs.readFileSync(engineFile, "utf8")).toContain("streaming response");
-        expect(fs.existsSync(path.join(dir, "app-server.log"))).toBe(true);
+        expect(fs.readdirSync(dir).some(name => /^app-server\.\d{4}-\d{2}-\d{2}\.log$/.test(name))).toBe(true);
     });
 
     it("strips ANSI colour codes so the file stays greppable", async () => {

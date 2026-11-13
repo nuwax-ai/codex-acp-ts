@@ -7,6 +7,13 @@ import type {ChildProcessWithoutNullStreams} from "node:child_process";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {attachLogs} from "../CodexJsonRpcConnection";
 import {logger} from "../Logger";
+function adapterLogPath(dir: string): string {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return path.join(dir, `app-server.${now.getFullYear()}-${mm}-${dd}.log`);
+}
+
 
 function fakeProcess(attach: typeof attachLogs = attachLogs) {
     const proc = new EventEmitter() as EventEmitter & {stdin: PassThrough; stdout: PassThrough; stderr: PassThrough};
@@ -106,7 +113,7 @@ describe("attachLogs", () => {
             proc.stderr.emit("data", Buffer.from("warning\n"));
             proc.emit("exit", 0);
 
-            const lines = fs.readFileSync(path.join(directory, "app-server.log"), "utf8").split("\n")
+            const lines = fs.readFileSync(adapterLogPath(directory), "utf8").split("\n")
                 .map(line => line.replace(/^\S+ \S+ /, "").replace(/\{"pid":\d+,/g, "{").replace(/ \{"pid":\d+\}$/, ""));
             expect(lines.slice(1)).toEqual(["[IN] {\"bytes\":9}", "[OUT] {\"bytes\":21}", "[ERR] {\"bytes\":8}", "[EXIT] code: 0", ""]);
         } finally {

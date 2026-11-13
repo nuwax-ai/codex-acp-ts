@@ -6,10 +6,6 @@ interface LogContext {
     [key: string]: unknown;
 }
 
-/** Rotate the adapter log before it reaches this size (upstream kept growing past 90 MB). */
-const MAX_ADAPTER_LOG_BYTES = 32 * 1024 * 1024;
-/** Engine stderr can be far larger than adapter traffic; keep each daily file bounded. */
-const MAX_ENGINE_LOG_BYTES = 64 * 1024 * 1024;
 /** `NUWAX_LOG_ENGINE_STDERR=0` keeps engine stderr out of the log directory. */
 const ENGINE_STDERR_SWITCH = "NUWAX_LOG_ENGINE_STDERR";
 
@@ -28,7 +24,7 @@ class Logger {
         try {
             fs.mkdirSync(logDir, {recursive: true});
             this.logDir = logDir;
-            this.logFilePath = path.join(logDir, "app-server.log");
+            this.logFilePath = path.join(logDir, `app-server.${formatLogDay(new Date())}.log`);
             this.log("Logger initialized", {logFilePath: this.logFilePath});
         } catch (ex) {
             console.error("Failed to initialize logger directory", ex);
@@ -58,34 +54,20 @@ class Logger {
 
     /**
      * Append one engine stderr chunk to `engine.<YYYY-MM-DD>.log` in the log
-     * directory. Files roll by date and, within a day, by size so a long
-     * running session cannot leave one unopenable file behind.
+     * directory. One file per calendar day; a long session keeps appending to
+     * the same day's file.
      */
     engine(chunk: string): void {
         if (this.logDir === null || !this.engineStderrEnabled) return;
         const text = stripAnsi(chunk);
         if (text.length === 0) return;
         try {
-            const file = this.rotateEngineLog(text);
-            fs.appendFileSync(file, text, "utf8");
+            const day = formatLogDay(new Date());
+            fs.appendFileSync(path.join(this.logDir as string, `engine.${day}.log`), text, "utf8");
         } catch (ex) {
             console.error("Engine log write failed", ex);
         }
     }
-
-    private rotateEngineLog(appendee: string): string {
-        const dir = this.logDir as string;
-        const day = formatLogDay(new Date());
-        for (let index = 0; ; index += 1) {
-            const suffix = index === 0 ? "" : `.${index}`;
-            const candidate = path.join(dir, `engine.${day}${suffix}.log`);
-            const size = fileSize(candidate);
-            if (size === null || size + Buffer.byteLength(appendee) <= MAX_ENGINE_LOG_BYTES) {
-                return candidate;
-            }
-        }
-    }
-
 
 
     error(message: string, err: unknown) {
@@ -105,7 +87,6 @@ class Logger {
 
             if (!message.startsWith('[')) message = `[SYS] ${message}`;
             const line = `${timestamp} ${message}${serializedContext}`;
-            this.rotateAdapterLog();
             fs.appendFileSync(this.logFilePath, `${line}\n`);
         } catch (ex) {
             console.error("Logger write failed", ex);
@@ -121,18 +102,6 @@ class Logger {
         const ss = String(date.getSeconds()).padStart(2, "0");
         const ms = String(date.getMilliseconds()).padStart(3, "0");
         return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss},${ms}`;
-    }
-
-    /** Keep `app-server.log` bounded: past the cap, start over in `app-server.log.1`. */
-    private rotateAdapterLog(): void {
-        const size = fileSize(this.logFilePath as string);
-        if (size === null || size <= MAX_ADAPTER_LOG_BYTES) return;
-        const rotated = `${this.logFilePath}.1`;
-        try {
-            fs.renameSync(this.logFilePath as string, rotated);
-        } catch {
-            // Rotation is best effort; a failed rename must not drop the record.
-        }
     }
 
     private formatError(err: unknown): string {
@@ -152,14 +121,6 @@ class Logger {
         }
 
         return String(err);
-    }
-}
-
-function fileSize(file: string): number | null {
-    try {
-        return fs.statSync(file).size;
-    } catch {
-        return null;
     }
 }
 

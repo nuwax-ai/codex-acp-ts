@@ -2,7 +2,7 @@ import * as acp from "@agentclientprotocol/sdk/unstable";
 import * as acpV2 from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
-import {existsSync, mkdirSync, mkdtempSync, readFileSync} from "node:fs";
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {Readable, Writable} from "node:stream";
 import {expect, it, vi} from "vitest";
@@ -55,7 +55,7 @@ describeIntegration("integration: client system prompts", () => {
                 return await context.request(method, params, {cancellationSignal: AbortSignal.timeout(15_000)});
             } catch (error) {
                 if (error instanceof Error) {
-                    const log = join(root, "app-server.log");
+                    const log = join(root, readdirSync(root).find((name: string) => /^app-server\.\d{4}-\d{2}-\d{2}\.log$/.test(name)) ?? "");
                     error.message = `${method} ${JSON.stringify(params)}: ${error.message}\n${stderr}\n${existsSync(log) ? readFileSync(log, "utf8") : ""}`;
                 }
                 throw error;
