@@ -79,7 +79,12 @@ The adapter advertises ACP auth methods during initialization. Clients can authe
 
 ### Nuwax model gateway from environment
 
-Set `CODEX_BASE_URL`, `CODEX_API_KEY`, and `CODEX_MODEL` to configure a gateway without an ACP provider extension. `CODEX_API_PROTOCOL=openai` (the default) accepts `CODEX_WIRE_API=responses` (the default) or `chat`. Use `CODEX_API_PROTOCOL=anthropic` for the Anthropic Messages API.
+Preferred spellings are the `NUWAX_*` names below; every one of them also accepts the
+legacy `CODEX_*` name of the same suffix, and setting both to different values fails at
+startup instead of silently picking one.
+
+Set `NUWAX_BASE_URL`, `NUWAX_API_KEY`, and `NUWAX_MODEL` to configure a gateway without an
+ACP provider extension. `CODEX_API_PROTOCOL=openai` (the default) accepts `CODEX_WIRE_API=responses` (the default) or `chat`. Use `CODEX_API_PROTOCOL=anthropic` for the Anthropic Messages API.
 
 `CODEX_BRIDGE` optionally selects the implementation for this environment gateway:
 
@@ -89,18 +94,18 @@ Set `CODEX_BASE_URL`, `CODEX_API_KEY`, and `CODEX_MODEL` to configure a gateway 
 | `native` | OpenAI Responses |
 | `genai` | Chat Completions, Anthropic Messages |
 
-When omitted, the adapter leaves `experimental_bridge` unset so the selected Codex binary keeps its default. A bridge without `CODEX_BASE_URL`, an unknown value, or an unsupported bridge/wire combination fails at startup. `NUWAX_BRIDGE` does not override the adapter's `CODEX_*` gateway. The environment gateway is already authorized, so it does not require an explicit `authenticate` call. An explicit ACP `providers/set` or any `authenticate` request (API key, ChatGPT, or gateway) replaces or clears the environment gateway, including its bridge selection and credentials.
+When omitted, the adapter leaves `experimental_bridge` unset so the selected Codex binary keeps its default. A bridge without `NUWAX_BASE_URL`, an unknown value, or an unsupported bridge/wire combination fails at startup. `NUWAX_BRIDGE` and the legacy `CODEX_BRIDGE` are one switch: whichever spelling is set configures this gateway, never a second one. The environment gateway is already authorized, so it does not require an explicit `authenticate` call. An explicit ACP `providers/set` or any `authenticate` request (API key, ChatGPT, or gateway) replaces or clears the environment gateway, including its bridge selection and credentials.
 
 For native Responses with an official or compatible gateway, set:
 
 ```bash
-export CODEX_BASE_URL=https://api.openai.com/v1
-export CODEX_API_PROTOCOL=openai
-export CODEX_WIRE_API=responses
-export CODEX_BRIDGE=native
-export CODEX_MODEL=your-model-id
-# Supply CODEX_API_KEY through your existing secret environment.
-# CODEX_PATH must point to a Nuwax Codex build that supports this bridge setting.
+export NUWAX_BASE_URL=https://api.openai.com/v1
+export NUWAX_API_PROTOCOL=openai
+export NUWAX_WIRE_API=responses
+export NUWAX_BRIDGE=native
+export NUWAX_MODEL=your-model-id
+# Supply NUWAX_API_KEY through your existing secret environment.
+# NUWAX_PATH must point to a nuwax-harness build that supports this bridge setting.
 ```
 
 ## Development

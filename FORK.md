@@ -127,7 +127,7 @@ spellings. Both set to different values → startup error (split-brain guard).
 | Variable | Description |
 |---|---|
 | `NUWAX_BASE_URL` | Platform protocol base URL. Setting this activates the gateway. |
-| `NUXAX_WIRE_API` | `responses` / `chat` / `anthropic`. |
+| `NUWAX_WIRE_API` | OpenAI wire: `responses` / `chat`. Do not set for the Anthropic protocol (chosen by `NUWAX_API_PROTOCOL=anthropic`). |
 | `NUWAX_API_KEY` | API key for the endpoint. Falls back to `OPENAI_API_KEY`. |
 | `NUWAX_MODEL` | Platform model ID. |
 
@@ -154,6 +154,12 @@ spellings. Both set to different values → startup error (split-brain guard).
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` | Crash restart limit within the window. |
 | `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | Crash window duration in ms. |
 | `NUWAX_CONFIG` | Extra config forwarded to the engine. |
+| `NUWAX_LOG_DIR` / `CODEX_LOG_DIR` | Adapter log directory; `APP_SERVER_LOGS` wins when both are set. |
+
+Engine-side switches (`NUWAX_IMAGE_MAX_BYTES`, `NUWAX_REQUEST_IMAGE_MAX_BYTES`,
+`NUWAX_TOOL_SEARCH`, `NUWAX_OPENAI_EGRESS`, `NUWAX_AUTO_COMPACT_*`, `NUWAX_HOME`) are read
+by the app-server child process, so they work through ACP too; the user-facing reference is
+[`my-docs/usage-guide.md`](my-docs/usage-guide.md).
 
 ## Merge playbook
 
