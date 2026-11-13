@@ -117,6 +117,22 @@ the fork changes and how to minimise future conflict area.
 - **Merge strategy**: take upstream version, then update fork test expectations
   if any assert the changed field.
 
+## Tool call terminal states (fork behaviour)
+
+A tool call is reported as `tool_call` (`in_progress`) and later closed by a `tool_call_update` with
+`completed`/`failed`. ACP has no `cancelled` status, so a cancellation is reported as `failed` with a
+readable English result text.
+
+- Any turn that does not end with `status: completed` closes every tool call it left open
+  (`CodexSessionToolCalls.finishOutstanding`), for ACP v1 and v2 alike: `Tool call cancelled.` for an
+  interrupted turn, `Tool call failed: the turn ended before it finished.` otherwise. The same close-out
+  runs when the app-server process dies (`…the Codex process exited before it finished.`). Without it a
+  `bash`/MCP card keeps spinning until the session is reloaded.
+- Context compaction is rendered as a tool call for clients without `session.compaction`. Since engines
+  before harness 0.18.50 report the completion under a different item id, the adapter remembers the
+  announced id and closes that entry instead of opening a second one; a compaction that never completes is
+  ended at turn end with `Context compaction completed.` / `failed.` / `cancelled.`.
+
 ## Environment variables
 
 All gateway variables accept both `NUWAX_*` (preferred) and `CODEX_*` (legacy)
