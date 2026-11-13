@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import {StringDecoder} from "node:string_decoder";
 import {resolveEnvAlias} from "./CodexEnvConfig";
 
 interface LogContext {
@@ -16,6 +17,12 @@ class Logger {
     private engineLogAnnouncedDay: string | null = null;
     /** Set after the first failed engine write so a dead directory cannot spam stderr. */
     private engineLogDisabled = false;
+    /**
+     * stderr arrives as arbitrary byte chunks; a UTF-8 sequence (or an ANSI escape)
+     * can straddle two of them. Decoding chunk by chunk would inject U+FFFD and split
+     * escape sequences, so the decoder holds the incomplete tail for the next call.
+     */
+    private readonly engineDecoder = new StringDecoder("utf8");
 
     constructor() {
         const logDir = process.env["APP_SERVER_LOGS"] || resolveEnvAlias("NUWAX_LOG_DIR", "CODEX_LOG_DIR").value;
@@ -81,6 +88,19 @@ class Logger {
             this.engineLogDisabled = true;
             console.error("Engine log write failed; engine stderr capture disabled", ex);
         }
+    }
+
+    /**
+     * Decode one raw stderr chunk with UTF-8 boundary awareness and write it to the
+     * engine log. Returns false when the text was not captured, so the caller can
+     * fall back to recording the byte count instead of dropping the chunk silently.
+     */
+    engineChunk(chunk: Buffer): boolean {
+        if (this.logDir === null || !this.engineStderrEnabled || this.engineLogDisabled) return false;
+        const text = this.engineDecoder.write(chunk);
+        if (text.length === 0) return true;
+        this.engine(text);
+        return !this.engineLogDisabled;
     }
 
 

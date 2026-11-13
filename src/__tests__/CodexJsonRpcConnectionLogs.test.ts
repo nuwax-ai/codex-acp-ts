@@ -62,11 +62,10 @@ describe("attachLogs", () => {
         }
     });
 
-    it("mirrors engine stderr text into its own log when engine logging is on", () => {
+    it("hands engine stderr to the engine log and keeps protocol traffic as bytes", () => {
         vi.spyOn(logger, "enabled", "get").mockReturnValue(true);
-        vi.spyOn(logger, "engineStderrEnabled", "get").mockReturnValue(true);
-        vi.spyOn(logger, "log").mockImplementation(() => {});
-        const engine = vi.spyOn(logger, "engine").mockImplementation(() => {});
+        const log = vi.spyOn(logger, "log").mockImplementation(() => {});
+        const engineChunk = vi.spyOn(logger, "engineChunk").mockReturnValue(true);
         const proc = fakeProcess();
         const stderr = chunk("DEBUG codex_core: streaming response\n");
         const stdout = chunk("{\"id\":1,\"result\":{}}\n");
@@ -74,10 +73,21 @@ describe("attachLogs", () => {
         proc.stderr.emit("data", stderr);
         proc.stdout.emit("data", stdout);
 
-        // Engine tracing text is the one stream worth reading; protocol traffic stays bytes.
-        expect(stderr.toString).toHaveBeenCalled();
+        expect(engineChunk).toHaveBeenCalledWith(stderr);
+        // Captured engine text must not also produce a byte-count line.
+        expect(log.mock.calls.filter(([prefix]) => prefix === "[ERR]")).toEqual([]);
         expect(stdout.toString).not.toHaveBeenCalled();
-        expect(engine).toHaveBeenCalledWith("DEBUG codex_core: streaming response\n");
+    });
+
+    it("falls back to a byte count when engine capture is unavailable", () => {
+        vi.spyOn(logger, "enabled", "get").mockReturnValue(true);
+        const log = vi.spyOn(logger, "log").mockImplementation(() => {});
+        vi.spyOn(logger, "engineChunk").mockReturnValue(false);
+        const proc = fakeProcess();
+
+        proc.stderr.emit("data", Buffer.from("warning\n"));
+
+        expect(log).toHaveBeenCalledWith("[ERR]", {bytes: 8});
     });
 
     it("logs the same lines as before when logging is on", () => {

@@ -90,13 +90,10 @@ export function attachLogs(proc: ChildProcessWithoutNullStreams) {
     // `engine.<date>.log` and the byte count would only duplicate it — a singleton
     // byte-count line per chunk is what once grew `app-server.log` to 91 MB of numbers.
     proc.stderr.on("data", (data: Buffer) => {
-        // Decode only when the capture is on; a disabled engine log must not pay for
-        // turning every stderr chunk into a string.
-        if (logger.engineStderrEnabled) {
-            logger.engine(data.toString("utf8"));
-        } else {
-            logger.log("[ERR]", {bytes: data.length});
-        }
+        // `engineChunk` decodes with UTF-8 boundary awareness and reports whether the
+        // text landed. When it did not (capture off, or the log went away mid-session)
+        // the byte count is all that is left to record.
+        if (!logger.engineChunk(data)) logger.log("[ERR]", {bytes: data.length});
     });
     proc.stdout.on("data", (data: Buffer) => {
         logger.log("[OUT]", {bytes: data.length});

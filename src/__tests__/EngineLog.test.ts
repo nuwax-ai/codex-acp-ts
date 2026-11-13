@@ -49,6 +49,32 @@ describe("engine stderr log", () => {
         expect(written.slice(written.indexOf("\n") + 1)).toBe("warning: unused variable\n");
     });
 
+    it("keeps multi-byte UTF-8 intact when a chunk boundary splits a character", async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-log-"));
+        dirs.push(dir);
+        vi.stubEnv("APP_SERVER_LOGS", dir);
+        const logger = await freshLogger();
+
+        const bytes = Buffer.from("流式响应失败\n", "utf8");
+        // Split inside the first character's three bytes.
+        expect(logger.engineChunk(bytes.subarray(0, 1))).toBe(true);
+        expect(logger.engineChunk(bytes.subarray(1))).toBe(true);
+
+        const written = fs.readFileSync(path.join(dir, `engine.${dayStamp()}.log`), "utf8");
+        expect(written).toContain("流式响应失败");
+        expect(written).not.toContain("\uFFFD");
+    });
+
+    it("reports that text was not captured when the log is switched off", async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-log-"));
+        dirs.push(dir);
+        vi.stubEnv("APP_SERVER_LOGS", dir);
+        vi.stubEnv("NUWAX_LOG_ENGINE_STDERR", "0");
+        const logger = await freshLogger();
+
+        expect(logger.engineChunk(Buffer.from("dropped\n"))).toBe(false);
+    });
+
     it("reports a dead log directory once and then stops trying", async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "engine-log-"));
         vi.stubEnv("APP_SERVER_LOGS", dir);
