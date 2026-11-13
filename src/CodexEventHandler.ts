@@ -684,6 +684,18 @@ export class CodexEventHandler {
                         await this.session.update(update, this.subagents.notificationSessionId(notification));
                     }
                 }
+                // A compaction that never reported a completion must not spin forever: the client shows a tool call,
+                // so it gets a terminal status with a readable reason at the end of its turn.
+                {
+                    const endedStatus = notification.params.turn.status === "interrupted" ? "cancelled" : "failed";
+                    const sessionId = this.subagents.notificationSessionId(notification);
+                    for (const toolCallId of this.sessionState.toolCallReports.drainOpenLegacyCompactions(sessionId)) {
+                        await this.session.update(
+                            this.renderer.render(CompactionReporter.ended(toolCallId, endedStatus)),
+                            sessionId,
+                        );
+                    }
+                }
                 this.sessionState.toolCallReports.releaseOpen(this.subagents.notificationSessionId(notification));
                 // An item that missed its item/completed (e.g. dropped by a provider restart
                 // mid-turn) must not linger past its own turn and get failed by a later restart.
@@ -1012,13 +1024,20 @@ export class CodexEventHandler {
             case "agentMessage":
                 this.rememberAgentMessagePhase(event.item, event.threadId);
                 return null;
-            case "contextCompaction":
-                return this.supportsCompaction
-                    ? this.sessionState.compactions.start(
+            case "contextCompaction": {
+                if (this.supportsCompaction) {
+                    return this.sessionState.compactions.start(
                         this.subagents.notificationSessionId({method: "item/started", params: event}),
                         event.turnId, event.item.id,
-                    )
-                    : this.renderer.render(CompactionReporter.started(event.item));
+                    );
+                }
+                // Legacy clients only see the tool call, so this is the id they will show as running.
+                this.sessionState.toolCallReports.noteLegacyCompaction(
+                    this.subagents.notificationSessionId({method: "item/started", params: event}),
+                    event.item.id,
+                );
+                return this.renderer.render(CompactionReporter.started(event.item));
+            }
             case "subAgentActivity":
                 return this.renderer.render(this.subagents.legacyActivityStarted(event.item));
             case "sleep":
@@ -1068,13 +1087,25 @@ export class CodexEventHandler {
                 return await this.createCompletedPlanEvent(event.item);
             case "exitedReviewMode":
                 return this.createExitedReviewModeEvent(event.item);
-            case "contextCompaction":
-                return this.supportsCompaction
-                    ? this.sessionState.compactions.complete(
+            case "contextCompaction": {
+                if (this.supportsCompaction) {
+                    return this.sessionState.compactions.complete(
                         this.subagents.notificationSessionId({method: "item/completed", params: event}),
                         event.turnId, event.item.id,
-                    )
-                    : this.renderer.render(CompactionReporter.completed(event.item));
+                    );
+                }
+                const sessionId = this.subagents.notificationSessionId({method: "item/completed", params: event});
+                const announced = this.sessionState.toolCallReports.resolveLegacyCompaction(sessionId, event.item.id);
+                if (announced?.reused === true) {
+                    // Engines before 0.18.50 built a fresh item for the completion; closing the announced id keeps
+                    // the client from showing a spinner next to a completion that no tool call opened.
+                    logger.log(
+                        `compaction completion ${event.item.id} closes the announced tool call ${announced.toolCallId}`,
+                    );
+                    return this.renderer.render(CompactionReporter.completedAnnounced(announced.toolCallId));
+                }
+                return this.renderer.render(CompactionReporter.completed(event.item));
+            }
             case "subAgentActivity":
                 return this.renderer.render(this.subagents.legacyActivityCompleted(event.item));
             //ignored types

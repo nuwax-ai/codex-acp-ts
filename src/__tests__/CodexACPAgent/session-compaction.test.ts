@@ -344,6 +344,37 @@ describe("session compaction", () => {
         );
     });
 
+    it("closes the announced compaction when the engine completes a different item id", async () => {
+        // Engines before 0.18.50 build a fresh item for the completion; the client only knows the announced id,
+        // so that entry must end instead of spinning next to a completion nothing opened.
+        const fixture = await createFixture({});
+        await sendNotifications(fixture, [
+            compactionStarted("announced-compaction"),
+            compactionCompleted("engine-completion"),
+        ]);
+
+        const dump = await fixture.getAcpConnectionDump([]);
+        const updates = JSON.stringify(dump);
+        expect(updates).not.toContain("engine-completion");
+        expect(updates).toContain("announced-compaction");
+        expect(updates).toContain("Context compaction completed.");
+    });
+
+    it("ends a compaction that never completes when its turn ends", async () => {
+        const fixture = await createFixture({});
+        await sendNotifications(fixture, [
+            compactionStarted("orphan-compaction"),
+            {
+                method: "turn/completed",
+                params: {threadId: sessionId, turn: {id: turnId, status: "interrupted", items: [], error: null}},
+            },
+        ]);
+
+        const dump = JSON.stringify(await fixture.getAcpConnectionDump([]));
+        expect(dump).toContain("orphan-compaction");
+        expect(dump).toContain("Context compaction cancelled.");
+    });
+
     it("replays a completed boundary between its neighboring messages", async () => {
         const fixture = createCodexMockTestFixture();
         const agent = fixture.getCodexAcpAgent();

@@ -398,7 +398,16 @@
         "toolCallId": "item-context-compaction-1",
         "kind": "think",
         "title": "Compact conversation",
-        "status": "completed"
+        "status": "completed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Context compaction completed."
+            }
+          }
+        ]
       }
     }
   ]

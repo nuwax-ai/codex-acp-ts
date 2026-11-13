@@ -307,3 +307,39 @@ describe("ToolCallReports large fields", () => {
             .toBeNull();
     });
 });
+
+describe("ToolCallReports legacy compactions", () => {
+    it("closes the announced tool call when the engine reports a different item id", () => {
+        const reports = new ToolCallReports();
+        reports.noteLegacyCompaction("s", "start-id");
+
+        // Engines before 0.18.50 build a fresh item for the completion; the announced id is what the client shows.
+        expect(reports.resolveLegacyCompaction("s", "completion-id")).toEqual({toolCallId: "start-id", reused: true});
+        expect(reports.drainOpenLegacyCompactions("s")).toEqual([]);
+    });
+
+    it("keeps the reported id when the engine completes the item it announced", () => {
+        const reports = new ToolCallReports();
+        reports.noteLegacyCompaction("s", "compact-1");
+
+        expect(reports.resolveLegacyCompaction("s", "compact-1")).toEqual({toolCallId: "compact-1", reused: false});
+    });
+
+    it("does not guess when several compactions are open", () => {
+        const reports = new ToolCallReports();
+        reports.noteLegacyCompaction("s", "compact-1");
+        reports.noteLegacyCompaction("s", "compact-2");
+
+        expect(reports.resolveLegacyCompaction("s", "unknown")).toBeNull();
+        expect(reports.resolveLegacyCompaction("s", "compact-1")).toEqual({toolCallId: "compact-1", reused: false});
+        expect(reports.drainOpenLegacyCompactions("s")).toEqual(["compact-2"]);
+    });
+
+    it("forgets open compactions at turn end so the next turn starts clean", () => {
+        const reports = new ToolCallReports();
+        reports.noteLegacyCompaction("s", "compact-1");
+
+        expect(reports.drainOpenLegacyCompactions("s")).toEqual(["compact-1"]);
+        expect(reports.drainOpenLegacyCompactions("s")).toEqual([]);
+    });
+});

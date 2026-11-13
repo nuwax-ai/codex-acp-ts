@@ -31,7 +31,16 @@
       "update": {
         "sessionUpdate": "tool_call_update",
         "toolCallId": "context-compaction-id",
-        "status": "completed"
+        "status": "completed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Context compaction completed."
+            }
+          }
+        ]
       }
     }
   ]

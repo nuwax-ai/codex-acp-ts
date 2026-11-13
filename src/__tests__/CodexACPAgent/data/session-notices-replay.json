@@ -25,7 +25,16 @@
           "toolCallId": "history-compaction",
           "kind": "think",
           "title": "Compact conversation",
-          "status": "completed"
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Context compaction completed."
+              }
+            }
+          ]
         }
       }
     ]

@@ -75,6 +75,49 @@ export class ToolCallReports {
         this.unfinishedToolCalls.delete(sessionId);
     }
 
+    /**
+     * Legacy clients see a compaction as a tool call. Its completion can arrive under a different item id
+     * (engine fixed in 0.18.50; released engines still do it), so the announced id is tracked here and the
+     * completion is matched against it instead of opening a second entry.
+     */
+    private readonly openLegacyCompactions = new Map<string, Set<string>>();
+
+    /** Records the compaction tool call the client is now showing as running. */
+    noteLegacyCompaction(sessionId: string, toolCallId: string): void {
+        const ids = this.openLegacyCompactions.get(sessionId);
+        if (ids === undefined) this.openLegacyCompactions.set(sessionId, new Set([toolCallId]));
+        else ids.add(toolCallId);
+    }
+
+    /**
+     * Resolves which announced compaction a terminal report closes.
+     *
+     * `reused` means the engine reported a different item id for a compaction the adapter already announced:
+     * the announced id is the one the client displays, so that is the entry to end.
+     */
+    resolveLegacyCompaction(sessionId: string, reportedId: string): {toolCallId: string; reused: boolean} | null {
+        const ids = this.openLegacyCompactions.get(sessionId);
+        if (ids === undefined) return null;
+        if (ids.delete(reportedId)) {
+            if (ids.size === 0) this.openLegacyCompactions.delete(sessionId);
+            return {toolCallId: reportedId, reused: false};
+        }
+        if (ids.size !== 1) return null;
+        const announced = [...ids][0];
+        if (announced === undefined) return null;
+        ids.delete(announced);
+        this.openLegacyCompactions.delete(sessionId);
+        return {toolCallId: announced, reused: true};
+    }
+
+    /** The still-open compactions of a session, forgetting them. The caller ends them so no spinner survives the turn. */
+    drainOpenLegacyCompactions(sessionId: string): string[] {
+        const ids = this.openLegacyCompactions.get(sessionId);
+        if (ids === undefined) return [];
+        this.openLegacyCompactions.delete(sessionId);
+        return [...ids];
+    }
+
     /** The ids of the tool calls of `sessionId` that the client shows as pending or running. */
     unfinished(sessionId: string): string[] {
         return [...this.unfinishedToolCalls.get(sessionId) ?? []];
