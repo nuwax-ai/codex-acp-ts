@@ -177,6 +177,10 @@ The fork writes the text instead, into its own file next to the adapter log:
   then not even stringified and the adapter falls back to `[ERR] {bytes: N}` lines.
 - A failing write (log directory removed, disk full) reports once and then stops trying for the
   rest of the process: one dead directory must not emit an error per stderr chunk.
+- Chunks are decoded with `StringDecoder`, so a multi-byte UTF-8 character (or an ANSI escape)
+  split across two stderr chunks is not replaced by U+FFFD. `attachLogs` asks
+  `logger.engineChunk(buffer)`; when it reports the text was not captured (capture off, or the
+  log went away) the adapter falls back to an `[ERR] {bytes: N}` line instead of dropping it.
 - **Sensitivity**: engine logs contain workspace content and request URLs. Credentials are not
   written by design (the adapter never stringifies protocol payloads), but the engine's own
   lines are verbatim, so treat the log directory as sensitive data.
