@@ -48,6 +48,7 @@ These files do not exist upstream. They never conflict on merge.
 | `scripts/acp-validation/` | Mock-wire validation scripts. |
 | `scripts/live-validation/` | Live engine validation scripts. |
 | `my-docs/` | User guide (`usage-guide.md`) and dev testing guide. |
+| `src/__tests__/EngineLog.test.ts` | Contract tests for the fork's `engine.<date>.log` capture (see "Engine log capture"). |
 | `.github/workflows/publish-beta.yml` | Beta publish workflow. |
 | `.github/workflows/version-bump.yml` | Version bump workflow. |
 
@@ -111,6 +112,26 @@ the fork changes and how to minimise future conflict area.
 - **Merge strategy**: always keep the fork version; cherry-pick upstream CI
   fixes manually if needed.
 
+### `src/Logger.ts`
+
+- Adds `engine(chunk)` / `engineStderrEnabled`: engine stderr text is appended to
+  `<log dir>/engine.<YYYY-MM-DD>.log` instead of being dropped (see "Engine log capture"
+  below). `NUWAX_LOG_ENGINE_STDERR=0` opts out; ANSI escapes are stripped.
+- Renames the adapter's own log from `app-server.log` to `app-server.<YYYY-MM-DD>.log`
+  (date rolling only — no size-based rotation).
+- **Merge strategy**: take upstream's `log`/`error`/`formatError` bodies verbatim; keep
+  only the new `engine*` members, the dated filename, and the four helpers at the bottom
+  (`formatLogDay`, `stripAnsi`, plus the switch constant).
+
+### `src/CodexJsonRpcConnection.ts`
+
+- `attachLogs()` keeps the byte-count record for stdin/stdout (protocol payloads carry
+  credentials) and additionally mirrors **stderr text** into the engine log when
+  `logger.engineStderrEnabled`; the chunk is only stringified in that branch.
+- **Merge strategy**: the only delta inside `attachLogs` is the guarded
+  `if (logger.engineStderrEnabled) logger.engine(data.toString("utf8"));` line. Upstream's
+  "never stringify traffic" rule must stay for stdin/stdout.
+
 ### `.jsonl` test fixtures (`src/__tests__/scenarios/data/air/`)
 
 - One-line metadata changes caused by upstream schema bumps.
@@ -132,6 +153,31 @@ readable English result text.
   before harness 0.18.50 report the completion under a different item id, the adapter remembers the
   announced id and closes that entry instead of opening a second one; a compaction that never completes is
   ended at turn end with `Context compaction completed.` / `failed.` / `cancelled.`.
+
+## Engine log capture (fork behaviour)
+
+The engine (`nuwax-harness`, Rust `tracing`) only writes to **stderr**; the app-server protocol
+keeps it off stdout. Upstream's adapter counted those chunks as bytes and discarded the text, so
+an operator's log directory held nothing about engine decisions — a 2026-11-13 session left a
+91 MB `app-server.log` whose one million lines were all `[ERR] {"bytes":N}`.
+
+The fork writes the text instead, into its own file next to the adapter log:
+
+| File | Contents |
+|---|---|
+| `app-server.<YYYY-MM-DD>.log` | Adapter traffic: `[IN]`/`[OUT]` byte counts, `[ERR]` byte counts, `[SYS]` lifecycle lines. |
+| `engine.<YYYY-MM-DD>.log` | Engine stderr verbatim (ANSI stripped): `tracing` lines from `RUST_LOG`. |
+
+- Both roll **by local calendar date only**; there is no size-based rotation, so a single day
+  always maps to a single file per stream.
+- The directory is `$APP_SERVER_LOGS`, falling back to `NUWAX_LOG_DIR` / `CODEX_LOG_DIR`. The
+  Electron client points it at its own log directory, so both files sit next to
+  `electron-dev.log` and can be exported as one folder.
+- `NUWAX_LOG_ENGINE_STDERR=0` (also `false`/`no`/`off`) disables engine capture; the chunk is
+  then not even stringified.
+- **Sensitivity**: engine logs contain workspace content and request URLs. Credentials are not
+  written by design (the adapter never stringifies protocol payloads), but the engine's own
+  lines are verbatim, so treat the log directory as sensitive data.
 
 ## Environment variables
 
@@ -171,6 +217,7 @@ spellings. Both set to different values → startup error (split-brain guard).
 | `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | Crash window duration in ms. |
 | `NUWAX_CONFIG` | Extra config forwarded to the engine. |
 | `NUWAX_LOG_DIR` / `CODEX_LOG_DIR` | Adapter log directory; `APP_SERVER_LOGS` wins when both are set. |
+| `NUWAX_LOG_ENGINE_STDERR` | `0`/`false`/`no`/`off` disables the engine stderr capture (`engine.<date>.log`); anything else keeps it on. |
 
 Engine-side switches (`NUWAX_IMAGE_MAX_BYTES`, `NUWAX_REQUEST_IMAGE_MAX_BYTES`,
 `NUWAX_TOOL_SEARCH`, `NUWAX_OPENAI_EGRESS`, `NUWAX_AUTO_COMPACT_*`, `NUWAX_HOME`) are read

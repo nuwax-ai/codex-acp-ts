@@ -174,7 +174,7 @@ npm test
 | `CODEX_BRIDGE`/`CODEX_WIRE_API` 报错 | 组合不合法:`native` 只配 Responses,`genai` 只配 chat/anthropic;anthropic 不设 wire |
 | 启动报 "both set but differ" | 同一变量 NUWAX_/CODEX_ 双前缀都设且值不同;按报错里点名的两个变量删掉一个 |
 | 型号 404 / unknown model | 模型 ID 与平台不符(注意大小写);确认基址与协议同族 |
-| 日志 | 设 `APP_SERVER_LOGS=<目录>`,日志只记字节数不含凭据,可安全粘贴 |
+| 日志 | 设 `APP_SERVER_LOGS=<目录>`。`app-server.<日期>.log` 记适配器收发的字节数(不含凭据),`engine.<日期>.log` 记引擎 tracing 文本(含工作区信息,外发前先过一遍);`NUWAX_LOG_ENGINE_STDERR=0` 关闭后者 |
 
 ## 7. 输出上限(`NUWAX_MAX_OUTPUT_TOKENS`)
 

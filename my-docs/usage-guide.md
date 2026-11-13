@@ -460,7 +460,7 @@ nuwax-harness-acp-ts --version
 | `MODEL_PROVIDER` | 无活动网关时的 provider 选择;**不要**与环境网关同时表达矛盾选择 |
 | `INITIAL_AGENT_MODE` | 初始模式:`read-only` / `workspace-write` / `agent` / `agent-full-access` |
 | `NO_BROWSER` | 设置后隐藏浏览器登录入口 |
-| `APP_SERVER_LOGS` / `NUWAX_LOG_DIR` | 适配器日志目录(两者同义,`APP_SERVER_LOGS` 优先)。日志不包含 Key 与原始协议内容,可安全粘贴提问 |
+| `APP_SERVER_LOGS` / `NUWAX_LOG_DIR` | 日志目录(两者同义,`APP_SERVER_LOGS` 优先)。每天两个文件:`app-server.<日期>.log`(适配器收发,只记字节数)与 `engine.<日期>.log`(引擎 tracing 文本)。协议流量不含 Key 原文;引擎日志含工作内容,按敏感数据管理 |
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` | 可选运维参数:引擎 app-server 在崩溃窗口内自动重启的次数上限(默认 `5`),超过后停止自动重启 |
 | `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | 可选运维参数:上述崩溃计数的时间窗口,毫秒(默认 `300000`,即 5 分钟) |
 
@@ -576,7 +576,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 上下文裁剪异常 | 上下文窗口变量未设或与实际不符;输出、文本和图片都占窗口 |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic;单独设 bridge 不设 base URL 会报错 |
 | 宿主发送了 `providers/set` 或显式 `authenticate` | 会按优先级**替换**环境网关及其凭据;想继续用部署环境,不要让宿主主动改登录方式 |
-| 日志排查 | 设 `APP_SERVER_LOGS=<目录>`(或 `NUWAX_LOG_DIR=<目录>`)后重试,日志里只有字节数不含凭据,可安全粘贴提问 |
+| 日志排查 | 设 `APP_SERVER_LOGS=<目录>`(或 `NUWAX_LOG_DIR=<目录>`)后重试,查 `engine.<日期>.log`(引擎行为,含 tracing 文本)与 `app-server.<日期>.log`(适配器收发字节数)。引擎日志不由 `RUST_LOG` 以外的开关控制;不想要可设 `NUWAX_LOG_ENGINE_STDERR=0`。发出去前先过一遍内容,引擎日志含工作区信息 |
 
 ---
 
@@ -635,4 +635,5 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | `NUWAX_CONFIG` | ACP | 额外会话配置(JSON) | 无 |
 | `NUWAX_LOG_DIR` | ACP | 适配器日志目录 | 关闭 |
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` / `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | ACP | 引擎 app-server 崩溃重启上限 / 窗口 | 5 / 300000 |
+| `NUWAX_LOG_ENGINE_STDERR` | ACP | `0`/`false`/`no`/`off` 关闭引擎 stderr 落盘(`engine.<日期>.log`) | 开启 |
 | `MODEL_PROVIDER` / `INITIAL_AGENT_MODE` / `NO_BROWSER` / `APP_SERVER_LOGS` | ACP | 无网关时的 provider、初始模式、隐藏登录、日志目录 | — |
