@@ -574,7 +574,7 @@ export class CodexEventHandler {
                 sessionId,
                 turn.id,
                 turn.status === "interrupted" ? "cancelled" : "failed",
-                turn.error?.message ?? "Codex ended the turn before compaction completed.",
+                turn.error?.message ?? "nuwax-harness ended the turn before compaction completed.",
             );
         } else if (notification.method === "error" && !notification.params.willRetry) {
             updates = this.sessionState.compactions.finishTurn(

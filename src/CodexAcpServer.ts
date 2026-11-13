@@ -1826,7 +1826,7 @@ export class CodexAcpServer {
      */
     private async finishOutstandingToolCalls(session: SessionState): Promise<void> {
         const updates = session.openToolCalls.finishOutstanding(
-            "Tool call failed: the Codex process exited before it finished.",
+            "Tool call failed: the nuwax-harness process exited before it finished.",
         );
         if (updates.length === 0) {
             return;
