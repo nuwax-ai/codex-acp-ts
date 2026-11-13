@@ -226,7 +226,7 @@ describe("agent file-change report lifecycle", () => {
                     paths: ["/workspace/src/Main.kt"],
                     declaredComplete: false,
                     truncated: false,
-                    uncertainty: "Codex turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
+                    uncertainty: "nuwax-harness turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
                 },
             }}},
         }]);

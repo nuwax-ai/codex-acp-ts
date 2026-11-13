@@ -67,7 +67,7 @@ export class McpOauthCompletions {
 
     /** Rejects every wait, now and later, because the Codex connection closed. */
     dispose(): void {
-        this.closedError ??= new Error("Codex connection closed during the MCP server sign-in.");
+        this.closedError ??= new Error("nuwax-harness connection closed during the MCP server sign-in.");
         for (const waiters of [...this.waiters.values()]) {
             for (const waiter of [...waiters]) {
                 waiter.reject(this.closedError);

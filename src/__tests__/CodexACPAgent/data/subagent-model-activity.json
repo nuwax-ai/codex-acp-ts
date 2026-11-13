@@ -17,7 +17,7 @@
         {
           "id": "model",
           "name": "Model",
-          "description": "Model Codex uses for the subagent",
+          "description": "Model nuwax-harness uses for the subagent",
           "category": "model",
           "type": "select",
           "currentValue": "gpt-5.2-codex",

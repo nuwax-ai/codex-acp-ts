@@ -90,7 +90,7 @@ export function isAppServerUnavailableError(error: unknown): error is AppServerU
 /** The error of a request that ran on a child that ended. */
 export function appServerExitedError(exit: AppServerExit, restartHint: string): AppServerUnavailableError {
     const stderr = exit.stderrTail.trim();
-    const message = `The Codex app-server ${describeExit(exit)}. ${restartHint}${stderr ? `\n${stderr}` : ""}`;
+    const message = `The nuwax-harness app-server ${describeExit(exit)}. ${restartHint}${stderr ? `\n${stderr}` : ""}`;
     return new AppServerUnavailableError(message, {
         exitCode: exit.code,
         signal: exit.signal,
@@ -101,12 +101,12 @@ export function appServerExitedError(exit: AppServerExit, restartHint: string): 
 /**
  * The error of a request that ran on a child that ended before its `initialize` handshake succeeded, such as one that
  * rejected its startup config. It promises no restart, since a new app-server would read the same config, and it
- * keeps the wording of the adapter before the recovery: "Codex process has exited with code 1:" and the stderr tail.
+ * keeps the wording of the adapter before the recovery: "nuwax-harness process has exited with code 1:" and the stderr tail.
  */
 export function appServerStartupExitError(exit: AppServerExit): AppServerUnavailableError {
     const stderr = exit.stderrTail.trim();
     const described = exit.error === undefined && exit.signal === null ? `has ${describeExit(exit)}` : describeExit(exit);
-    return new AppServerUnavailableError(`Codex process ${described}${stderr ? `:\n${stderr}` : ""}`, {
+    return new AppServerUnavailableError(`nuwax-harness process ${described}${stderr ? `:\n${stderr}` : ""}`, {
         exitCode: exit.code,
         signal: exit.signal,
         restartable: true,

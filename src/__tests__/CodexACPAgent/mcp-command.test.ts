@@ -485,7 +485,7 @@ describe("/mcp command", () => {
         await vi.waitFor(() => expect(pendingStartupWaits(mockFixture)).toBe(1));
         mockFixture.getCodexAppServerClient().connection.dispose();
 
-        await expect(prompt).rejects.toThrow("Codex connection closed during the MCP server startup.");
+        await expect(prompt).rejects.toThrow("nuwax-harness connection closed during the MCP server startup.");
         expect(pendingStartupWaits(mockFixture)).toBe(0);
         expect(messageText(mockFixture)).toBe("");
     });

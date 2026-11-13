@@ -210,7 +210,7 @@ export class CodexAcpClient {
     }
 
     private readonly defaultClientInfo: ClientInfo = {
-        name: `${packageJson.name}`, title: "Codex ACP", version: `${packageJson.version}`
+        name: `${packageJson.name}`, title: "Nuwax Harness ACP", version: `${packageJson.version}`
     };
 
     async initialize(request: Pick<acp.InitializeRequest, "clientInfo">): Promise<void> {
@@ -877,7 +877,7 @@ export class CodexAcpClient {
 
         const codexModels = await this.fetchAvailableModels();
         if (codexModels.length === 0 && !this.isNarrowedByGateway()) {
-            throw new Error("Codex did not return any models");
+            throw new Error("nuwax-harness did not return any models");
         }
         const currentModelId = this.createModelId(codexModels, this.effectiveModel(response.model), response.reasoningEffort).toString();
         return {
@@ -964,7 +964,7 @@ export class CodexAcpClient {
             if (!unloaded) {
                 throw RequestError.invalidParams(
                     undefined,
-                    "Codex kept the existing thread loaded; systemPrompt could not be changed. Retry when idle",
+                    "nuwax-harness kept the existing thread loaded; systemPrompt could not be changed. Retry when idle",
                 );
             }
             return response;
@@ -1002,7 +1002,7 @@ export class CodexAcpClient {
                     // False can mean either "already gone" or a failed stop. Verify which before closing.
                     for await (const page of this.codexClient.backgroundTerminalPages(threadId)) {
                         if (page.some(current => current.processId === terminal.processId)) {
-                            throw new Error(`Codex could not stop background terminal ${terminal.processId}`);
+                            throw new Error(`nuwax-harness could not stop background terminal ${terminal.processId}`);
                         }
                     }
                 }

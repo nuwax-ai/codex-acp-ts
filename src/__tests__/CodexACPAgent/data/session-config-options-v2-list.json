@@ -65,7 +65,7 @@
     {
       "configId": "collaboration_mode",
       "name": "Collaboration mode",
-      "description": "How Codex collaborates for subsequent turns",
+      "description": "How nuwax-harness collaborates for subsequent turns",
       "category": "collaboration_mode",
       "type": "select",
       "currentValue": "default",
@@ -84,7 +84,7 @@
     {
       "configId": "model",
       "name": "Model",
-      "description": "Model Codex uses for the session",
+      "description": "Model nuwax-harness uses for the session",
       "category": "model",
       "type": "select",
       "currentValue": "fast-model",

@@ -66,7 +66,7 @@ export function createModelConfigOption(
     return {
         id: MODEL_CONFIG_ID,
         name: "Model",
-        description: "Model Codex uses for the session",
+        description: "Model nuwax-harness uses for the session",
         category: "model",
         type: "select",
         currentValue: currentBaseModelId,
@@ -135,7 +135,7 @@ export function createSubagentModelConfigOption(
     return {
         id: MODEL_CONFIG_ID,
         name: "Model",
-        description: "Model Codex uses for the subagent",
+        description: "Model nuwax-harness uses for the subagent",
         category: "model",
         type: "select",
         currentValue: option.value,

@@ -28,7 +28,7 @@ describe.skipIf(process.env["RUN_E2E_TESTS"] !== "true")("ACP hook review", () =
             CODEX_CONFIG: JSON.stringify({hooks: {SessionStart: "invalid"}}),
         });
         try {
-            expect((failure as Error).message).toMatch(/Codex process has exited[\s\S]*hooks/);
+            expect((failure as Error).message).toMatch(/nuwax-harness process has exited[\s\S]*hooks/);
         } finally {
             await fixture.dispose();
         }

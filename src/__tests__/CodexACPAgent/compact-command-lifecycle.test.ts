@@ -124,7 +124,7 @@ describe("compact command lifecycle", () => {
         await Promise.resolve();
         close();
 
-        await expect(pending).rejects.toThrow("Codex connection closed during compaction.");
+        await expect(pending).rejects.toThrow("nuwax-harness connection closed during compaction.");
         expect(dispose).toHaveBeenCalledOnce();
     });
 
@@ -152,7 +152,7 @@ describe("compact command lifecycle", () => {
             await expect(start.mock.results[0]?.value).resolves.toEqual({});
             codex.process.kill();
 
-            await expect(pending).rejects.toThrow("Codex connection closed during compaction.");
+            await expect(pending).rejects.toThrow("nuwax-harness connection closed during compaction.");
         } finally {
             codex?.process.kill();
             rmSync(dir, {recursive: true, force: true});

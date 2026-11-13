@@ -32,6 +32,6 @@ describe('CodexACPAgent - process exit error', () => {
         await once(connection.process, 'close'); // process exited and stderr flushed
 
         await expect(agent.initialize({ protocolVersion: acp.PROTOCOL_VERSION }))
-            .rejects.toThrow("Codex process has exited with code 1:\ncodex: failed to launch");
+            .rejects.toThrow("nuwax-harness process has exited with code 1:\ncodex: failed to launch");
     }, 15_000); // A real process start can take more than 5 s in a full serial run.
 });

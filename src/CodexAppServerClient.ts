@@ -626,7 +626,7 @@ export class CodexAppServerClient {
         // The request acknowledgement can still be pending when the connection closes.
         void completed.catch(() => {});
         // The process exit disposes the connection and does not close it, so both events end the wait.
-        const rejectClosed = () => rejectCompleted(new Error("Codex connection closed during compaction."));
+        const rejectClosed = () => rejectCompleted(new Error("nuwax-harness connection closed during compaction."));
         const closed = this.connection.onClose?.(rejectClosed);
         const disposed = this.connection.onDispose?.(rejectClosed);
         // Item completion reports progress, but Codex still owns the turn until turn/completed.

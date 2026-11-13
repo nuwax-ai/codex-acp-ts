@@ -12,7 +12,7 @@ export function createCollaborationModeConfigOption(currentValue: ModeKind): acp
     return {
         id: COLLABORATION_MODE_CONFIG_ID,
         name: "Collaboration mode",
-        description: "How Codex collaborates for subsequent turns",
+        description: "How nuwax-harness collaborates for subsequent turns",
         category: "collaboration_mode",
         type: "select",
         currentValue,

@@ -48,12 +48,12 @@ describe("McpStartupTracker", () => {
         const signIn = client.mcpOauthCompletions.await("fs", "thread-id");
         codex.process.kill();
 
-        await expect(startup).rejects.toThrow("Codex connection closed during the MCP server startup.");
-        await expect(signIn).rejects.toThrow("Codex connection closed during the MCP server sign-in.");
+        await expect(startup).rejects.toThrow("nuwax-harness connection closed during the MCP server startup.");
+        await expect(signIn).rejects.toThrow("nuwax-harness connection closed during the MCP server sign-in.");
         expect(waiterCount(client.mcpStartup)).toBe(0);
         expect(oauthWaiterCount(client.mcpOauthCompletions)).toBe(0);
         await expect(client.mcpStartup.await(["fs"], client.mcpStartup.version(), {threadId: "thread-id"}))
-            .rejects.toThrow("Codex connection closed during the MCP server startup.");
+            .rejects.toThrow("nuwax-harness connection closed during the MCP server startup.");
     });
 
     it("forgets the states of a thread and keeps the global states", () => {

@@ -83,7 +83,7 @@ describe("agent file-change report", () => {
             ],
             declaredComplete: false,
             truncated: false,
-            uncertainty: "Codex turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
+            uncertainty: "nuwax-harness turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
         });
     });
 
@@ -99,7 +99,7 @@ describe("agent file-change report", () => {
             paths: [],
             declaredComplete: false,
             truncated: false,
-            uncertainty: "Codex turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
+            uncertainty: "nuwax-harness turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
         });
     });
 

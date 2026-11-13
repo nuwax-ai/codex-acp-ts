@@ -24,7 +24,7 @@ const INVALID_ENCRYPTED_CONTENT_MESSAGE = "The current provider can't read this 
  * The app-server error has no cause.
  */
 function workspaceRoutingUnavailableMessage(text: string): string {
-    return "Codex can't reach chatgpt.com to look up your ChatGPT workspace. "
+    return "nuwax-harness can't reach chatgpt.com to look up your ChatGPT workspace. "
         + "Check your network connection and any proxy, VPN, or firewall that blocks chatgpt.com, then try again. "
         + `(${text})`;
 }

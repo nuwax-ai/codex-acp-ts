@@ -137,7 +137,7 @@ export class McpStartupTracker {
 
     /** Rejects every wait, now and later, because the Codex connection closed. */
     dispose(): void {
-        this.closedError ??= new Error("Codex connection closed during the MCP server startup.");
+        this.closedError ??= new Error("nuwax-harness connection closed during the MCP server startup.");
         for (const waiter of [...this.waiters]) {
             waiter.reject(this.closedError);
         }

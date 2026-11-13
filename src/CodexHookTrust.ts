@@ -10,7 +10,7 @@ export type CodexHookIdentity = {key: string; currentHash: string};
 /** Lists the hooks passed at App Server startup, with Codex warnings and errors for the directory. */
 export async function listCodexHooks(client: CodexAppServerClient, cwd: string): Promise<HooksListEntry> {
     const [entry] = (await client.hooksList({cwds: [cwd]})).data;
-    if (entry === undefined) throw new Error("Codex could not list hooks for the requested directory");
+    if (entry === undefined) throw new Error("nuwax-harness could not list hooks for the requested directory");
     return {...entry, hooks: entry.hooks.filter(hook => hook.source === "sessionFlags")};
 }
 
@@ -26,7 +26,7 @@ export async function trustCodexHooks(
     const current = (await listCodexHooks(client, cwd)).hooks;
     const edits = requested.map(request => {
         const hook = isListed(current, request);
-        if (hook === undefined) throw new Error("A Codex hook changed before trust was recorded");
+        if (hook === undefined) throw new Error("A nuwax-harness hook changed before trust was recorded");
         return hook;
     }).filter(hook => hook.trustStatus !== "trusted").map(hook => ({
         keyPath: `hooks.state.${JSON.stringify(hook.key)}.trusted_hash`,

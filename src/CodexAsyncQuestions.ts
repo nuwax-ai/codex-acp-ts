@@ -131,7 +131,7 @@ export class AsyncQuestionClient {
             update: createSessionNotice(
                 "warning",
                 "Answer not sent",
-                "Codex finished before your answer arrived. Send it as a new message if it still matters.",
+                "nuwax-harness finished before your answer arrived. Send it as a new message if it still matters.",
             ),
         });
     }
@@ -192,7 +192,7 @@ export class AsyncQuestionElicitations {
         const request: acp.CreateElicitationRequest = {
             sessionId: this.sessionId,
             mode: "form",
-            message: "Codex keeps working while you answer. An answer sent after it finishes is not delivered.",
+            message: "nuwax-harness keeps working while you answer. An answer sent after it finishes is not delivered.",
             // Questions are answered independently, as in Codex.
             requestedSchema: buildUserInputSchema(questions, this.clientCapabilities, false),
             _meta: {codex: {delivery: "async"}},

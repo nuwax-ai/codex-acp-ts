@@ -910,7 +910,7 @@ describe('Elicitation Events', () => {
                     sessionId,
                     toolCallId: 'request-user-input-1',
                     mode: 'form',
-                    message: 'Codex needs your input to continue.',
+                    message: 'nuwax-harness needs your input to continue.',
                     requestedSchema: {
                         type: 'object',
                         properties: {

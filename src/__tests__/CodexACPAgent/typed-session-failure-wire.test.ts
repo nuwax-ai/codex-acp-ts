@@ -97,7 +97,7 @@ describe("typed session failures over ACP transport", () => {
         await expect(fixture.client.request(acp.methods.agent.session.prompt, {
             sessionId: sessionState.sessionId,
             prompt: [{type: "text", text: "keep legacy rejection"}],
-        })).rejects.toThrow("Codex process has exited with code 1:\nlegacy process stderr");
+        })).rejects.toThrow("nuwax-harness process has exited with code 1:\nlegacy process stderr");
         expect(fixture.updates).toEqual([]);
     });
 

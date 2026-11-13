@@ -1,7 +1,7 @@
 {
   "v2 sse": {
     "code": -32602,
-    "message": "Invalid params: Codex doesn't support MCP SSE transport protocol"
+    "message": "Invalid params: nuwax-harness doesn't support MCP SSE transport protocol"
   },
   "v2 custom": {
     "code": -32602,
@@ -9,10 +9,10 @@
   },
   "v1 sse": {
     "code": -32602,
-    "message": "Invalid params: Codex doesn't support MCP SSE transport protocol"
+    "message": "Invalid params: nuwax-harness doesn't support MCP SSE transport protocol"
   },
   "v1 acp": {
     "code": -32602,
-    "message": "Invalid params: Codex doesn't support MCP ACP transport protocol"
+    "message": "Invalid params: nuwax-harness doesn't support MCP ACP transport protocol"
   }
 }

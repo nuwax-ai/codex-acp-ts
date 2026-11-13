@@ -7,7 +7,7 @@
         "sessionUpdate": "agent_message_chunk",
         "content": {
           "type": "text",
-          "text": "Logged out from Codex account."
+          "text": "Logged out from the nuwax-harness account."
         }
       }
     }

@@ -803,6 +803,7 @@ const CONNECTION_DEATH_MESSAGES = [
     "Connection is closed",
     "Pending response rejected since connection got disposed",
     "Codex connection closed",
+    "nuwax-harness connection closed",
 ];
 
 /** An error of vscode-jsonrpc or of the adapter's own waits that means: the connection to the app-server is gone. */

@@ -55,7 +55,7 @@ function printHelp() {
 
     Options:
       --client-name <name>       Client application name (default: "nuwax-codex-acp")
-      --client-title <title>     Client application title (default: "Nuwax Codex ACP")
+      --client-title <title>     Client application title (default: "Nuwax Harness ACP")
       --client-version <version> Client application version (default: "${packageJson.version}")
       --help, -h                 Show this help message
 
@@ -75,7 +75,7 @@ async function login(options: LoginOptions): Promise<boolean> {
     try {
         const clientInfo: ClientInfo = {
             name: options.clientName ?? "nuwax-codex-acp",
-                        title: options.clientTitle ?? "Nuwax Codex ACP",
+                        title: options.clientTitle ?? "Nuwax Harness ACP",
             version: options.clientVersion ?? packageJson.version,
         };
 

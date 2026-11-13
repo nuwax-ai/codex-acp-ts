@@ -14,7 +14,7 @@ export const AGENT_FILE_CHANGE_REPORT_MAX_TOTAL_BYTES = 256 * 1_024;
 export const AGENT_FILE_CHANGE_REPORT_MAX_UNCERTAINTY_LENGTH = 2_000;
 export const AGENT_FILE_CHANGE_REPORT_MAX_DIFF_BYTES = 8 * 1_024 * 1_024;
 
-const TURN_DIFF_UNCERTAINTY = "Codex turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.";
+const TURN_DIFF_UNCERTAINTY = "nuwax-harness turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.";
 
 export interface AgentFileChangeReportRequest {
     version: typeof AGENT_FILE_CHANGE_REPORT_VERSION;

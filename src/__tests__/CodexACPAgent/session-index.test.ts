@@ -1470,7 +1470,7 @@ describe("_session/batch_get", () => {
         Object.assign(new Error("Connection is inactive"), {code: -32096}),
         Object.assign(new Error("failed to send"), {code: -32099}),
         Object.assign(new Error("New upstream wording"), {code: -32600, data: {reason: "serverShuttingDown"}}),
-        new acp.RequestError(1001, "Codex process has exited"),
+        new acp.RequestError(1001, "nuwax-harness process has exited"),
     ])("rejects connection, process and shutdown failures: %s", async error => {
         const {agent, read} = await setup();
         read.mockRejectedValue(error);

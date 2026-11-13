@@ -48,7 +48,7 @@
         "type": "select",
         "configId": "collaboration_mode",
         "name": "Collaboration mode",
-        "description": "How Codex collaborates for subsequent turns",
+        "description": "How nuwax-harness collaborates for subsequent turns",
         "category": "collaboration_mode"
       },
       {
@@ -63,7 +63,7 @@
         "type": "select",
         "configId": "model",
         "name": "Model",
-        "description": "Model Codex uses for the session",
+        "description": "Model nuwax-harness uses for the session",
         "category": "model"
       },
       {
@@ -163,7 +163,7 @@
       },
       {
         "name": "logout",
-        "description": "Sign out of Codex. This option is available when you are logged in via ChatGPT.",
+        "description": "Sign out of nuwax-harness. This option is available when you are logged in via ChatGPT.",
         "input": null,
         "type": "command"
       }

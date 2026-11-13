@@ -239,7 +239,7 @@ function buildUserInputRequest(
         sessionId: params.threadId,
         toolCallId: params.itemId,
         mode: "form",
-        message: "Codex needs your input to continue.",
+        message: "nuwax-harness needs your input to continue.",
         requestedSchema: buildUserInputSchema(params.questions, clientCapabilities, true),
         _meta: {
             codex: {

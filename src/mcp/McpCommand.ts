@@ -214,7 +214,7 @@ export class McpCommand {
 }
 
 const RELOAD_NOTE = "Reloaded the MCP configuration of all open sessions. "
-    + "Codex restarted the servers that failed, stopped, or changed. "
+    + "nuwax-harness restarted the servers that failed, stopped, or changed. "
     + "A connected server with unchanged settings keeps its connection.";
 
 function startupErrors(result: McpStartupResult | null): Map<string, string> {

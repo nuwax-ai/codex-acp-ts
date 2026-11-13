@@ -5803,7 +5803,7 @@ export class CodexAcpServer {
                 await this.finishAllAsyncTasks("failed", "after the Codex process exited");
                 const stderr = this.getRecentStderr().trim();
                 const detail = stderr ? `:\n${stderr}` : "";
-                throw new RequestError(requestErrorCode, `Codex process has exited with code ${exitCode}${detail}`);
+                throw new RequestError(requestErrorCode, `nuwax-harness process has exited with code ${exitCode}${detail}`);
             }
             throw err;
         }

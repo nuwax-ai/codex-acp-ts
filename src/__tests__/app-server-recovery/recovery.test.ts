@@ -348,7 +348,7 @@ describe("app-server recovery", () => {
         server.child.die(1);
 
         const error = await initializing.then(() => null, (failure: unknown) => failure as acp.RequestError);
-        expect(error).toMatchObject({code: 1001, message: "Codex process has exited with code 1:\nError: invalid hooks config"});
+        expect(error).toMatchObject({code: 1001, message: "nuwax-harness process has exited with code 1:\nError: invalid hooks config"});
         expect(error?.message).not.toContain("starts it again");
     });
 

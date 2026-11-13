@@ -95,7 +95,7 @@
           },
           {
             "name": "logout",
-            "description": "Sign out of Codex. This option is available when you are logged in via ChatGPT.",
+            "description": "Sign out of nuwax-harness. This option is available when you are logged in via ChatGPT.",
             "input": null
           }
         ]

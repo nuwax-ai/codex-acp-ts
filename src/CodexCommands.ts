@@ -292,7 +292,7 @@ export class CodexCommands {
             },
             {
                 name: "logout",
-                description: "Sign out of Codex. This option is available when you are logged in via ChatGPT.",
+                description: "Sign out of nuwax-harness. This option is available when you are logged in via ChatGPT.",
                 input: null
             }
         ];
@@ -437,7 +437,7 @@ export class CodexCommands {
                 await this.runWithProcessCheck(() => this.codexAcpClient.logout());
                 await this.onLogout();
                 const session = new ACPSessionConnection(this.connection, sessionId);
-                await session.update(createAgentTextMessageChunk("Logged out from Codex account."));
+                await session.update(createAgentTextMessageChunk("Logged out from the nuwax-harness account."));
                 return { handled: true };
             }
             case "skills": {
