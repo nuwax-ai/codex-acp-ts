@@ -368,6 +368,12 @@ developer_instructions = """
 `subagent_developer_instructions` 提供全局兜底；顶层 `developer_instructions`
 只作用于主线程。
 
+**项目级配置** — 项目目录下放 **`.codex/`**（沿用上游约定，不是 `.nuwax-harness`）：
+`${PWD}/config.toml`、逐级父目录的 `.codex/config.toml`、git 仓库根的
+`.codex/config.toml` 三层都可覆盖任意字段（`[agents]` 角色、`[skills]`、provider
+等）。目录被显式标记 untrusted 时这些层加载但禁用。项目指令用
+`AGENTS.override.md` / `AGENTS.md`（沿目录树向上查找）。项目内技能经插件
+manifest 的 `./skills` 提供或在项目层 `[[skills.config]]` 用 `path` 选择器指向。
 **自定义模型** — `~/.nuwax-harness/models.d/*.toml` 逐字段覆盖目录外模型的
 窗口/档位/能力声明。
 
