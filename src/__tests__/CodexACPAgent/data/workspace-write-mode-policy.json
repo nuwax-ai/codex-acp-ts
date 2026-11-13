@@ -7,7 +7,7 @@
       "writableRoots": [
         "/test/extra"
       ],
-      "networkAccess": false,
+      "networkAccess": true,
       "excludeTmpdirEnvVar": false,
       "excludeSlashTmp": false
     }

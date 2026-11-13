@@ -52,14 +52,19 @@ export class AgentMode {
     static readonly WorkspaceWrite = new AgentMode(
         "workspace-write",
         "Workspace access",
-        "Edit workspace files; ask before writing outside the workspace or accessing the network.",
+        "Edit workspace files, run commands, and access the network; ask before writing outside the workspace.",
         "standard",
         "on-request",
         "user",
         {
             type: "workspaceWrite",
             writableRoots: [],
-            networkAccess: false,
+            // Fork (nuwax-codex, 2026-11-13): outbound network is part of the
+            // workspace-write baseline (matches the engine's
+            // `sandbox_workspace_write.network_access` default). Explicit
+            // `false` here would re-restrict every client session regardless
+            // of engine defaults.
+            networkAccess: true,
             excludeTmpdirEnvVar: false,
             excludeSlashTmp: false,
         },
@@ -75,7 +80,9 @@ export class AgentMode {
         {
             type: "workspaceWrite",
             writableRoots: [],
-            networkAccess: false,
+            // Fork (nuwax-codex, 2026-11-13): same network baseline as
+            // WorkspaceWrite — see the comment there.
+            networkAccess: true,
             excludeTmpdirEnvVar: false,
             excludeSlashTmp: false
         },

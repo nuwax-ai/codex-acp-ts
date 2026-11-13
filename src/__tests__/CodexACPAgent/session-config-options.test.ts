@@ -120,7 +120,7 @@ describe("Session config options", () => {
                 {
                     value: "workspace-write",
                     name: "Workspace access",
-                    description: "Edit workspace files; ask before writing outside the workspace or accessing the network.",
+                    description: "Edit workspace files, run commands, and access the network; ask before writing outside the workspace.",
                 },
                 {
                     value: "agent",
