@@ -364,10 +364,7 @@ describe("session compaction", () => {
         const fixture = await createFixture({});
         await sendNotifications(fixture, [
             compactionStarted("orphan-compaction"),
-            {
-                method: "turn/completed",
-                params: {threadId: sessionId, turn: {id: turnId, status: "interrupted", items: [], error: null}},
-            },
+            {method: "turn/completed", params: {threadId: sessionId, turn: createTurn("interrupted")}},
         ]);
 
         const dump = JSON.stringify(await fixture.getAcpConnectionDump([]));
