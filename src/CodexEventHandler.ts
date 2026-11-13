@@ -499,7 +499,12 @@ export class CodexEventHandler {
         for (const child of closingChildren) {
             if (this.subagents instanceof StandardSubagentEventRouter) {
                 const turnId = notification.method === "turn/completed" ? notification.params.turn.id : undefined;
-                for (const update of this.subagents.openToolCalls(child.threadId)?.finishOutstanding(turnId) ?? []) {
+                for (const update of this.subagents.openToolCalls(child.threadId)?.finishOutstanding(
+                    child.state === "cancelled"
+                        ? "Tool call cancelled."
+                        : "Tool call failed: its subagent session ended before it finished.",
+                    turnId,
+                ) ?? []) {
                     await this.session.update(update, child.sessionId);
                 }
             }
@@ -679,8 +684,14 @@ export class CodexEventHandler {
                 this.latestRootTurnId = this.sessionState.currentTurnId ?? this.latestRootTurnId;
                 this.sessionState.currentTurnId = null;
                 this.sessionState.interruptTurnId = null;
-                if (this.session.protocolVersion === 2 && notification.params.turn.status === "failed") {
-                    for (const update of this.sessionState.openToolCalls.finishOutstanding()) {
+                // Any turn that does not end normally must close the tool calls it left running: the client shows
+                // them as in progress, and an ACP v1 client has no compaction tracker to fall back on. Without this
+                // an interrupted `bash`/MCP call spins until the session is reloaded.
+                if (notification.params.turn.status !== "completed") {
+                    const message = notification.params.turn.status === "interrupted"
+                        ? "Tool call cancelled."
+                        : "Tool call failed: the turn ended before it finished.";
+                    for (const update of this.sessionState.openToolCalls.finishOutstanding(message)) {
                         await this.session.update(update, this.subagents.notificationSessionId(notification));
                     }
                 }

@@ -344,6 +344,43 @@ describe("session compaction", () => {
         );
     });
 
+    it("closes a running tool call when the turn is interrupted", async () => {
+        // ACP v1 clients have no compaction tracker: an interrupted `bash` call must still get a terminal status,
+        // otherwise its card says "running" until the session is reloaded.
+        const fixture = await createFixture({});
+        await sendNotifications(fixture, [
+            {
+                method: "item/started",
+                params: {threadId: sessionId, turnId, startedAtMs: 0, item: commandExecutionItem()},
+            },
+            {method: "turn/completed", params: {threadId: sessionId, turn: createTurn("interrupted")}},
+        ]);
+
+        const dump = JSON.stringify(await fixture.getAcpConnectionDump([]));
+        expect(dump).toContain("tool_call_update");
+        expect(dump).toContain("Tool call cancelled.");
+        expect(dump).toContain("terminal_exit");
+    });
+
+    it("does not fail tool calls of a turn that completed normally", async () => {
+        const fixture = await createFixture({});
+        await sendNotifications(fixture, [
+            {
+                method: "item/started",
+                params: {threadId: sessionId, turnId, startedAtMs: 0, item: commandExecutionItem()},
+            },
+            {
+                method: "item/completed",
+                params: {threadId: sessionId, turnId, completedAtMs: 1, item: {...commandExecutionItem(), status: "completed"}},
+            },
+            {method: "turn/completed", params: {threadId: sessionId, turn: createTurn("completed")}},
+        ]);
+
+        const dump = JSON.stringify(await fixture.getAcpConnectionDump([]));
+        expect(dump).not.toContain("Tool call cancelled.");
+        expect(dump).not.toContain("Tool call failed:");
+    });
+
     it("closes the announced compaction when the engine completes a different item id", async () => {
         // Engines before 0.18.50 build a fresh item for the completion; the client only knows the announced id,
         // so that entry must end instead of spinning next to a completion nothing opened.
@@ -655,5 +692,23 @@ function createThread(items: ThreadItem[]): Thread {
         gitInfo: null,
         name: null,
         turns: [{...createTurn("completed"), items}],
+    };
+}
+
+function commandExecutionItem() {
+    return {
+        type: "commandExecution" as const,
+        id: "command-1",
+        pluginId: null,
+        scriptPath: null,
+        command: "sleep 600",
+        cwd: "/workspace",
+        processId: "42",
+        source: "unifiedExecStartup" as const,
+        status: "inProgress" as const,
+        commandActions: [],
+        aggregatedOutput: null,
+        exitCode: null,
+        durationMs: null,
     };
 }

@@ -37,8 +37,13 @@ export class CodexSessionToolCalls {
         this.open.clear();
     }
 
-    /** Fails every still-open tool call and ends its terminal, if it had one. */
-    finishOutstanding(turnId?: string): UpdateSessionEvent[] {
+    /**
+     * Fails every still-open tool call and ends its terminal, if it had one.
+     *
+     * `message` becomes the visible result: ACP has no `cancelled` status, so an interrupted turn also reports
+     * `failed` and the text is what tells the two apart.
+     */
+    finishOutstanding(message: string, turnId?: string): UpdateSessionEvent[] {
         const updates: UpdateSessionEvent[] = [];
         for (const [itemId, {hasTerminal, turnId: owner}] of this.open) {
             if (turnId !== undefined && owner !== undefined && owner !== turnId) continue;
@@ -46,6 +51,7 @@ export class CodexSessionToolCalls {
                 sessionUpdate: "tool_call_update",
                 toolCallId: itemId,
                 status: "failed",
+                content: [{type: "content", content: {type: "text", text: message}}],
                 ...(hasTerminal ? {
                     _meta: {
                         terminal_exit: {exit_code: null, signal: null, terminal_id: itemId},

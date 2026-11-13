@@ -1825,7 +1825,9 @@ export class CodexAcpServer {
      * alike -- `ACPSessionConnection.update()` renders each accordingly.
      */
     private async finishOutstandingToolCalls(session: SessionState): Promise<void> {
-        const updates = session.openToolCalls.finishOutstanding();
+        const updates = session.openToolCalls.finishOutstanding(
+            "Tool call failed: the Codex process exited before it finished.",
+        );
         if (updates.length === 0) {
             return;
         }

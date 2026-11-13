@@ -304,7 +304,12 @@ describe('provider restart fails outstanding tool calls left open by the cut-off
         // `tool_call_update` tag; only the second one is this fix's synthetic failure.
         expect(toolCallUpdates(client.transcript)).toEqual([
             expect.objectContaining({toolCallId: "exec-1", status: "in_progress"}),
-            {sessionUpdate: "tool_call_update", toolCallId: "exec-1", status: "failed"},
+            expect.objectContaining({
+                sessionUpdate: "tool_call_update",
+                toolCallId: "exec-1",
+                status: "failed",
+                content: [{type: "content", content: {type: "text", text: "Tool call failed: the Codex process exited before it finished."}}],
+            }),
         ]);
         const terminalUpdate = client.transcript.find(entry =>
             "sessionUpdate" in entry
