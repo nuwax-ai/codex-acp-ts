@@ -310,6 +310,71 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 适配器把 ACP 协议(stdio)翻译给引擎,供编辑器 / Agent 宿主集成。环境变量配**环境网关**,
 无需登录或显式认证。
 
+## 1.8 配置目录与扩展：skills / agents（subagent 自定义提示词）/ 模型覆盖
+
+配置根目录是 **`~/.nuwax-harness`**（`NUWAX_HOME` 可改走他处）。与上游 codex 的
+`~/.codex` 完全隔离。目录布局与各类扩展配置的权威说明见引擎仓库
+`NUWAX-HARNESS.md §8`，这里给最快上手：
+
+**Skills（技能）** — 放 `~/.nuwax-harness/skills/<技能名>/SKILL.md`，一个目录一个
+技能：
+
+```
+~/.nuwax-harness/skills/
+├── my-skill/
+│   └── SKILL.md        # frontmatter（名称/描述）+ 技能指令正文
+└── .system/            # 内置技能（自动刷新），不要手改
+```
+
+`config.toml` 可按名字/路径逐个启停，并控制技能目录说明的注入与 token 预算：
+
+```toml
+[skills]
+include_instructions = true
+max_context_tokens = 10000
+[[skills.config]]
+name = "my-skill"
+enabled = true
+```
+
+**Agents / subagent 自定义提示词** — 支持，两级：
+
+```toml
+# ~/.nuwax-harness/config.toml
+[agents]
+enabled = true
+default_subagent_model = "GLM-5.3-Flash"      # spawn 兜底模型
+default_subagent_reasoning_effort = "high"
+
+[agents.reviewer]
+description = "代码评审子代理"
+nickname_candidates = ["评审", "reviewer"]
+config_file = "/absolute/path/reviewer.agent.toml"
+```
+
+角色文件 `reviewer.agent.toml` 里 `developer_instructions` **必填且非空**（缺失或
+空白会 fail-fast 点名文件）——这就是该角色 subagent 的自定义提示词；角色文件本身
+是完整 config 层，可以再覆盖该角色的模型、沙箱等任意字段：
+
+```toml
+name = "reviewer"
+developer_instructions = """
+你是代码评审专家。只审查变更，不重写实现；
+输出按严重度排序的问题列表，每条带文件与行号。
+"""
+```
+
+没有角色专属提示词的 subagent，可用 `[features.multi_agent_v2]` 的
+`subagent_developer_instructions` 提供全局兜底；顶层 `developer_instructions`
+只作用于主线程。
+
+**自定义模型** — `~/.nuwax-harness/models.d/*.toml` 逐字段覆盖目录外模型的
+窗口/档位/能力声明。
+
+ACP 侧注意：适配器与引擎读取同一份 `~/.nuwax-harness/config.toml`（§2.2 的
+"只用全局配置文件"用法同样适用于 skills/agents），宿主 `env` 无需为它们添加任何
+变量。
+
 ## 2.1 安装
 
 ```bash
