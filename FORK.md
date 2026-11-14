@@ -214,6 +214,15 @@ spellings. Both set to different values → startup error (split-brain guard).
 | `NUWAX_REASONING_EFFORT_LEVELS` | Comma-separated tier list for validation. `NUWAX_` only. |
 | `NUWAX_TOOL_SEARCH` | `false` = expose MCP tools directly. |
 
+### Sandbox presets (fork, 2026-11-14)
+
+`AgentMode::WorkspaceWrite` and `AgentMode::Agent` presets set
+`networkAccess: true` — outbound network is part of the workspace-write
+baseline in the engine (`sandbox_workspace_write.network_access` defaults to
+`true`; see the engine fork's FORK.md). `read-only` stays network-restricted.
+Client hosts selecting a preset must not re-restrict what the engine enabled
+by default; a user can still opt back out per provider config.
+
 ### Adapter
 
 | Variable | Description |
