@@ -31,7 +31,7 @@ ACP 宿主 ──stdio──> nuwax-harness-acp-ts 适配器 ──JSON-RPC─�
 
    | 想知道的事 | 变量 | 不设时的行为 |
    | --- | --- | --- |
-   | 模型按哪档"思考"跑 | `NUWAX_MODEL_REASONING_EFFORT` / `NUWAX_REASONING_EFFORT_LEVELS` | 不发票位字段,由平台默认执行(适配器兜底见 §2.3) |
+   | 模型按哪档"思考"跑 | `NUWAX_MODEL_REASONING_EFFORT` / `NUWAX_REASONING_EFFORT_LEVELS` | 不发档位字段,由平台默认执行(适配器兜底见 §2.3) |
    | MCP 工具是否首轮全量直出 | `NUWAX_TOOL_SEARCH` | 默认懒加载(`tool_search`),自托管网关常需设为 `false` |
    | 图片占多少请求体 | `NUWAX_IMAGE_MAX_BYTES` / `NUWAX_REQUEST_IMAGE_MAX_BYTES` | 单图按线路(2 MiB 或不限),整请求 20 MiB |
 
@@ -686,7 +686,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | `NUWAX_REQUEST_MAX_RETRIES` / `NUWAX_STREAM_MAX_RETRIES` | CLI 启动组 | 请求 / 流重试 | 4 / 5 |
 | `NUWAX_STREAM_IDLE_TIMEOUT_MS` | CLI 启动组 | 流空闲超时(毫秒) | 300000 |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 两侧 | 模型真实上下文窗口 | 按模型目录 |
-| `NUWAX_MODEL_REASONING_EFFORT` | 两侧 | 推理力度 | 不发票位 |
+| `NUWAX_MODEL_REASONING_EFFORT` | 两侧 | 推理力度 | 不发档位 |
 | `NUWAX_REASONING_EFFORT_LEVELS` | 两侧 | 网关真实档位表(选了非法档位请求前报错) | 宽松 |
 | `NUWAX_DISABLE_THINKING` | ACP | 关闭思考 | 不启用 |
 | `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 引擎 | 自动压缩阈值 / 窗口比例 | 80% 窗口 |
