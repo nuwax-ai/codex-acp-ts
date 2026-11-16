@@ -435,8 +435,10 @@ nuwax-harness-acp-ts --version
 
 ## 2.2 快速开始(宿主最小配置)
 
-**4 个必填变量** ,配进宿主的 agent 环境
-(以 OpenAI Chat 协议为例):
+**4 个必填变量**,配进宿主的 agent 环境。**OpenAI 协议与 Anthropic 协议的
+变量组合不同**,两份示例都给出:
+
+**OpenAI 协议**(Chat Completions 或 Responses 端点)——用 `NUWAX_WIRE_API` 选 wire:
 
 ```json
 {
@@ -451,6 +453,30 @@ nuwax-harness-acp-ts --version
   }
 }
 ```
+
+Responses 端点把 `"NUWAX_WIRE_API": "chat"` 换成 `"responses"` 即可。
+
+**Anthropic 协议**(Messages 端点)——**不要设 `NUWAX_WIRE_API`**,改用
+`NUWAX_API_PROTOCOL=anthropic`(ACP 侧 `NUWAX_WIRE_API` 只认
+`responses` / `chat`,设 `anthropic` 会启动报错):
+
+```json
+{
+  "nuwax-harness-acp-ts": {
+    "command": "nuwax-harness-acp-ts",
+    "env": {
+      "NUWAX_BASE_URL": "https://your-provider.example/anthropic",
+      "NUWAX_API_PROTOCOL": "anthropic",
+      "NUWAX_MODEL": "your-model-id",
+      "NUWAX_API_KEY": "<YOUR_API_KEY>"
+    }
+  }
+}
+```
+
+基址按平台文档填:Anthropic 端点通常是平台根路径下的 `/anthropic`(如
+MiMo 的 `https://token-plan-cn.xiaomimimo.com/anthropic`),不要自行拼接
+`/v1/messages`。
 
 > 思考档位默认**不传**——请求里不带 effort 字段,由模型侧走自身的默认值
 > (各家模型支持的档位不同,不做统一假设)。需要固定档位时再设
