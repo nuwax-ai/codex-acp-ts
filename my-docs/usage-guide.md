@@ -70,7 +70,7 @@ export NUWAX_API_KEY='<YOUR_API_KEY>'
 
 # 建议再显式指定推理力度:不设则不发档位字段,由平台按自家默认执行,
 # 不一定是你要的档位
-export NUWAX_MODEL_REASONING_EFFORT='high'                 # none|minimal|low|medium|high|xhigh|max
+export NUWAX_MODEL_REASONING_EFFORT='high'                 # none|minimal|low|medium|high|xhigh|max|ultra
 # 不需要模型思考:NUWAX_MODEL_REASONING_EFFORT=none
 
 nuwax-harness exec '请只回复:OK'     # 收到 OK 即全链路正常
@@ -117,7 +117,7 @@ provider 的模型",不会切端点。
 | --- | --- |
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 可选:模型真实上下文窗口(token)。非目录模型建议显式给,压缩阈值由它派生 |
 | `NUWAX_MODEL_REASONING_EFFORT` | 推理力度:`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` / `ultra` 等;不设则不发档位字段、由平台默认执行(ACP 侧另有 `NUWAX_DISABLE_THINKING`,见 §2.3) |
-| `NUWAX_REASONING_EFFORT_LEVELS` | 可选:逗号分隔的档位表,声明该网关模型**真实接受**的档位(如 GLM-5.3-Flash 是 `low,high,max`)。档位词只能是 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`(`none`/`off` 不是档位,写进去会报错)。声明后,选了表里没有的档位、或关思考,都会在**请求发出前**报错(指出缺哪个档位),而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。不设则保持宽松、不校验 |
+| `NUWAX_REASONING_EFFORT_LEVELS` | 可选:逗号分隔的档位表,声明该网关模型**真实接受**的档位(如 GLM-5.3-Flash 是 `low,high,max`)。常用档位词是 `minimal` / `low` / `medium` / `high` / `xhigh` / `max` / `ultra`;`none` / `off` 不是档位,写进去会报错(引擎判定:这两个词描述的是"能否关思考"这一独立轴,不是档位)。声明后,选了表里没有的档位、或关思考,都会在**请求发出前**报错(指出缺哪个档位),而不是被网关静默映射成别的档位——直连官方端点也可能不校验(实测对 `medium`/`minimal`/`ultra` 一律返回 200),所以 200 不代表档位被采纳。不设则保持宽松、不校验 |
 
 `NUWAX_REASONING_EFFORT_LEVELS` 必须能附着到一个 provider:随网关启动组使用,或配合
 `-c model_provider=<id>`。纯 config.toml 选 provider 时**不要用**这个环境变量
@@ -480,6 +480,12 @@ nuwax-harness-acp-ts --version
 | `NUWAX_TOOL_SEARCH` | 自托管/第三方网关不认识 `tool_search` 线格式,或需要确定性工具表:设 `false` |
 | `NUWAX_REQUEST_IMAGE_MAX_BYTES` | 宿主常把整屏截图塞进上下文,网关 32 MiB 限制被撞:默认 20 MiB,可下调 |
 | `NUWAX_OPENAI_EGRESS` | 默认关闭;确需 OpenAI 第一方插件/远程控制出站时才设 `1` |
+| `NUWAX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token,正整数)。本地预算与自动压缩都由它派生;不设则依赖模型目录或平台声明 |
+| `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 自动压缩触发点:绝对 token 阈值 / 窗口比例。都不设时按窗口 **80%** 触发;显式阈值直接生效不封顶 |
+| `NUWAX_IMAGE_MAX_BYTES` | 单张图片入历史的编码体积上限(默认按线路 2 MiB 或不限);宿主常塞大截图时按需上调 |
+
+> 这四个变量适配器不消费、**原样透传给引擎**,在 ACP 接入下同样生效(取值与校验
+> 规则见第一部分 §1.3 对应行)。
 
 ## 2.6 平台配置示例
 
