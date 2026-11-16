@@ -81,6 +81,19 @@ export NUWAX_MODEL_REASONING_EFFORT='high'                 # none|minimal|low|me
 nuwax-harness exec '请只回复:OK'     # 收到 OK 即全链路正常
 ```
 
+**在非 Git 目录里运行会直接报错** `Not inside a trusted directory`——引擎把 Git
+仓库当作可信边界(改动可 review、可回滚)。两种处理:
+
+- 在 Git 仓库内运行(最省事,`git init` 一下即可);
+- 或给命令**加 `--skip-git-repo-check`**(跳过该检查):
+
+  ```bash
+  nuwax-harness exec --skip-git-repo-check '请只回复:OK'
+  ```
+
+  首次对接在最常用的目录跑通之后,建议把这个 flag 固化(写进 shell alias 或
+  启动脚本),避免以后换个目录就莫名其妙启动失败却想不起这个参数。
+
 Anthropic 协议:把基址换成平台的 Anthropic 端点,`NUWAX_WIRE_API` 设为 `anthropic`。
 
 上面的 `export` 只对当前终端有效。**长期使用请写进配置文件**(一次配置,所有终端、
