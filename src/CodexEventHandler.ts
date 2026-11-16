@@ -1059,7 +1059,7 @@ export class CodexEventHandler {
                     // bookkeeping too: otherwise the turn-end drain would
                     // emit a "failed" update for a tool call the client
                     // never saw.
-                    return [];
+                    return null;
                 }
                 // Legacy clients only see the tool call, so this is the id they will show as running.
                 this.sessionState.toolCallReports.noteLegacyCompaction(
