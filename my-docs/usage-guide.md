@@ -319,6 +319,11 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 `native` 是进程环境到达原生 Responses 传输的唯一方式,且只允许配 `responses`;
 `genai` 备用桥只支持 chat/anthropic。走原生时 `doctor` 显示 `bridge: native transport`。
 
+> 本表是 **CLI / config.toml 的取值**——`NUWAX_WIRE_API` 在这里支持全部三值
+> (含 `anthropic`)。**ACP 宿主的 env 不同**:`NUWAX_WIRE_API` 只接受
+> `responses` / `chat`,Anthropic 改由 `NUWAX_API_PROTOCOL=anthropic` 选择
+> (详见 §2.3)。
+
 ## 1.7 排查
 
 | 现象 | 原因与处理 |
