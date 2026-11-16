@@ -18,7 +18,7 @@ ACP 宿主 ──stdio──> nuwax-harness-acp-ts 适配器 ──JSON-RPC─�
 
 ## 0. 读前须知
 
-1. **配置有两 种写法,效果相同**:
+1. **配置有两种写法,效果相同**:
    - **环境变量**——名字都带 `NUWAX_` 前缀(如 `NUWAX_MODEL_CONTEXT_WINDOW`),
      只管"本次运行";注意前缀是名字的一部分,不带前缀的裸名(如
      `MODEL_CONTEXT_WINDOW`)**不生效**;
