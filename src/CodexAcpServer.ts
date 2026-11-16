@@ -4215,9 +4215,14 @@ export class CodexAcpServer {
             case "exitedReviewMode":
                 return [this.createReviewModeUpdate(item, false)];
             case "contextCompaction":
-                return [clientSupportsCompaction(this.clientCapabilities)
-                    ? createCompactionUpdate(item.id, "completed")
-                    : renderer.render(CompactionReporter.history(item))];
+                // Fork: history replay of a finished compaction is internal
+                // bookkeeping — clients that understand compaction updates
+                // get the state sync, others see nothing (a "Compact
+                // conversation" tool-call card on resume read as a live
+                // compaction and misled users).
+                return clientSupportsCompaction(this.clientCapabilities)
+                    ? [createCompactionUpdate(item.id, "completed")]
+                    : [];
             case "plan":
                 return item.text.length > 0 ? [this.createPlanHistoryUpdate(item)] : [];
         }

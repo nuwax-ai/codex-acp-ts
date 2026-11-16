@@ -395,30 +395,6 @@
       "sessionId": "session-1",
       "update": {
         "sessionUpdate": "tool_call",
-        "toolCallId": "item-context-compaction-1",
-        "kind": "think",
-        "title": "Compact conversation",
-        "status": "completed",
-        "content": [
-          {
-            "type": "content",
-            "content": {
-              "type": "text",
-              "text": "Context compaction completed."
-            }
-          }
-        ]
-      }
-    }
-  ]
-}
-{
-  "method": "sessionUpdate",
-  "args": [
-    {
-      "sessionId": "session-1",
-      "update": {
-        "sessionUpdate": "tool_call",
         "toolCallId": "item-subagent-1",
         "kind": "other",
         "title": "Start subagent test_audit",

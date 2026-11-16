@@ -1057,9 +1057,11 @@ export class CodexEventHandler {
                 );
                 if (this.resumeReplayCompactions) {
                     // Replayed history from a resumed session: the compaction
-                    // already finished, so render the completed form rather
-                    // than an in-progress card.
-                    return this.renderer.render(CompactionReporter.history(event.item));
+                    // is finished internal bookkeeping, not a user-visible
+                    // action — skip it entirely. Showing it as a tool call
+                    // made users believe a compaction was running on a
+                    // freshly resumed session.
+                    return [];
                 }
                 return this.renderer.render(CompactionReporter.started(event.item));
             }

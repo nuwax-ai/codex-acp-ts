@@ -21,30 +21,6 @@
       {
         "sessionId": "notice-session",
         "update": {
-          "sessionUpdate": "tool_call",
-          "toolCallId": "history-compaction",
-          "kind": "think",
-          "title": "Compact conversation",
-          "status": "completed",
-          "content": [
-            {
-              "type": "content",
-              "content": {
-                "type": "text",
-                "text": "Context compaction completed."
-              }
-            }
-          ]
-        }
-      }
-    ]
-  },
-  {
-    "method": "sessionUpdate",
-    "args": [
-      {
-        "sessionId": "notice-session",
-        "update": {
           "sessionUpdate": "agent_message_chunk",
           "messageId": "after-compaction",
           "content": {
