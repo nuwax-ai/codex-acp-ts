@@ -1050,19 +1050,22 @@ export class CodexEventHandler {
                         event.turnId, event.item.id,
                     );
                 }
-                // Legacy clients only see the tool call, so this is the id they will show as running.
-                this.sessionState.toolCallReports.noteLegacyCompaction(
-                    this.subagents.notificationSessionId({method: "item/started", params: event}),
-                    event.item.id,
-                );
                 if (this.resumeReplayCompactions) {
                     // Replayed history from a resumed session: the compaction
                     // is finished internal bookkeeping, not a user-visible
                     // action — skip it entirely. Showing it as a tool call
                     // made users believe a compaction was running on a
-                    // freshly resumed session.
+                    // freshly resumed session. Skipping the legacy
+                    // bookkeeping too: otherwise the turn-end drain would
+                    // emit a "failed" update for a tool call the client
+                    // never saw.
                     return [];
                 }
+                // Legacy clients only see the tool call, so this is the id they will show as running.
+                this.sessionState.toolCallReports.noteLegacyCompaction(
+                    this.subagents.notificationSessionId({method: "item/started", params: event}),
+                    event.item.id,
+                );
                 return this.renderer.render(CompactionReporter.started(event.item));
             }
             case "subAgentActivity":
