@@ -166,7 +166,7 @@ Chat 协议每轮重发历史,单图预算撞线的概率最高。
 
 | 变量 | 说明 | 不设时 |
 | --- | --- | --- |
-| `NUWAX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 `tool_search`/Deferred),用于不支持该线格式的自托管/第三方网关,或需要确定性工具表的部署。仅接受大小写不敏感的 `true`/`false`,其他值启动即报错;显式配置 `[tools] tool_search` 优先于它 | 官方默认(懒加载) |
+| `NUWAX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 `tool_search`/Deferred)。仅接受大小写不敏感的 `true`/`false`,其他值启动即报错;显式配置 `[tools] tool_search` 优先于它 | **按模型声明**:`supports_search_tool` 的模型(官方目录模型)默认懒加载;**自定义/私有模型(未声明)默认就是全量直出**,一般无需设置 |
 | `NUWAX_OPENAI_EGRESS` | `=1` 才打开 OpenAI 第一方出站总闸。fork 面向经自有网关访问厂商模型的部署,默认**关闭**:app-server 远程控制(会向 `chatgpt.com/backend-api/` 开 websocket,并把 `installation_id` 与本机 hostname 写进日志)、插件目录/已安装态同步(`chatgpt.com/backend-api/plugins/*`)与 curated 同步(`github.com/openai/plugins`)都不自行联网。任何其他非空值按"写错"处理:报一次并保持关闭 | 关闭 |
 
 ### 目录
