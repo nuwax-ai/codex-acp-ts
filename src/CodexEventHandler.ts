@@ -249,6 +249,14 @@ export class CodexEventHandler {
         collectTurnDiffs: boolean,
         private readonly supportsCompaction: boolean,
         private readonly supportsNotices: boolean,
+        /**
+         * Fork: true for the baseline handler that replays a resumed session's
+         * history (no prompt has subscribed yet). Compaction items replayed in
+         * that window are finished history, so they render as completed instead
+         * of the in-progress "Compact conversation" card users read as a live
+         * compaction on a freshly resumed session.
+         */
+        private readonly resumeReplayCompactions = false,
     ) {
         this.onAccountUpdated = onAccountUpdated;
         this.sessionState = sessionState;
@@ -1047,6 +1055,12 @@ export class CodexEventHandler {
                     this.subagents.notificationSessionId({method: "item/started", params: event}),
                     event.item.id,
                 );
+                if (this.resumeReplayCompactions) {
+                    // Replayed history from a resumed session: the compaction
+                    // already finished, so render the completed form rather
+                    // than an in-progress card.
+                    return this.renderer.render(CompactionReporter.history(event.item));
+                }
                 return this.renderer.render(CompactionReporter.started(event.item));
             }
             case "subAgentActivity":

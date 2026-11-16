@@ -1696,6 +1696,9 @@ export class CodexAcpServer {
                         false,
                         clientSupportsCompaction(this.clientCapabilities),
                         clientSupportsNotices(this.clientCapabilities),
+                        // Baseline replays a resumed session's history: its
+                        // compaction items are finished events.
+                        true,
                     );
                 }
                 await this.trackCodexForegroundWork(sessionState, event);
