@@ -132,6 +132,21 @@ provider 的模型",不会切端点。
 迁移压缩(换小窗口模型时把历史摘要进新窗口)的参数只有 config.toml 顶层键,没有
 环境变量,默认无需调整(见 §1.5)。
 
+#### 上下文窗口的取值优先级(谁说了算)
+
+| 模型来源 | 不配 `NUWAX_MODEL_CONTEXT_WINDOW` 时 | 配了之后 |
+| --- | --- | --- |
+| **已知厂商模型**(GLM / MiMo / Step / DeepSeek 等,引擎目录内有条目) | 用目录里声明的窗口值,**无需配置** | 全额生效或按目录上限钳制(见下) |
+| **自定义 / 私有部署模型**(目录没有条目,引擎回落到 fallback 元数据) | 用 **272,000 token 的合成占位值**,并打 `warn` 提示补配——预算会失真,**务必显式配置** | **全额生效**(可超过目录值,带 warn 提示自证) |
+| **官方目录模型**(OpenAI / Anthropic 官方条目) | 用目录值 | 被目录上限**钳制**(取 min,不能调高) |
+
+> 自定义模型不配窗口不会报错,但 272k 占位会让自动压缩/上下文预算全部失真——
+> 启动日志里出现 `placeholder_context_window = 272_000` 的 warn 就是这个信号。
+
+配置方式(三选一,优先级从高到低):`-c model_context_window=...` 显式 >
+`NUWAX_MODEL_CONTEXT_WINDOW` 环境种子 > config.toml 的
+`model_providers.<id>.model_context_window`(长期生效,见 §1.5)。
+
 ### 图片预算
 
 | 变量 | 说明 | 不设时 |
@@ -557,6 +572,42 @@ export NUWAX_API_KEY='<YOUR_API_KEY>'
 export NUWAX_MODEL='step-5-preview'           # 或 step-3.7-flash
 export NUWAX_MODEL_CONTEXT_WINDOW='128000'
 ```
+
+export NUWAX_MODEL='step-5-preview'           # 或 step-3.7-flash
+export NUWAX_MODEL_CONTEXT_WINDOW='128000'
+```
+
+#### 自定义 / 私有部署模型(vLLM / Ollama / 公司网关聚合层)
+
+目录里没有条目,**`NUWAX_MODEL_CONTEXT_WINDOW` 必填**——不配会用 272k 合成占位,
+自动压缩与上下文预算失真(引擎启动日志有 `placeholder_context_window` warn)。
+
+最小可用(以 vLLM 起的 Qwen 为例,OpenAI 兼容端点):
+
+```bash
+export NUWAX_BASE_URL='http://10.0.0.5:8000/v1'
+export NUWAX_API_PROTOCOL='openai'
+export NUWAX_WIRE_API='chat'
+export NUWAX_API_KEY='empty'                 # vLLM 未开鉴权时随意非空
+export NUWAX_MODEL='Qwen3-235B-A22B'
+export NUWAX_MODEL_CONTEXT_WINDOW='131072'   # ★ 必填:按部署参数(max-model-len)填
+export NUWAX_MAX_OUTPUT_TOKENS='8192'        # 建议显式,别吃满窗口
+
+# 按需微调(都可不设):
+# export NUWAX_AUTO_COMPACT_RATIO='0.7'      # 窗口 70% 就压缩(默认 80%)
+# export NUWAX_IMAGE_MAX_BYTES='4194304'     # 多模态部署放宽单图到 4 MiB
+# export NUWAX_TOOL_SEARCH='false'           # 网关不认识 tool_search 线格式时
+```
+
+对接检查清单:
+
+- [ ] `NUWAX_MODEL_CONTEXT_WINDOW` == 部署的真实窗口(max-model-len / 平台规格)
+- [ ] 协议对齐:OpenAI 兼容端点用 `chat`;暴露了 `/v1/responses` 才用 `responses`;
+      Anthropic 端点用 `API_PROTOCOL=anthropic`
+- [ ] 推理档位:模型不吃 effort 字段就设 `NUWAX_DISABLE_THINKING=true`;
+      吃部分档位就设 `NUWAX_REASONING_EFFORT_LEVELS` 声明真实档位
+- [ ] 图片:宿主会塞整屏截图时确认 `NUWAX_REQUEST_IMAGE_MAX_BYTES`(默认 20 MiB)
+  不超过网关请求体上限
 
 ## 2.7 在 ACP 宿主里接入
 
