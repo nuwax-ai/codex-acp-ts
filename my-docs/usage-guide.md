@@ -430,7 +430,7 @@ nuwax-harness-acp-ts --version
 
 ## 2.2 快速开始(宿主最小配置)
 
-**4 个必填变量** + **1 个建议显式配置**(推理力度),配进宿主的 agent 环境
+**4 个必填变量** ,配进宿主的 agent 环境
 (以 OpenAI Chat 协议为例):
 
 ```json
@@ -441,17 +441,13 @@ nuwax-harness-acp-ts --version
       "NUWAX_BASE_URL": "https://your-provider.example/v1",
       "NUWAX_WIRE_API": "chat",
       "NUWAX_MODEL": "your-model-id",
-      "NUWAX_API_KEY": "<YOUR_API_KEY>",
-      "NUWAX_MODEL_REASONING_EFFORT": "high"
+      "NUWAX_API_KEY": "<YOUR_API_KEY>"
     }
   }
 }
 ```
 
-> 自定义模型默认用 `medium`,不一定是你平台支持的值——按平台换成
-> `none` / `minimal` / `low` / `high` / `max` 等。
-> 不需要模型思考,就把该项换成 `"NUWAX_DISABLE_THINKING": "true"`
-> (等价于把力度固定为 `none`)。
+> 自定义模型思考默认不传模型,让模型侧走自身的默认值。
 
 在宿主里新建会话,发一句「请只回复:OK」,收到回复即接入完成。
 也可以不全局安装,直接 `npx -y @nuwax-ai/nuwax-harness-acp-ts` 作为 command。
