@@ -5791,6 +5791,11 @@ export class CodexAcpServer {
 
     private beginPromptTokenUsage(sessionState: SessionState): void {
         sessionState.lastTokenUsage = null;
+        // Fork (2026-11-17): the "already rendered" failure text is per turn.
+        // Without the reset, a later turn that fails with the same wording but
+        // never reaches the live error path would have its prompt-end message
+        // suppressed and the user would see no error at all.
+        sessionState.lastRenderedFailureText = null;
         // A new thread starts at zero; the usage of a thread with history is unknown until Codex reports it.
         const startTotal = sessionState.totalTokenUsage
             ?? (sessionState.threadHasHistory ? null : ZERO_TOKEN_COUNT);
