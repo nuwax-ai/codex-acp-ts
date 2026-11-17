@@ -139,11 +139,6 @@ export class PromptTokenUsage {
     }
 
     /** The usage of the prompt so far, or null when Codex reported none. */
-    /** Whether the model produced output in this prompt (a real model call happened). */
-    hasModelOutput(): boolean {
-        return this.modelOutputSeen;
-    }
-
     usage(): TokenCount | null {
         const start = this.startTotal;
         const latest = this.latestTotal;

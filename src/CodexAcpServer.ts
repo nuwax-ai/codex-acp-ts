@@ -5786,26 +5786,8 @@ export class CodexAcpServer {
     }
 
     private buildPromptUsage(sessionState: SessionState): acp.Usage | null {
-        const tracker = sessionState.promptTokenUsage;
-        if (tracker !== null && tracker !== undefined) {
-            const usage = tracker.usage();
-            if (usage !== null && usage !== undefined) {
-                return toPromptUsage(usage);
-            }
-            // Fork (2026-11-17): the prompt saw model output but no usage
-            // notification arrived before the turn finished (short-turn vs
-            // late-notification race). Fall back to the last reported request
-            // usage so the result still carries numbers. Prompts without a
-            // model call (e.g. `/status`) keep null: reporting the previous
-            // prompt's usage there would be wrong.
-            if (tracker.hasModelOutput()) {
-                const last = sessionState.lastTokenUsage;
-                if (last !== null) {
-                    return toPromptUsage(last);
-                }
-            }
-        }
-        return null;
+        const usage = sessionState.promptTokenUsage?.usage() ?? null;
+        return usage === null ? null : toPromptUsage(usage);
     }
 
     /**
