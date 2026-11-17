@@ -227,6 +227,15 @@ export class CodexEventHandler {
     private readonly itemStreams = new CodexItemStreamState();
     private readonly plans: CodexPlanStream;
     private disposed = false;
+    /**
+     * Fork (2026-11-17): the engine reports one error notification per failed
+     * attempt inside a turn (initial request, then after a compaction retry,
+     * then after a degrade retry), so the same failure text reached the client
+     * two or three times. Remember what was rendered for the current turn and
+     * collapse identical repeats; the intermediate attempts stay in the
+     * engine log.
+     */
+    private lastFailureText: {turnId: string, message: string} | null = null;
     private lastAgentMessageText = "";
     private readonly turnDiffs = new Map<string, string>();
     private readonly oversizedTurnDiffs = new Set<string>();
@@ -1291,6 +1300,13 @@ export class CodexEventHandler {
         if (this.failure !== null) {
             failuresShownAsMessages.add(this.failure);
         }
+        // Same-turn duplicate failure text: keep the first rendering, log the
+        // rest (the retry attempts are already in the engine log).
+        if (this.lastFailureText?.turnId === params.turnId
+            && this.lastFailureText.message === params.error.message) {
+            return null;
+        }
+        this.lastFailureText = {turnId: params.turnId, message: params.error.message};
         return createAgentTextMessageChunk(`${readableServiceErrorMessage(params.error.message)}\n\n`);
     }
 
