@@ -154,6 +154,29 @@ readable English result text.
   announced id and closes that entry instead of opening a second one; a compaction that never completes is
   ended at turn end with `Context compaction completed.` / `failed.` / `cancelled.`.
 
+## Resume replay: compaction events are not sent to the client (fork behaviour, 2026-11-17)
+
+Resuming a session replays the durable history, and the engine re-emits historical
+`contextCompaction` items through the live event path — the baseline handler then
+rendered them as **in-progress "Compact conversation" tool-call cards**. Users read
+that as a compaction running on a freshly resumed session; in reality those are
+finished internal bookkeeping events from earlier turns.
+
+The baseline `CodexEventHandler` (the one that only serves a session no prompt has
+subscribed to yet — every event in that window is history) takes
+`resumeReplayCompactions = true` and **skips compaction items entirely**, including
+the legacy `noteLegacyCompaction` bookkeeping: keeping the bookkeeping would make the
+turn-end drain emit a `failed` update for a tool call the client never saw. The
+prompt-scoped handler passes `false`, so a compaction that actually runs during a
+turn is still announced live (`in_progress` → `completed`).
+
+The `loadSession` paginated-history path matches: clients without compaction
+updates get nothing for replayed compaction items (previously a completed card);
+v2 clients keep the `createCompactionUpdate` state sync.
+
+Tests: `load-session` snapshots, `session-notices`, and the `history-replay`
+baselines (plain/zed) were updated to the new expectation.
+
 ## Engine log capture (fork behaviour)
 
 The engine (`nuwax-harness`, Rust `tracing`) only writes to **stderr**; the app-server protocol
