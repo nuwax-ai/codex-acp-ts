@@ -177,6 +177,30 @@ v2 clients keep the `createCompactionUpdate` state sync.
 Tests: `load-session` snapshots, `session-notices`, and the `history-replay`
 baselines (plain/zed) were updated to the new expectation.
 
+## Failure reporting: one user-visible message per failure (fork behaviour, 2026-11-17)
+
+A single engine error reached the client through **two adapter paths**, so the same
+`ran out of room…` text appeared twice with the degrade warning in between:
+
+1. the live error notification rendered as an agent text message
+   (`CodexEventHandler.createErrorEvent`);
+2. the prompt-end fallback (`CodexAcpServer`, "failed after it was inserted"), whose
+   `RequestError` is a **different instance** — `failuresShownAsMessage` keys on object
+   identity (a `WeakSet`), so it could not suppress it.
+
+Fix: the session state records `lastRenderedFailureText`, set whenever a failure text is
+rendered, and the prompt-end fallback skips a text already shown. The record is
+**cleared at every prompt start** (`beginPromptTokenUsage`) — without that reset a later
+turn failing with identical wording but no live error path would show nothing at all.
+
+Measured before the fix (same turn): engine attempts failed **5** times, degraded once,
+but emitted **one** terminal `Turn error:` — so the engine already reports only the last
+attempt; the duplication was purely the adapter's two render paths. A `usage` fallback
+added in 1.2.40 and reverted in 1.2.41 is the other half of this story: reporting the
+session's previous-prompt usage for a prompt with no model call is wrong, so `usage`
+stays `null` for prompts that never reached a model (`/status` and failed-before-dispatch
+turns).
+
 ## Engine log capture (fork behaviour)
 
 The engine (`nuwax-harness`, Rust `tracing`) only writes to **stderr**; the app-server protocol
