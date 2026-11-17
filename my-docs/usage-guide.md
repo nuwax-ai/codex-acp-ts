@@ -435,11 +435,9 @@ nuwax-harness-acp-ts --version
 
 ## 2.2 快速开始(宿主最小配置)
 
-> **对接约定(平台下发必读)**:平台 agent 配置下发的环境变量**统一使用 `NUWAX_`
-> 拼写**(即本文各表所列名称)。客户端按此解析,同时兼容 `CODEX_` 旧拼写与
-> `OPENCODE_*` / 中性名(窗口/输出上限)作为次级来源;不要使用其他命名。
-> 上下文窗口下发用 `NUWAX_MODEL_CONTEXT_WINDOW`(按模型真实窗口填写,如
-> deepseek-flash 为 190000、自定义 1M 模型为 1000000);输出上限用
+> **对接约定(平台下发必读)**:平台 agent 配置下发的环境变量**统一使用本文
+> 各表所列的 `NUWAX_*` 名称**。上下文窗口下发
+> `NUWAX_MODEL_CONTEXT_WINDOW`(按模型真实窗口填写);输出上限用
 > `NUWAX_MAX_OUTPUT_TOKENS`。
 
 **4 个必填变量**,配进宿主的 agent 环境。**OpenAI 协议与 Anthropic 协议的
