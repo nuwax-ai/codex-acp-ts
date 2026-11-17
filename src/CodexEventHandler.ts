@@ -1307,6 +1307,8 @@ export class CodexEventHandler {
             return null;
         }
         this.lastFailureText = {turnId: params.turnId, message: params.error.message};
+        // Record the text so the prompt-end fallback does not render it again.
+        this.sessionState.lastRenderedFailureText = params.error.message;
         return createAgentTextMessageChunk(`${readableServiceErrorMessage(params.error.message)}\n\n`);
     }
 

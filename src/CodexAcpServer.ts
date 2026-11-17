@@ -274,6 +274,15 @@ export interface SessionState extends SessionIndexTitleState {
     /** Whether the thread may have token usage from before this session, as a loaded, resumed or forked thread. */
     threadHasHistory: boolean;
     modelContextWindow: number | null;
+    /**
+     * Fork (2026-11-17): the failure text already rendered as an agent message
+     * for this session. One engine error reaches the client through two
+     * adapter paths — the live error update and the prompt-end fallback whose
+     * `RequestError` is a different instance, so `failureWasShownAsMessage`
+     * cannot suppress it. Recording the text keeps the user-visible message
+     * single.
+     */
+    lastRenderedFailureText: string | null;
     rateLimits: RateLimitsMap | null;
     account: Account | null;
     authConfigured: boolean;
@@ -1413,6 +1422,7 @@ export class CodexAcpServer {
             threadHasHistory: operation !== "new",
             ...(sessionMetadata.instructions ? {instructions: sessionMetadata.instructions} : {}),
             modelContextWindow: null,
+            lastRenderedFailureText: null,
             rateLimits: null,
             account: authState.account,
             authConfigured: authState.authConfigured,
@@ -3671,6 +3681,7 @@ export class CodexAcpServer {
             threadHasHistory: true,
             ...(sessionMetadata.instructions ? {instructions: sessionMetadata.instructions} : {}),
             modelContextWindow: null,
+            lastRenderedFailureText: null,
             rateLimits: null,
             account: authState.account,
             authConfigured: authState.authConfigured,
@@ -4917,7 +4928,8 @@ export class CodexAcpServer {
                     if (running !== null) {
                         await running;
                     }
-                    if (!failureWasShownAsMessage(error)) {
+                    if (!failureWasShownAsMessage(error)
+                        && sessionState.lastRenderedFailureText !== failure.message) {
                         try {
                             await session.update(createAgentTextMessageChunk(postInsertionFailureText(
                                 new Error(failure.message),

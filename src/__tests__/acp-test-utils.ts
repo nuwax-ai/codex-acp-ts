@@ -422,6 +422,7 @@ export function createTestSessionState(overrides?: Partial<SessionState>): Sessi
     const sessionId = overrides?.sessionId ?? "session-id";
     return {
         currentTurnId: null,
+        lastRenderedFailureText: null,
         interruptTurnId: null,
         codexReportedRunningTurnId: null,
         lastTokenUsage: null,
