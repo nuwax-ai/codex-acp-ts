@@ -148,9 +148,19 @@ export interface UrlElicitationRequester {
  * ACP `LlmProtocol` values Codex can route through the custom gateway, mapped to
  * the Codex `wire_api`. The fork's bridge accepts OpenAI Responses, Chat
  * Completions, and Anthropic Messages wires for custom gateways.
+ *
+ * `openai` defaults to Chat Completions: the gateways this fork targets
+ * implement chat more completely than Responses, and clients that only know the
+ * `openai` protocol expect it. Responses stays reachable as
+ * `apiType: "openai-responses"` or `apiType: "openai"` with
+ * `_meta.wire_api: "responses"` (the ACP request has no wire field, so an
+ * explicit `wire_api` only survives in `_meta`; unknown top-level keys are
+ * stripped by the schema). `openai-chat` remains an accepted synonym.
  */
 const SUPPORTED_GATEWAY_PROTOCOLS: Record<acp.LlmProtocol, WireApi> = {
-    openai: "responses",
+    openai: "chat",
+    "openai-chat": "chat",
+    "openai-responses": "responses",
     anthropic: "anthropic",
 };
 
@@ -468,6 +478,7 @@ export class CodexAcpClient {
             apiType: request.apiType,
             baseUrl: request.baseUrl,
             headers: request.headers,
+            wireApi: readGatewayWireApi(request._meta),
         });
         if (!URL.canParse(request.baseUrl) || !["http:", "https:"].includes(new URL(request.baseUrl).protocol)) {
             throw RequestError.invalidParams({baseUrl: request.baseUrl}, "baseUrl must be an http(s) URL");
@@ -504,6 +515,7 @@ export class CodexAcpClient {
         logger.log("providers/set applied", {
             providerId: OPENAI_PROVIDER_ID,
             apiType: gatewayApiTypeFromConfig(gatewayConfig),
+            wireApi: gatewayConfig.config.wire_api,
             baseUrlConfigured: gatewayConfig.config.base_url.length > 0,
             headerNames: Object.keys(gatewayConfig.config.http_headers),
         });
@@ -519,6 +531,7 @@ export class CodexAcpClient {
             ? {
                 apiType: gatewayApiTypeFromConfig(gatewayConfig),
                 baseUrl: gatewayConfig.config.base_url,
+                _meta: {wire_api: gatewayConfig.config.wire_api},
             }
             : this.getNativeProviderConfig();
         logger.log("providers/list", {
@@ -1744,6 +1757,8 @@ type GatewayConfigSource = "authentication" | "acpProviders";
  */
 export interface GatewayConfig {
     modelProvider: string;
+    /** The ACP `apiType` the client asked for, kept so `providers/list` reports it back. */
+    apiType?: acp.LlmProtocol;
     config: {
         name: string,
         base_url: string,
@@ -1762,18 +1777,53 @@ type GatewayRoutingParams = {
     headers?: Record<string, string> | undefined;
     providerName?: string | undefined;
     apiType: acp.LlmProtocol;
+    /** Explicit OpenAI-family wire (`chat`/`responses`); `undefined` follows `apiType`. */
+    wireApi?: WireApi | undefined;
 };
+
+/**
+ * The wire request an ACP client can carry in `_meta`. `providers/set` has no
+ * wire field of its own, so this is how `apiType: "openai"` selects a wire
+ * explicitly (`chat` is the default) instead of relying on the default.
+ */
+function readGatewayWireApi(meta: acp.SetProviderRequest["_meta"]): WireApi | undefined {
+    const raw = meta?.["wire_api"] ?? meta?.["wireApi"];
+    if (raw === undefined || raw === null) return undefined;
+    if (raw === "chat" || raw === "responses") return raw;
+    throw RequestError.invalidParams(
+        {wire_api: raw},
+        `Unsupported wire_api ${JSON.stringify(raw)}; supported: chat, responses`,
+    );
+}
 
 /** The custom gateway routing for `params`, not yet listed. Throws `invalid_params` like {@link CodexAcpClient.setProvider}. */
 function buildGatewayConfig(params: GatewayRoutingParams): GatewayConfig {
     const apiType = params.apiType;
-    const wireApi = SUPPORTED_GATEWAY_PROTOCOLS[apiType];
-    if (!wireApi) {
+    const declared = SUPPORTED_GATEWAY_PROTOCOLS[apiType];
+    if (!declared) {
         throw RequestError.invalidParams(
             {apiType},
             `Unsupported provider apiType "${apiType}"; supported: ${Object.keys(SUPPORTED_GATEWAY_PROTOCOLS).join(", ")}`,
         );
     }
+    if (params.wireApi !== undefined) {
+        if (declared === "anthropic") {
+            throw RequestError.invalidParams(
+                {apiType, wire_api: params.wireApi},
+                "wire_api only applies to the OpenAI protocol family",
+            );
+        }
+        // `openai-chat` / `openai-responses` name the wire themselves; a
+        // contradicting `_meta.wire_api` is a client bug, not something to
+        // resolve silently.
+        if (apiType !== "openai" && params.wireApi !== declared) {
+            throw RequestError.invalidParams(
+                {apiType, wire_api: params.wireApi},
+                `wire_api "${params.wireApi}" conflicts with apiType "${String(apiType)}"`,
+            );
+        }
+    }
+    const wireApi = params.wireApi ?? declared;
     if (typeof params.baseUrl !== "string" || params.baseUrl.trim().length === 0) {
         throw RequestError.invalidParams(undefined, "baseUrl must be a non-empty string");
     }
@@ -1786,6 +1836,7 @@ function buildGatewayConfig(params: GatewayRoutingParams): GatewayConfig {
     };
     return {
         modelProvider: CUSTOM_GATEWAY_PROVIDER_ID,
+        apiType,
         config: {
             name: providerName,
             base_url: params.baseUrl,
@@ -1906,9 +1957,12 @@ function isJsonObject(value: JsonValue | undefined): value is JsonObject {
 }
 
 function gatewayApiTypeFromConfig(gatewayConfig: GatewayConfig): acp.LlmProtocol {
-    const wireApi = gatewayConfig.config.wire_api;
-    const match = Object.entries(SUPPORTED_GATEWAY_PROTOCOLS).find(([, wire]) => wire === wireApi);
-    return match?.[0] ?? "openai";
+    if (gatewayConfig.apiType) return gatewayConfig.apiType;
+    // A config built without a client-chosen apiType (the environment gateway)
+    // reports the protocol family, not the wire: `_meta.wire_api` carries the
+    // chat/responses distinction so clients that only know `openai`/`anthropic`
+    // keep receiving a value they understand.
+    return gatewayConfig.config.wire_api === "anthropic" ? "anthropic" : "openai";
 }
 
 function mergeGatewayConfig(config: JsonObject, gatewayConfig: GatewayConfig | null): JsonObject {

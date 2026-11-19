@@ -27,7 +27,7 @@ describe("Configurable LLM providers (providers/*)", () => {
             providers: [
                 {
                     providerId: OPENAI_PROVIDER_ID,
-                    supported: ["openai", "anthropic"],
+                    supported: ["openai", "openai-chat", "openai-responses", "anthropic"],
                     required: false,
                     current: {
                         apiType: "openai",
@@ -74,6 +74,7 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(provider.current).toEqual({
             apiType: "openai",
             baseUrl: "https://llm-gateway.corp.example.com/openai/v1",
+            _meta: {wire_api: "chat"},
         });
         // The secret headers must never be echoed back through providers/list.
         expect(JSON.stringify(provider)).not.toContain("super-secret");
@@ -92,7 +93,107 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(provider.current).toEqual({
             apiType: "anthropic",
             baseUrl: "https://llm-gateway.corp.example.com/anthropic",
+            _meta: {wire_api: "anthropic"},
         });
+    });
+
+    it("selects Chat Completions with apiType openai-chat", async () => {
+        const fixture = createCodexMockTestFixture();
+        const agent = fixture.getCodexAcpAgent();
+        const codexAcpClient = fixture.getCodexAcpClient();
+        const codexAppServerClient = fixture.getCodexAppServerClient();
+
+        vi.spyOn(codexAcpClient, "readAuthRequirement").mockResolvedValue({required: false, account: null});
+        const threadStartSpy = vi.spyOn(codexAppServerClient, "threadStart")
+            .mockRejectedValue(new Error("stop after capturing config"));
+
+        await agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai-chat",
+            baseUrl: "https://llm-gateway.corp.example.com/v1",
+        });
+
+        expect(agent.listProviders({}).providers[0]!.current).toEqual({
+            apiType: "openai-chat",
+            baseUrl: "https://llm-gateway.corp.example.com/v1",
+            _meta: {wire_api: "chat"},
+        });
+
+        await expect(agent.newSession({cwd: "/workspace", mcpServers: []})).rejects.toThrow();
+        expect(threadStartSpy).toHaveBeenCalledWith(expect.objectContaining({
+            config: expect.objectContaining({
+                model_providers: expect.objectContaining({
+                    [CUSTOM_GATEWAY_PROVIDER_ID]: expect.objectContaining({
+                        wire_api: "chat",
+                    }),
+                }),
+            }),
+        }));
+    });
+
+    it("selects Chat Completions with _meta.wire_api on the openai apiType", async () => {
+        const fixture = createCodexMockTestFixture();
+        const agent = fixture.getCodexAcpAgent();
+        await agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai",
+            baseUrl: "https://llm-gateway.corp.example.com/v1",
+            _meta: {wire_api: "chat"},
+        });
+
+        expect(agent.listProviders({}).providers[0]!.current).toEqual({
+            apiType: "openai",
+            baseUrl: "https://llm-gateway.corp.example.com/v1",
+            _meta: {wire_api: "chat"},
+        });
+    });
+
+    it("rejects a wire_api that contradicts the apiType variant", async () => {
+        const fixture = createCodexMockTestFixture();
+        const agent = fixture.getCodexAcpAgent();
+        await expectInvalidParams(() => agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai-chat",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "responses"},
+        }));
+        await expectInvalidParams(() => agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai-responses",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "chat"},
+        }));
+
+        // A contradicting pair never reached threadStart either.
+        const accepted = createCodexMockTestFixture();
+        await accepted.getCodexAcpAgent().setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai-chat",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "chat"},
+        });
+        expect(accepted.getCodexAcpClient().listProviders()[0]!.current).toEqual({
+            apiType: "openai-chat",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "chat"},
+        });
+    });
+
+    it("rejects an unknown wire_api and a wire on the anthropic apiType", async () => {
+        const fixture = createCodexMockTestFixture();
+        const agent = fixture.getCodexAcpAgent();
+        await expectInvalidParams(() => agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "openai",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "websocket"},
+        }));
+        await expectInvalidParams(() => agent.setProvider({
+            providerId: OPENAI_PROVIDER_ID,
+            apiType: "anthropic",
+            baseUrl: "https://example.com",
+            _meta: {wire_api: "chat"},
+        }));
     });
 
     it("rejects an unsupported apiType with invalid_params", async () => {
@@ -175,7 +276,7 @@ describe("Configurable LLM providers (providers/*)", () => {
                 model_providers: expect.objectContaining({
                     [CUSTOM_GATEWAY_PROVIDER_ID]: expect.objectContaining({
                         base_url: "https://llm-gateway.corp.example.com/openai/v1",
-                        wire_api: "responses",
+                        wire_api: "chat",
                         http_headers: expect.objectContaining({
                             "Authorization": "Bearer super-secret",
                             "X-Client-Feature-ID": "codex",
@@ -268,6 +369,7 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(agent.listProviders({}).providers[0]!.current).toEqual({
             apiType: "openai",
             baseUrl: "https://second-gateway.example/v1",
+            _meta: {wire_api: "chat"},
         });
 
         await agent.disableProvider({providerId: OPENAI_PROVIDER_ID});
@@ -319,6 +421,7 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(agent.listProviders({}).providers[0]!.current).toEqual({
             apiType: "openai",
             baseUrl: "https://recovered-gateway.example/v1",
+            _meta: {wire_api: "chat"},
         });
     });
 
@@ -340,6 +443,7 @@ describe("Configurable LLM providers (providers/*)", () => {
         expect(codexAcpClient.listProviders()[0]!.current).toEqual({
             apiType: "openai",
             baseUrl: "https://gateway.internal/openai",
+            _meta: {wire_api: "chat"},
         });
     });
 });

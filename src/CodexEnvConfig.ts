@@ -124,6 +124,8 @@ export const CUSTOM_GATEWAY_ID = "custom-gateway";
 /** Shape of the gateway config stored in CodexAcpClient. */
 export interface EnvGatewayConfig {
     modelProvider: string;
+    /** Protocol family the env selected; `_meta.wire_api` narrows the OpenAI family. */
+    apiType: EnvApiProtocol;
     config: {
         name: string;
         base_url: string;
@@ -157,7 +159,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
     const apiProtocolRaw = resolveEnvAlias(NUWAX_API_PROTOCOL_ENV_VAR, CODEX_API_PROTOCOL_ENV_VAR);
     const apiProtocol = parseEnvApiProtocol(apiProtocolRaw);
     const wireRaw = resolveEnvAlias(NUWAX_WIRE_API_ENV_VAR, CODEX_WIRE_API_ENV_VAR);
-    const openAiWire = parseEnvWireApi(wireRaw, apiProtocolRaw.value !== undefined);
+    const openAiWire = parseEnvWireApi(wireRaw, apiProtocolRaw.value !== undefined, bridge);
     if (apiProtocol === "anthropic" && wireRaw.value !== undefined) {
         logger.log(
             `${wireRaw.name}="${wireRaw.value}" is ignored because ${apiProtocolRaw.name || CODEX_API_PROTOCOL_ENV_VAR}=anthropic selects the Anthropic protocol family`,
@@ -183,6 +185,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 
     logger.log("Auto-configured gateway from env", {
         baseUrlConfigured: true,
+        apiType: apiProtocol,
         apiProtocol,
         wireApi,
         providerName,
@@ -191,6 +194,7 @@ export function readGatewayConfigFromEnv(): EnvGatewayConfig | null {
 
     return {
         modelProvider: getEnvProviderId(),
+        apiType: apiProtocol,
         config: {
             name: providerName,
             base_url: baseUrl.value!,
@@ -373,13 +377,22 @@ function parseEnvApiProtocol(raw: ResolvedEnvVar): EnvApiProtocol {
 
 /**
  * Parses the wire-protocol variable, the wire variant within the OpenAI
- * protocol family. Unset defaults to "responses"; an unknown value (including
+ * protocol family. Unset defaults to "chat": most gateways this fork targets
+ * (domestic vendors) implement Chat Completions more completely than Responses,
+ * and a client that only knows the "openai" protocol expects chat. Set
+ * `chat`/`responses` explicitly to override; an unknown value (including
  * "anthropic") is fatal — select the Anthropic family with the api protocol
  * variable.
  */
-function parseEnvWireApi(raw: ResolvedEnvVar, apiProtocolSet: boolean): EnvWireApi {
+function parseEnvWireApi(
+    raw: ResolvedEnvVar,
+    apiProtocolSet: boolean,
+    bridge: EnvBridge | undefined,
+): EnvWireApi {
     if (raw.value === undefined) {
-        return "responses";
+        // `native` speaks Responses only, so an unset wire follows the bridge;
+        // every other path defaults to chat.
+        return bridge === "native" ? "responses" : "chat";
     }
     if (raw.value === "responses" || raw.value === "chat") {
         return raw.value;

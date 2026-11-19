@@ -562,7 +562,7 @@ describe("app-server recovery", () => {
 
         await fixture.agent.newSession({cwd: "/work", mcpServers: []});
 
-        expect(fixture.agent.listProviders({}).providers[0]!.current).toEqual({apiType: "openai", baseUrl: "https://gateway.example/v1"});
+        expect(fixture.agent.listProviders({}).providers[0]!.current).toEqual({apiType: "openai", baseUrl: "https://gateway.example/v1", _meta: {wire_api: "chat"}});
         expect(requestsOf(fixture.current(), "thread/start")).toEqual([expect.objectContaining({modelProvider: "custom-gateway"})]);
     });
 

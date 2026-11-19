@@ -3,6 +3,7 @@ import {PROTOCOL_VERSION} from "@agentclientprotocol/sdk";
 import {createCodexMockTestFixture, stubGatewayModelListing} from "../acp-test-utils";
 import {CUSTOM_GATEWAY_PROVIDER_ID, OPENAI_PROVIDER_ID} from "../../CodexAcpClient";
 import {TitleGenerator} from "../../TitleGenerator";
+import {readGatewayConfigFromEnv} from "../../CodexEnvConfig";
 
 stubGatewayModelListing(["model-id"]);
 
@@ -69,6 +70,23 @@ describe("environment gateway bridge routing", () => {
         } else {
             expect(provider["experimental_bridge"]).toBe(bridge);
         }
+    });
+
+    it.each([
+        [undefined, "chat"],
+        ["rig", "chat"],
+        ["genai", "chat"],
+        ["native", "responses"],
+    ])("defaults the OpenAI wire from the bridge (%s -> %s)", (bridge, wire) => {
+        vi.stubEnv("CODEX_BASE_URL", "https://gateway.example/v1");
+        vi.stubEnv("CODEX_API_PROTOCOL", "openai");
+        vi.stubEnv("CODEX_WIRE_API", undefined);
+        vi.stubEnv("CODEX_BRIDGE", bridge);
+        const config = readGatewayConfigFromEnv();
+        // Chat Completions is the OpenAI-family default (domestic gateways
+        // implement it best); `native` is Responses-only and follows along.
+        expect(config?.config.wire_api).toBe(wire);
+        expect(config?.apiType).toBe("openai");
     });
 
     it("does not leak the environment bridge or token into an explicit providers/set replacement", async () => {

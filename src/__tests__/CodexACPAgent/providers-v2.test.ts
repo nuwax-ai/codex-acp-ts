@@ -87,7 +87,7 @@ describe('providers/* over ACP v1 and v2', () => {
         expect(response).toEqual({
             providers: [{
                 providerId: OPENAI_PROVIDER_ID,
-                supported: ["openai", "anthropic"],
+                supported: ["openai", "openai-chat", "openai-responses", "anthropic"],
                 required: false,
                 current: {apiType: "openai", baseUrl: "https://api.openai.com/v1"},
             }],
@@ -112,6 +112,7 @@ describe('providers/* over ACP v1 and v2', () => {
         expect(provider.current).toEqual({
             apiType: "openai",
             baseUrl: "https://llm-gateway.corp.example.com/openai/v1",
+            _meta: {wire_api: "chat"},
         });
         expect(JSON.stringify(provider)).not.toContain("super-secret");
     });

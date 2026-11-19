@@ -90,9 +90,10 @@ describe("readGatewayConfigFromEnv", () => {
         });
     });
 
-    it("defaults to the OpenAI family with the responses wire when both are unset", () => {
+    it("defaults to the OpenAI family with the chat wire when both are unset", () => {
         withEnv({[CODEX_BASE_URL_ENV_VAR]: "https://api.example.com"}, () => {
-            expect(readGatewayConfigFromEnv()?.config.wire_api).toBe("responses");
+            expect(readGatewayConfigFromEnv()?.config.wire_api).toBe("chat");
+            expect(readGatewayConfigFromEnv()?.apiType).toBe("openai");
             expect(readGatewayConfigFromEnv()?.config).not.toHaveProperty("experimental_bridge");
         });
     });

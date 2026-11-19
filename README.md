@@ -84,7 +84,7 @@ legacy `CODEX_*` name of the same suffix, and setting both to different values f
 startup instead of silently picking one.
 
 Set `NUWAX_BASE_URL`, `NUWAX_API_KEY`, and `NUWAX_MODEL` to configure a gateway without an
-ACP provider extension. `CODEX_API_PROTOCOL=openai` (the default) accepts `CODEX_WIRE_API=responses` (the default) or `chat`. Use `CODEX_API_PROTOCOL=anthropic` for the Anthropic Messages API.
+ACP provider extension. `CODEX_API_PROTOCOL=openai` (the default) accepts `CODEX_WIRE_API=chat` (the default) or `responses`; with `CODEX_BRIDGE=native` the default follows the bridge and is `responses`. Use `CODEX_API_PROTOCOL=anthropic` for the Anthropic Messages API.
 
 `CODEX_BRIDGE` optionally selects the implementation for this environment gateway:
 

@@ -60,6 +60,9 @@ the fork changes and how to minimise future conflict area.
 ### `src/CodexAcpClient.ts`
 
 - Seeds gateway from env vars via `readGatewayConfigFromEnv()` (1 import + 3 lines).
+- Owns the ACP→engine wire map (`SUPPORTED_GATEWAY_PROTOCOLS`) and reports the
+  chosen wire in `providers/list` (`apiType` + `_meta.wire_api`); the parsing and
+  defaults stay in `CodexEnvConfig.ts`.
 - Wraps `resumeThread()` with `armRestoredTokenUsageCapture` / `settle` / `clear` (5 lines).
 - Logs `baseUrlConfigured` instead of raw URL (3 sites).
 - **Minimise**: all gateway logic already lives in `CodexEnvConfig.ts`; the only
@@ -242,7 +245,7 @@ spellings. Both set to different values → startup error (split-brain guard).
 | Variable | Description |
 |---|---|
 | `NUWAX_BASE_URL` | Platform protocol base URL. Setting this activates the gateway. |
-| `NUWAX_WIRE_API` | OpenAI wire: `responses` / `chat`. Do not set for the Anthropic protocol (chosen by `NUWAX_API_PROTOCOL=anthropic`). |
+| `NUWAX_WIRE_API` | OpenAI wire: `chat` (default) / `responses`. Unset with `NUWAX_BRIDGE=native` defaults to `responses` (native speaks Responses only). Do not set for the Anthropic protocol (chosen by `NUWAX_API_PROTOCOL=anthropic`). |
 | `NUWAX_API_KEY` | API key for the endpoint. Falls back to `OPENAI_API_KEY`. |
 | `NUWAX_MODEL` | Platform model ID. |
 
@@ -285,6 +288,34 @@ Engine-side switches (`NUWAX_IMAGE_MAX_BYTES`, `NUWAX_REQUEST_IMAGE_MAX_BYTES`,
 `NUWAX_TOOL_SEARCH`, `NUWAX_OPENAI_EGRESS`, `NUWAX_AUTO_COMPACT_*`, `NUWAX_HOME`) are read
 by the app-server child process, so they work through ACP too; the user-facing reference is
 [`my-docs/usage-guide.md`](my-docs/usage-guide.md).
+
+## Provider wire selection (fork behaviour, 2026-11-19)
+
+ACP `providers/set` carries only `apiType`, and the ACP schema strips unknown
+top-level keys, so an explicit `wire_api` sent beside `apiType` never reaches the
+adapter. The engine's `wire_api` (chat / responses / anthropic) therefore has to be
+selected through one of two spots:
+
+- **Environment gateway** — `NUWAX_WIRE_API` (`chat` / `responses`), with
+  `NUWAX_API_PROTOCOL` choosing the family. Unset defaults to **chat**, because the
+  gateways this fork targets implement Chat Completions more completely than
+  Responses and clients that only know the `openai` protocol expect chat.
+  `NUWAX_BRIDGE=native` is Responses-only, so an unset wire follows the bridge and
+  defaults to `responses` there.
+- **`providers/set`** — `apiType: "openai"` now defaults to **chat**;
+  `"openai-responses"` selects Responses, `"openai-chat"` is an accepted synonym,
+  and `_meta: {wire_api: "responses" | "chat"}` overrides `apiType: "openai"`.
+  `providers/list` reports the protocol family (`openai` / `anthropic`) plus
+  `_meta.wire_api`, so clients that only understand the two family values keep
+  working and can still render the exact wire.
+
+Rejected combinations fail fast with `invalid_params`: an unknown
+`_meta.wire_api`, or any `wire_api` on the `anthropic` family.
+
+Tests: `src/__tests__/CodexACPAgent/env-bridge.test.ts` (default wire per bridge),
+`src/__tests__/CodexEnvConfig.test.ts` (unset → chat, carried `apiType`),
+`src/__tests__/CodexACPAgent/providers.test.ts` and `providers-v2.test.ts`
+(chat/responses selection, `providers/list` round-trip).
 
 ## Merge playbook
 
