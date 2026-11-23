@@ -33,7 +33,7 @@ ACP 宿主 ──stdio──> nuwax-harness-acp-ts 适配器 ──JSON-RPC─�
    | --- | --- | --- |
    | 模型按哪档"思考"跑 | `NUWAX_MODEL_REASONING_EFFORT` / `NUWAX_REASONING_EFFORT_LEVELS` | 不发档位字段,由平台默认执行(适配器兜底见 §2.3) |
    | MCP 工具是否首轮全量直出 | `NUWAX_TOOL_SEARCH` | 默认懒加载(`tool_search`),自托管网关常需设为 `false` |
-   | 图片占多少请求体 | `NUWAX_IMAGE_MAX_BYTES` / `NUWAX_REQUEST_IMAGE_MAX_BYTES` | 单图按线路(2 MiB 或不限),整请求 20 MiB |
+   | 图片占多少请求体 | `NUWAX_IMAGE_MAX_BYTES` / `NUWAX_REQUEST_IMAGE_MAX_BYTES`;工具输出另有 `NUWAX_IMAGE_ENTRY_*`(§1.3) | 单图按线路(2 MiB 或不限),整请求 20 MiB;工具输出入口 8 张 / 16 MiB / 24 MiB |
 
 ## 0.1 包与版本
 
@@ -174,6 +174,29 @@ provider 的模型",不会切端点。
 
 截图密集的网页开发任务靠这两级把请求体压回网关限制内(常见 32 MiB 门限)。
 Chat 协议每轮重发历史,单图预算撞线的概率最高。
+
+**工具输出图片入口**(MCP 截图、`view_image`、Code Mode 图片等,引擎 `0.18.59+`/适配器
+`1.2.49+`):
+
+| 变量 | 说明 | 不设时 |
+| --- | --- | --- |
+| `NUWAX_IMAGE_MAX_COUNT` | 单次工具结果保留的图片张数(新图优先,旧的先压缩/丢弃)。范围 1–16 | **8** |
+| `NUWAX_IMAGE_ENTRY_MAX_BYTES` | 单张图片 data URL 的入口字节上限(解码前判定)。范围 1–64 MiB | **16 MiB** |
+| `NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES` | 同一次工具结果的图片合计字节上限,必须 ≥ 单图上限。范围 8–128 MiB | **24 MiB** |
+
+超限时引擎**先缩图再丢弃**:`original` 图按 patch 数把最长边压到本次工具预算内,其余
+档位按 JPEG 阶梯重编码;只有缩到下限仍放不下才替换成
+`[omitted N image(s): …]` 文本。`high`/`auto`/`low` 固定计费 1,844 token,不因像素数
+缩图(字节超限只重编码)。张数实际还受每结果约 9,744 视觉 token 约束(约 5 张),
+调大 `NUWAX_IMAGE_MAX_COUNT` 只是放宽入口界。非法值、越界或"合计 < 单图"都会在
+**启动时**报错并点名变量;这些变量只决定"丢不丢、压多狠",不改变清晰度(清晰度看
+`NUWAX_IMAGE_MAX_BYTES` 与视觉 token 预算)。
+
+```bash
+# 网页/MCP 截图密集的部署:合计放到 48 MiB,单图 24 MiB
+export NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES=50331648
+export NUWAX_IMAGE_ENTRY_MAX_BYTES=25165824
+```
 
 ### 工具与出站开关
 
@@ -335,6 +358,7 @@ nuwax-harness -c model_provider=mimo-responses   # 临时覆盖,不改任何文�
 | unknown model / 模型不存在 | `NUWAX_MODEL` 拼写与平台不一致(注意大小写) |
 | bridge 相关报错 | `native` 只能配 Responses;`genai` 只能配 chat/anthropic |
 | 网关返回 413 / 请求体过大 | 先设 `NUWAX_REQUEST_IMAGE_MAX_BYTES`(整请求图片预算,默认 20 MiB),再考虑 `NUWAX_IMAGE_MAX_BYTES`(单图);输出、文本、工具 schema 与图片都占请求体 |
+| 工具截图被省略(`[omitted N image(s): …]`) | 命中工具输出图片入口限额:按需调大 `NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES` / `NUWAX_IMAGE_ENTRY_MAX_BYTES` / `NUWAX_IMAGE_MAX_COUNT`(见 §1.3);长页截图建议分段截,而不是无限调大 |
 | 抓包看到 `chatgpt.com` / 日志出现本机 hostname 与 `installation_id` | 这是 OpenAI 第一方出站总闸被打开了。检查是否误设 `NUWAX_OPENAI_EGRESS`(默认关闭,且只有 `1` 是有效值) |
 | 模型不认识工具线格式 / MCP 工具在首轮缺失 | 设 `NUWAX_TOOL_SEARCH=false` 让工具表首轮全量直出;非法值会让引擎拒绝启动 |
 | 上下文窗口耗尽报错 "ran out of room in the model's context window" | 0.18.25/1.2.25 起该场景会**自动压缩后重试**(事前:轮前判断把本轮待加入输入计入窗口上限,大输入先压缩再发;事后:网关拒绝或本地闸门超限时压缩一次重试一次),正常使用不应再见到该错误。若仍出现:自动压缩被显式禁用,或会话只剩单条超大消息(无可压缩)——开新会话,并把单条输入控制在 1MiB 字符以内 |
@@ -551,8 +575,9 @@ MiMo 的 `https://token-plan-cn.xiaomimimo.com/anthropic`),不要自行拼接
 | `NUWAX_MODEL_CONTEXT_WINDOW` | 模型真实上下文窗口(token,正整数)。本地预算与自动压缩都由它派生;不设则依赖模型目录或平台声明 |
 | `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 自动压缩触发点:绝对 token 阈值 / 窗口比例。都不设时按窗口 **80%** 触发;显式阈值直接生效不封顶 |
 | `NUWAX_IMAGE_MAX_BYTES` | 单张图片入历史的编码体积上限(默认按线路 2 MiB 或不限);宿主常塞大截图时按需上调 |
+| `NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES` / `NUWAX_IMAGE_ENTRY_MAX_BYTES` / `NUWAX_IMAGE_MAX_COUNT` | 工具输出图片入口限额(默认 24 MiB / 16 MiB / 8 张);宿主或 MCP 返回大截图、日志出现 `[omitted N image(s): …]` 时按需上调 |
 
-> 这四个变量适配器不消费、**原样透传给引擎**,在 ACP 接入下同样生效(取值与校验
+> 这些变量适配器不消费、**原样透传给引擎**,在 ACP 接入下同样生效(取值与校验
 > 规则见第一部分 §1.3 对应行)。
 
 ## 2.6 平台配置示例
@@ -680,6 +705,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
 | 网关返回 413 / 宿主对话越聊越慢 | 图片占请求体:设 `NUWAX_REQUEST_IMAGE_MAX_BYTES`(默认 20 MiB)、必要时 `NUWAX_IMAGE_MAX_BYTES`;长会话另见下面两行 |
+| 工具截图被省略(`[omitted N image(s): …]`) | 命中工具输出图片入口限额:调 `NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES` / `NUWAX_IMAGE_ENTRY_MAX_BYTES` / `NUWAX_IMAGE_MAX_COUNT`(见 §1.3;适配器不消费,原样透传) |
 | 模型不认识 `tool_search` 线格式 / MCP 工具行为异常 | 设 `NUWAX_TOOL_SEARCH=false` 让 MCP 工具全量直出;非法值会让引擎拒绝启动 |
 | 上下文窗口耗尽报错 "ran out of room in the model's context window" | 1.2.25 起(内置引擎 0.18.25)该场景会**自动压缩后重试**,正常使用不应再见到该错误;若仍出现,见第一部分 §1.7 同名行 |
 | 大窗口会话切到小窗口模型后卡住 / 报超窗 | 内置引擎 0.18.30 起由**迁移压缩**自动处理(宿主侧无需任何配置);若仍出现,见第一部分 §1.7 同名行 |
@@ -740,6 +766,9 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 引擎 | 自动压缩阈值 / 窗口比例 | 80% 窗口 |
 | `NUWAX_IMAGE_MAX_BYTES` | 引擎 | 单图编码预算 | 按线路(2 MiB 或不限) |
 | `NUWAX_REQUEST_IMAGE_MAX_BYTES` | 引擎 | 整请求内联图片预算 | 20 MiB |
+| `NUWAX_IMAGE_MAX_COUNT` | 引擎 | 工具输出单次保留图片数 | 8 |
+| `NUWAX_IMAGE_ENTRY_MAX_BYTES` | 引擎 | 工具输出单图入口字节上限 | 16 MiB |
+| `NUWAX_IMAGE_ENTRY_MAX_TOTAL_BYTES` | 引擎 | 工具输出图片合计字节上限 | 24 MiB |
 | `NUWAX_TOOL_SEARCH` | 引擎 | `false` = 工具首轮全量直出 | 官方默认 |
 | `NUWAX_OPENAI_EGRESS` | 引擎 | `=1` 才允许 OpenAI 第一方出站 | 关闭 |
 | `NUWAX_HOME` | 引擎 | 会话与状态目录 | `~/.nuwax-harness` |
