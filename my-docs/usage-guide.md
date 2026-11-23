@@ -730,7 +730,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 推理力度 / 关思考 | `NUWAX_MODEL_REASONING_EFFORT`(取 `none` 即关思考) | 档位同上;关思考另有开关 `NUWAX_DISABLE_THINKING=true` |
 | 档位表 | `NUWAX_REASONING_EFFORT_LEVELS` | 同名同义,透传给引擎执行;适配器另外用它作为兜底档位 |
 | 上下文窗口 / 自动压缩 | `NUWAX_MODEL_CONTEXT_WINDOW` / `NUWAX_AUTO_COMPACT_TOKEN_LIMIT` / `NUWAX_AUTO_COMPACT_RATIO` | 同名同义(引擎侧生效) |
-| 图片预算 | `NUWAX_IMAGE_MAX_BYTES` / `NUWAX_REQUEST_IMAGE_MAX_BYTES` / `NUWAX_IMAGE_ENTRY_MAX_*` / `NUWAX_IMAGE_MAX_COUNT` | 同名同义(引擎侧生效) |
+| 图片预算 | `NUWAX_IMAGE_MAX_BYTES` / `NUWAX_REQUEST_IMAGE_MAX_BYTES` / `NUWAX_IMAGE_ENTRY_MAX_*` / `NUWAX_IMAGE_MAX_COUNT` | 同名同义(引擎侧生效);入口限额的含义、范围与默认值见 §1.3「工具输出图片入口」 |
 | 工具表 / 出站 | `NUWAX_TOOL_SEARCH` / `NUWAX_OPENAI_EGRESS` | 同名同义(引擎侧生效) |
 | 状态目录 | `NUWAX_HOME` | 同名同义 |
 
