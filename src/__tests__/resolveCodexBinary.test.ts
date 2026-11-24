@@ -19,7 +19,7 @@ vi.mock("node:os", async () => {
     return {...actual, homedir: () => fakeHome};
 });
 
-const {resolveCodexBinaryPath} = await import("../resolveCodexBinary.ts");
+const {resolveCodexBinaryPath} = await import("../resolveCodexBinary");
 
 function cacheFile(version: string, triple: string): string {
     const directory = join(fakeHome, ".nuwax-harness-cache", version, triple);

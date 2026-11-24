@@ -66,7 +66,8 @@ function harnessVersion(): string {
     // Last resort: use whatever the cache actually holds. This covers a bundle
     // whose inlined version is stale, which is exactly the 1.2.50 failure mode.
     const cached = cachedVersions();
-    if (cached.length > 0) return cached[0];
+    const newest = cached[0];
+    if (newest !== undefined) return newest;
     return harnessPackage.version;
 }
 
