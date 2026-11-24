@@ -1,0 +1,88 @@
+/**
+ * The adapter must look for the engine version that is actually installed.
+ *
+ * 1.2.50 regressed here: `harnessPackage.version` is inlined by the bundler from
+ * whatever `node_modules` held at build time, so the published bundle looked for
+ * 0.18.59 while declaring 0.18.61 — a clean machine was told 0.18.59 was
+ * missing, and a machine holding that old cache silently ran an older engine.
+ * These tests pin the runtime resolution that replaced the inlined value.
+ */
+import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+
+let fakeHome = "";
+
+vi.mock("node:os", async () => {
+    const actual = await vi.importActual<typeof import("node:os")>("node:os");
+    return {...actual, homedir: () => fakeHome};
+});
+
+const {resolveCodexBinaryPath} = await import("../resolveCodexBinary.ts");
+
+function cacheFile(version: string, triple: string): string {
+    const directory = join(fakeHome, ".nuwax-harness-cache", version, triple);
+    mkdirSync(directory, {recursive: true});
+    const binary = join(directory, process.platform === "win32" ? "nuwax-harness.exe" : "nuwax-harness");
+    writeFileSync(binary, "");
+    return binary;
+}
+
+/** The triple this test host would resolve first. */
+function hostTriple(): string {
+    if (process.platform === "darwin") {
+        return process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+    }
+    if (process.platform === "linux") {
+        return process.arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl";
+    }
+    return "x86_64-pc-windows-msvc";
+}
+
+/** The version the real installed `@nuwax-ai/nuwax-harness` declares. */
+function installedVersion(): string {
+    return JSON.parse(
+        require("node:fs").readFileSync(
+            require("node:module").createRequire(import.meta.url).resolve(
+                "@nuwax-ai/nuwax-harness/package.json",
+            ),
+            "utf8",
+        ),
+    ).version as string;
+}
+
+describe("resolveCodexBinaryPath", () => {
+    beforeEach(() => {
+        fakeHome = mkdtempSync(join(tmpdir(), "acp-resolve-"));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it("returns the installed engine's binary", () => {
+        const binary = cacheFile(installedVersion(), hostTriple());
+        expect(resolveCodexBinaryPath()).toBe(binary);
+    });
+
+    it("falls back to whatever the cache holds when the installed version is absent", () => {
+        // The regression: a bundle carrying a stale inlined version must still
+        // find the engine that the cache (and therefore the user) actually has.
+        const older = "0.18.60";
+        const binary = cacheFile(older, hostTriple());
+        expect(resolveCodexBinaryPath()).toBe(binary);
+    });
+
+    it("prefers the installed version over an older cached one", () => {
+        cacheFile("0.18.60", hostTriple());
+        const installed = cacheFile(installedVersion(), hostTriple());
+        expect(resolveCodexBinaryPath()).toBe(installed);
+    });
+
+    it("names the installed version when nothing is cached", () => {
+        expect(() => resolveCodexBinaryPath()).toThrowError(
+            new RegExp(`The nuwax-harness ${installedVersion().replaceAll(".", "\\.")} binary is not installed`),
+        );
+    });
+});

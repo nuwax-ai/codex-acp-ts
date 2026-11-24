@@ -1,4 +1,5 @@
-import {existsSync} from "node:fs";
+import {existsSync, readdirSync, readFileSync} from "node:fs";
+import {createRequire} from "node:module";
 import {homedir} from "node:os";
 import {join} from "node:path";
 import harnessPackage from "@nuwax-ai/nuwax-harness/package.json";
@@ -41,14 +42,62 @@ function binaryName(): string {
     return process.platform === "win32" ? "nuwax-harness.exe" : "nuwax-harness";
 }
 
+/**
+ * The engine version to look for in the cache.
+ *
+ * Read at runtime on purpose. `harnessPackage.version` is inlined by the bundler
+ * from whatever `node_modules` held at build time, so 1.2.50 shipped a bundle
+ * that looked for 0.18.59 while declaring 0.18.61: a clean machine was told the
+ * 0.18.59 binary was missing, and a machine that still had that cache silently
+ * ran the older engine. Resolving the installed package keeps the adapter and
+ * the engine it depends on in agreement.
+ */
+function harnessVersion(): string {
+    try {
+        const require = createRequire(import.meta.url);
+        const manifest = require.resolve("@nuwax-ai/nuwax-harness/package.json");
+        const installed = JSON.parse(readFileSync(manifest, "utf8")) as {version?: string};
+        if (typeof installed.version === "string" && installed.version.length > 0) {
+            return installed.version;
+        }
+    } catch {
+        // Standalone bundles have no node_modules to resolve; fall through.
+    }
+    // Last resort: use whatever the cache actually holds. This covers a bundle
+    // whose inlined version is stale, which is exactly the 1.2.50 failure mode.
+    const cached = cachedVersions();
+    if (cached.length > 0) return cached[0];
+    return harnessPackage.version;
+}
+
+/** Versions present in the bundle cache, newest-looking first. */
+function cachedVersions(): string[] {
+    try {
+        return readdirSync(join(homedir(), CACHE_DIRECTORY), {withFileTypes: true})
+            .filter(entry => entry.isDirectory() && /^\d+\.\d+\.\d+/.test(entry.name))
+            .map(entry => entry.name)
+            .sort((left, right) =>
+                right.localeCompare(left, undefined, {numeric: true, sensitivity: "base"}),
+            );
+    } catch {
+        return [];
+    }
+}
+
 export function resolveCodexBinaryPath(): string {
-    const version = harnessPackage.version;
+    // Installed version first, then whatever else the cache holds; the triple
+    // order inside `targetTriples()` already expresses musl-before-gnu.
+    const versions = [...new Set([harnessVersion(), ...cachedVersions()])];
     const cached = targetTriples()
-        .map(triple => join(homedir(), CACHE_DIRECTORY, version, triple, binaryName()))
+        .flatMap(triple =>
+            versions.map(version =>
+                join(homedir(), CACHE_DIRECTORY, version, triple, binaryName()),
+            ),
+        )
         .find(candidate => existsSync(candidate));
     if (cached !== undefined) return cached;
     throw new Error(
-        `The nuwax-harness ${version} binary is not installed. Run \`nuwax-harness --version\` to ` +
+        `The nuwax-harness ${versions[0]} binary is not installed. Run \`nuwax-harness --version\` to ` +
         "download it, or set CODEX_PATH to an absolute path.",
     );
 }
