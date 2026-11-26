@@ -161,6 +161,7 @@ import {
 } from "./FastModeConfig";
 import packageJson from "../package.json";
 import {isJetBrains2026_1Client} from "./JBUtils";
+import {isBuiltInExternalProvider} from "./BuiltInExternalProviders";
 import {clientSupportsNotices} from "./SessionNotice";
 import {AsyncQuestionClient, AsyncQuestionElicitations, renderAsyncQuestionReply} from "./CodexAsyncQuestions";
 import {
@@ -1530,7 +1531,7 @@ export class CodexAcpServer {
         authProvider: string | null,
         knownAccount: KnownAccount = null,
     ): Promise<ActiveAuthState> {
-        if (!this.authProviderUsesOpenAiAccount(authProvider)) {
+        if (!this.authProviderUsesEngineAccount(authProvider)) {
             await this.publishAuthStatus(authProvider, null);
             return {
                 account: null,
@@ -1639,6 +1640,16 @@ export class CodexAcpServer {
 
     private authProviderUsesOpenAiAccount(authProvider: string | null): boolean {
         return authProvider === null || authProvider === "openai";
+    }
+
+    /**
+     * Whether the session's provider authenticates with an account the engine
+     * itself reports: the Codex account, or the credentials of a built-in
+     * external provider (Bedrock, Google Cloud). Such a session is described
+     * by `account/read`; any other provider is not.
+     */
+    private authProviderUsesEngineAccount(authProvider: string | null): boolean {
+        return this.authProviderUsesOpenAiAccount(authProvider) || isBuiltInExternalProvider(authProvider);
     }
 
     private authProvidersMatch(a: string | null, b: string | null): boolean {
@@ -2749,7 +2760,7 @@ export class CodexAcpServer {
             return gatewayStatus(authGatewayName);
         }
         const modelProvider = await this.runWithProcessCheck(() => this.codexAcpClient.getAgentConfiguredModelProvider());
-        if (!this.authProviderUsesOpenAiAccount(modelProvider)) {
+        if (!this.authProviderUsesEngineAccount(modelProvider)) {
             return agentConfiguredProviderStatus(modelProvider);
         }
         const accountResponse = await this.runWithProcessCheck(() => this.codexAcpClient.getAccount());
@@ -2771,7 +2782,7 @@ export class CodexAcpServer {
             await this.setAuthStatus(gatewayStatus(authGatewayName));
             return;
         }
-        if (this.authProviderUsesOpenAiAccount(authProvider)) {
+        if (this.authProviderUsesEngineAccount(authProvider)) {
             await this.setAuthStatus(fromAccount(account));
             return;
         }

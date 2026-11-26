@@ -520,6 +520,73 @@ describe("authStatus extension", () => {
             expect(received).toEqual([{authMode: "chatgpt", planType: "plus"}]);
         });
     });
+
+    // The engine reports the credentials of its built-in external providers through its
+    // own account (`{type: "gcp"}`, `{type: "amazonBedrock"}`). A session on such a
+    // provider is therefore described by `account/read`, like an OpenAI one — not hidden
+    // behind "not logged in", which is for providers with a gateway of their own.
+    describe("sessions on built-in external providers", () => {
+        const bedrock: Account = {type: "amazonBedrock", usesCodexManagedCredentials: false};
+        const vertex: Account = {type: "gcp"};
+
+        /** Installs what a session on `providerId` reads: the engine's account and the session itself. */
+        function givenProviderSession(fixture: CodexMockTestFixture, providerId: string, account: Account): void {
+            const model = createTestModel();
+            vi.spyOn(fixture.getCodexAppServerClient(), "accountRead")
+                .mockResolvedValue({account, requiresOpenaiAuth: false});
+            mockAccount(fixture, account);
+            vi.spyOn(fixture.getCodexAcpClient(), "listSkills").mockResolvedValue({data: []});
+            vi.spyOn(fixture.getCodexAcpClient(), "newSession").mockResolvedValue({
+                sessionId: "provider-session",
+                currentModelId: ModelId.create(model.id, model.defaultReasoningEffort).toString(),
+                models: [model],
+                collaborationMode: "default",
+                modelProvider: providerId,
+                additionalDirectories: [],
+            });
+        }
+
+        /** A real `session/new`: the session state comes from the session initializer, not from a test. */
+        async function openSession(fixture: CodexMockTestFixture): Promise<string> {
+            const session = await fixture.getCodexAcpAgent().newSession({cwd: "/workspace", mcpServers: []});
+            return session.sessionId;
+        }
+
+        async function statusAccountLine(fixture: CodexMockTestFixture, sessionId: string): Promise<string> {
+            fixture.clearAcpConnectionDump();
+            await fixture.getCodexAcpAgent().prompt({sessionId, prompt: [{type: "text", text: "/status"}]});
+            const dump = fixture.getAcpConnectionDump([]);
+            // The status text ends its lines with a Markdown hard break (two spaces).
+            return dump.slice(dump.indexOf("**Account:**")).split("\\n")[0]!.trimEnd();
+        }
+
+        // The auth status and `/status` keep their own wording, which differs for Bedrock.
+        it.each([
+            ["gcp", vertex, "Google Cloud Vertex AI", "Google Cloud Vertex AI"],
+            ["amazon-bedrock", bedrock, "AWS Bedrock", "Amazon Bedrock"],
+        ] as const)("is described by the engine's account on %s", async (providerId, account, label, statusLine) => {
+            const fixture = createCodexMockTestFixture();
+            givenProviderSession(fixture, providerId, account);
+            await initializeAndAwaitFirstPush(fixture);
+            const sessionId = await openSession(fixture);
+
+            expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toEqual(account);
+            expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label});
+            expect(await statusAccountLine(fixture, sessionId)).toBe(`**Account:** ${statusLine}`);
+        });
+
+        it("keeps hiding the account for a session on a provider with a gateway of its own", async () => {
+            const fixture = createCodexMockTestFixture();
+            givenProviderSession(fixture, "my-gateway", {
+                type: "chatgpt", email: "unused@example.com", planType: "plus", workspaceName: null,
+            });
+            await initializeAndAwaitFirstPush(fixture);
+            const sessionId = await openSession(fixture);
+
+            expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toBeNull();
+            expect(await statusAccountLine(fixture, sessionId)).toBe("**Account:** not logged in");
+        });
+    });
 });
 
 describe("accountFromUpdated", () => {
