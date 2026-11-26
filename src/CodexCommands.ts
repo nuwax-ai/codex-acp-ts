@@ -615,16 +615,19 @@ export class CodexCommands {
         if (!account) {
             return "not logged in";
         }
-        if (account.type === "apiKey") {
-            return "API key configured";
+        // A switch rather than an if-chain with a trailing "unknown": a new
+        // account variant that was never mapped here must fail typecheck, not
+        // show up as "unknown" to the user.
+        switch (account.type) {
+            case "apiKey":
+                return "API key configured";
+            case "chatgpt":
+                return `ChatGPT ${account.planType} (${account.email})`;
+            case "amazonBedrock":
+                return "Amazon Bedrock";
+            case "gcp":
+                return "Google Cloud Vertex AI";
         }
-        if (account.type === "chatgpt") {
-            return `ChatGPT ${account.planType} (${account.email})`;
-        }
-        if (account.type === "amazonBedrock") {
-            return "Amazon Bedrock";
-        }
-        return "unknown";
     }
 
     private formatTokenUsage(usage: TokenCount | null): string {

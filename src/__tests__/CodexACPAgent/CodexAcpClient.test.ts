@@ -15,7 +15,7 @@ import {
 import type {ServerNotification} from "../../app-server";
 import type {SessionState} from "../../CodexAcpServer";
 import {AgentMode} from "../../AgentMode";
-import type {Model, ReviewStartResponse, ThreadGoal, TurnCompletedNotification, TurnStartParams} from "../../app-server/v2";
+import type {Account, Model, ReviewStartResponse, ThreadGoal, TurnCompletedNotification, TurnStartParams} from "../../app-server/v2";
 import type {RateLimitsMap} from "../../RateLimitsMap";
 import {ModelId} from "../../ModelId";
 import {GOAL_CONTROL_METHOD, SESSION_STEERING_METHOD} from "../../AcpExtensions";
@@ -454,6 +454,29 @@ describe('ACP server test', { timeout: 40_000 }, () => {
 
         const gatewayStatusDump = authFixture.getAcpConnectionDump([]);
         expect(gatewayStatusDump).toContain("**Account:** not logged in");
+    });
+
+    it('names every built-in provider account in /status', async () => {
+        // `/status` is answered locally from the session state; no model call is involved.
+        const cases: Array<[Account, string]> = [
+            [{ type: "gcp" }, "**Account:** Google Cloud Vertex AI"],
+            [{ type: "amazonBedrock", usesCodexManagedCredentials: false }, "**Account:** Amazon Bedrock"],
+        ];
+        for (const [account, expected] of cases) {
+            const fixture = createCodexMockTestFixture();
+            const codexAcpAgent = fixture.getCodexAcpAgent();
+            const sessionState = createTestSessionState({ sessionId: "provider-account-session", account });
+            await codexAcpAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+            vi.spyOn(codexAcpAgent, "getSessionState").mockReturnValue(sessionState);
+            fixture.clearAcpConnectionDump();
+
+            await codexAcpAgent.prompt({
+                sessionId: sessionState.sessionId,
+                prompt: [{ type: "text", text: "/status" }]
+            });
+
+            expect(fixture.getAcpConnectionDump([])).toContain(expected);
+        }
     });
 
     it('supports legacy authentication/logout ext method', async () => {

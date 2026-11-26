@@ -398,12 +398,25 @@ the adapter and must not be recreated under `src/app-server/`:
 - **`Account` variant `gcp`** (Google Cloud Vertex AI with externally managed
   credentials) maps like Bedrock: `kind: "external"`, label
   `"Google Cloud Vertex AI"`; `getAuthenticationStatus` reports it as gateway
-  `"gcp"`.
+  `"gcp"` (the engine's `GCP_PROVIDER_ID`), and `/status` names it the same.
+  `formatAccountInfo` is a `switch` on purpose: as an if-chain with a trailing
+  `"unknown"` it compiled fine while showing GCP users "unknown".
 - **`Account.workspaceName`** is required on ChatGPT accounts. `fromAccount`
   does not surface it yet; `accountFromUpdated` keeps the previous value
   across an `account/updated` push, the same rule the email already follows.
 - **An `audio` user input** carries either `url` or `fileId`, like an image;
   history replay renders `fileId` as `audio:<id>`.
+- **Error kinds are open, and the category table does not check them.**
+  `CodexErrorInfo` ends in `| string | {[key: string]: unknown}`, so
+  `Extract<CodexErrorInfo, string>` is plain `string`: the
+  `satisfies Record<…>` on `STRING_CODEX_ERROR_CATEGORIES`
+  (`src/CodexEventHandler.ts`) accepts any set of keys. A kind missing from the
+  table — `modelNotFound` and `policyCapacityUnavailable` arrived in 0.18.65 —
+  falls back to `provider_error` in `sessionFailureKind`, which is the intended
+  behaviour for kinds this build does not know. Add an entry only when a kind
+  deserves an ACP category of its own; nothing will remind you.
+- **`ReviewDelivery` lost `detached`** (reviews run inline on the given
+  thread). The adapter already sends `delivery: "inline"`.
 
 Test fixtures that build a ChatGPT `Account` need `workspaceName`, and an
 `imageGeneration` `ThreadItem` needs `generationId` — both `null` where the
