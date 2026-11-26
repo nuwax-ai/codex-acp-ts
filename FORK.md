@@ -44,7 +44,7 @@ These files do not exist upstream. They never conflict on merge.
 | `src/RestoredTokenUsageTracker.ts` | Captures and replays restored `thread/tokenUsage/updated` snapshots on resume. |
 | `src/SessionOpenQueue.ts` | Serialises concurrent session open/resume calls per session. |
 | `src/resolveCodexBinary.ts` | Locates the harness binary inside `~/.nuwax-harness-cache`. |
-| `src/BuiltInExternalProviders.ts` | The engine's built-in external provider ids (Bedrock, Google Cloud), whose sessions are described by the engine's account. |
+| `src/BuiltInExternalProviders.ts` | The engine's built-in external provider ids (Bedrock, Google Cloud); a session on one is described by the provider, since `account/read` cannot describe it. |
 | `vitest.config.mjs` | Test runner config. Upstream's file with one fork delta: `scripts/acp-validation/` and `scripts/live-validation/` are in the exclude list because they run on node:test, not Vitest. The old fork-owned `vitest.config.ts` was dropped because the `.mjs` extension wins Vitest's resolution order and would shadow it. |
 | `scripts/acp-validation/` | Mock-wire validation scripts. |
 | `scripts/live-validation/` | Live engine validation scripts. |
@@ -403,8 +403,8 @@ tier".
   `"gcp"` (the engine's `GCP_PROVIDER_ID`), and `/status` names it the same.
   `formatAccountInfo` is a `switch` on purpose: as an if-chain with a trailing
   `"unknown"` it compiled fine while showing GCP users "unknown". A session on
-  such a provider is described by the engine's account — see "Built-in external
-  providers use the engine's account".
+  such a provider is described by the provider itself — see "Built-in external
+  providers are their own auth source".
 - **`Account.workspaceName`** is required on ChatGPT accounts. `fromAccount`
   does not surface it yet; `accountFromUpdated` keeps the previous value
   across an `account/updated` push, the same rule the email already follows.
@@ -455,9 +455,11 @@ effects:
 Both are fixed in `src/FastModeConfig.ts`:
 
 - `isFastServiceTier` recognises `fast` and `priority`. The session's Fast mode
-  state and `modelSupportsFast` (which also reads the deprecated
-  `additionalSpeedTiers` and `serviceTiers`, like the engine's
-  `ModelPreset::supports_fast_mode`) no longer look at a typed enum.
+  state no longer looks at a typed enum.
+- `modelSupportsFast` mirrors the engine's `ModelPreset::supports_fast_mode`
+  field by field: the deprecated `additionalSpeedTiers` names the tier `fast`,
+  `serviceTiers` lists it as `priority`. A `fast` id under `serviceTiers` is
+  not one the engine honours, so it is not offered either.
 - `resolveTurnServiceTier` decides what a turn carries, and
   `SessionState.fastModeExplicitlyOff` records whether the user turned Fast
   mode off in this session:
@@ -469,8 +471,16 @@ Both are fixed in `src/FastModeConfig.ts`:
   | off, turned off by the user | — | `null` (the user asked for it) |
   | off, never turned on | — | omitted (the thread keeps its own tier) |
 
-  Turning off what is already off does not make the next turn clear anything,
-  and does not undo an earlier explicit turn-off.
+**A toggle is applied to the thread at the same time.** `CodexAcpClient.setThreadFastMode`
+sends `thread/settings/update` with `serviceTier`, whose `null` clears the
+thread's tier. The engine answers a cleared tier with its `"default"`
+sentinel. The choice therefore lives in the engine and survives closing and
+resuming the session before the next turn; rebuilding the session state from
+the reported tier gives the user's choice back. Upstream applied a turn-off
+only on the next turn, so a resume in between restored the old tier. A toggle
+that changes nothing does not call the engine — turning off what is already
+off must not clear a tier the thread has on its own — and a rejected update
+rejects the request and leaves the session as it was.
 
 The received tier is kept as `string | null`; the `as ServiceTier` casts are
 gone together with the type. The wire snapshots under
@@ -479,29 +489,40 @@ gone together with the type. The wire snapshots under
 
 Tests: `src/__tests__/CodexACPAgent/fast-mode-config.test.ts`.
 
-## Built-in external providers use the engine's account (fork behaviour, 2026-11-26)
+## Built-in external providers are their own auth source (fork behaviour, 2026-11-26)
 
-The engine reports the credentials of its built-in external providers through
-its own account: `account/read` answers `{type: "amazonBedrock"}` or
-`{type: "gcp"}`. Upstream's adapter treated every provider but `openai` as "a
-gateway of its own" and set the session's account to `null`, so a Bedrock or
-Vertex AI session showed `not logged in` in `/status` and a bare provider name
-as its auth status.
+`account/read` cannot describe a session on a built-in external provider
+(Amazon Bedrock, Google Cloud Vertex AI). Its params carry no thread id, so it
+always answers for the engine's default configuration: with an OpenAI default
+and a Vertex AI thread it reports the OpenAI account, which says nothing about
+that session. An earlier attempt to use that read for these sessions put an
+`API key configured` line into a Vertex AI session's `/status`.
 
-`authProviderUsesEngineAccount` (`src/CodexAcpServer.ts`) keeps the account
-read for these providers, so such a session is described the way an OpenAI one
-is: `fromAccount` for the status push, the account in the session state, and
-`/status` naming the provider. `authProviderUsesOpenAiAccount` is still the
-rule for "these two providers are the same login" (`authProvidersMatch`).
+Such a session is therefore described by its provider alone, in
+`src/BuiltInExternalProviders.ts` (fork-only):
 
-The provider ids live in `src/BuiltInExternalProviders.ts` (fork-only). They
-are the engine's constants and differ from the account type names: the Bedrock
-account is `"amazonBedrock"`, its provider ids are `"amazon-bedrock"` and
-`"amazon-bedrock-runtime"`.
+- The auth status is `{kind: "external", label}` with the provider's name, and
+  `/status` prints the same label. The session's `account` stays `null`.
+- The status names the auth source and nothing more: whether the credentials
+  work is settled by the first real request.
+- The provider ids are the engine's constants and differ from the account type
+  names: the Bedrock account is `"amazonBedrock"`, its provider ids are
+  `"amazon-bedrock"` and `"amazon-bedrock-runtime"`.
+
+**A status remembers where it came from.** `authStatusFromAccount` records
+whether the connection-level status was derived from the Codex account, and
+`account/updated` — which describes that account only — rewrites nothing else.
+Upstream guarded by kind (`kind === "gateway"`); the `external` status of these
+sessions slipped past it, and a Codex logout turned `Google Cloud Vertex AI`
+into `Not logged in`.
+
+`fromAccount` and `builtInExternalProviderStatus` name the providers the same
+way, so the Codex-account and the session-provider paths agree; `/status` says
+`AWS Bedrock` for Bedrock where it used to say `Amazon Bedrock`.
 
 Tests: "sessions on built-in external providers" in
 `src/__tests__/CodexACPAgent/auth-status.test.ts`, which opens a real
-`session/new`.
+`session/new` behind a default OpenAI account.
 
 ## Merge playbook
 
