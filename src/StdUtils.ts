@@ -48,7 +48,7 @@ export function createJSONRPCReader(readable: Readable): MessageReader & {delive
                     msg = JSON.parse(line);
                 } catch (error) {
                     // A lost line can be a lost response, and its request then waits forever.
-                    logger.error(`Dropped a Codex app-server line that is not JSON (${line.length} chars)`, error);
+                    logger.error(`Dropped a nuwax-harness app-server line that is not JSON (${line.length} chars)`, error);
                     return;
                 }
                 if (msg && typeof msg === 'object' && (msg as {jsonrpc?: unknown}).jsonrpc === undefined) {

@@ -10,7 +10,7 @@ export class McpStartupReporter {
     static skipped(serverNames: string[]): ToolFacts[] {
         return serverNames.map(server => failure(
             server,
-            `[nuwax-harness-acp] MCP server \`${server}\` was not started, because the Codex config already defines an MCP server with this name. Codex uses its own entry, or no server if that entry is disabled.`,
+            `[nuwax-harness-acp] MCP server \`${server}\` was not started, because the nuwax-harness config already defines an MCP server with this name. nuwax-harness uses its own entry, or no server if that entry is disabled.`,
         ));
     }
 

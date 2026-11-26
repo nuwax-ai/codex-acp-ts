@@ -12,7 +12,7 @@ const ACTIVE_WRITER = Object.assign(new Error(`thread ${threadId} already has an
 
 const expectedError = {
     code: -32600,
-    message: "Invalid request: This Codex session is in use by another Codex client (the Codex app, the CLI or an IDE extension). Close the session there or quit that client, then try again.",
+    message: "Invalid request: This nuwax-harness session is in use by another client (the app, the CLI or an IDE extension). Close the session there or quit that client, then try again.",
     data: {
         reason: "thread_active_writer",
         threadId,

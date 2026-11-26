@@ -7,7 +7,7 @@
     "content": [
       {
         "content": {
-          "text": "[nuwax-codex-acp forwarded startup error] MCP server `docs` failed to start: exit code 1",
+          "text": "[nuwax-harness-acp forwarded startup error] MCP server `docs` failed to start: exit code 1",
           "type": "text"
         },
         "type": "content"
@@ -23,7 +23,7 @@
     "content": [
       {
         "content": {
-          "text": "[nuwax-codex-acp forwarded startup error] MCP server `slow` startup was cancelled.",
+          "text": "[nuwax-harness-acp forwarded startup error] MCP server `slow` startup was cancelled.",
           "type": "text"
         },
         "type": "content"

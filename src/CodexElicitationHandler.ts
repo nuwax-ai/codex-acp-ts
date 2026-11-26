@@ -429,7 +429,7 @@ export class CodexElicitationHandler implements ElicitationHandler {
             }
             return {answers: userInputAnswers(response, params.questions, this.clientCapabilities)};
         } catch (error) {
-            logger.error("Error handling Codex user input request", error);
+            logger.error("Error handling nuwax-harness user input request", error);
             return { answers: {} };
         }
     }

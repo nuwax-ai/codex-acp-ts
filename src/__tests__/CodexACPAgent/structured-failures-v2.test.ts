@@ -146,7 +146,7 @@ describe("standard ACP v2 terminal failures", () => {
 
         expect(lastIdle(client)).toMatchObject({stopReason: status === "failed" ? "error" : "end_turn"});
         expect(JSON.stringify(lastIdle(client))).not.toContain("Another turn's private error");
-        if (status === "failed") expect(lastIdle(client)).toHaveProperty("error.message", "Codex turn failed.");
+        if (status === "failed") expect(lastIdle(client)).toHaveProperty("error.message", "nuwax-harness turn failed.");
     });
 
     it.each(["prompt", "agent"] as const)("fails unfinished tools before reporting failed %s work as idle/error", async owner => {

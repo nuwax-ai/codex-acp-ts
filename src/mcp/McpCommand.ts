@@ -206,7 +206,7 @@ export class McpCommand {
                 throw err;
             }
             // The list without a thread has no live status.
-            logger.log(`Codex does not know thread ${threadId}, so the MCP server list has no live status`);
+            logger.log(`nuwax-harness does not know thread ${threadId}, so the MCP server list has no live status`);
             const servers = await this.runWithProcessCheck(() => listMcpServerStatus(this.codexAcpClient));
             return {servers, live: false};
         }

@@ -151,7 +151,7 @@ export class CodexAppServerSupervisor {
     /** Starts a new child. The current child must be gone. */
     spawn(): SupervisedChild {
         if (this.isShuttingDown) throw new Error("The agent is shutting down");
-        if (this.child.exit === null) throw new Error("The Codex app-server is still running or draining");
+        if (this.child.exit === null) throw new Error("The nuwax-harness app-server is still running or draining");
         this.state.stderr = "";
         const connection = this.spawnConnection(this.state.codexPath, this.state.appServerStartupArgs);
         this.state.connection = connection;
@@ -261,7 +261,7 @@ export class CodexAppServerSupervisor {
             if (exit.intentional) {
                 logger.log("[APP-SERVER EXIT] stopped by the adapter", fields);
             } else {
-                logger.error(`[APP-SERVER EXIT] The Codex app-server ${describeExit(exit)}`, JSON.stringify({
+                logger.error(`[APP-SERVER EXIT] The nuwax-harness app-server ${describeExit(exit)}`, JSON.stringify({
                     ...fields,
                     likelyOutOfMemory: likelyOutOfMemory(exit),
                     stderrTail: exit.stderrTail,

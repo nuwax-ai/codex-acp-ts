@@ -115,7 +115,7 @@ export function isThreadActiveWriterError(err: unknown): boolean {
 export function threadActiveWriterRequestError(threadId: string, err: unknown): RequestError {
     return RequestError.invalidRequest(
         {reason: "thread_active_writer", threadId, details: errorText(err)},
-        "This Codex session is in use by another Codex client (the Codex app, the CLI or an IDE extension). Close the session there or quit that client, then try again.",
+        "This nuwax-harness session is in use by another client (the app, the CLI or an IDE extension). Close the session there or quit that client, then try again.",
     );
 }
 

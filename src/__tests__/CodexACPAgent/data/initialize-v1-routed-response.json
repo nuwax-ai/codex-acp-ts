@@ -2,7 +2,7 @@
   "protocolVersion": 1,
   "agentInfo": {
     "name": "@nuwax-ai/nuwax-harness-acp-ts",
-    "title": "Codex",
+    "title": "nuwax-harness",
     "version": "<version>"
   },
   "agentCapabilities": {

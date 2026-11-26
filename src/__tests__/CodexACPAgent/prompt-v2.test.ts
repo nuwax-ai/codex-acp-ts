@@ -1003,7 +1003,7 @@ describe('session/prompt over ACP v2', () => {
         // Never inserted, and the turn ended cancelled: same `-32800` a dropped queued prompt gets.
         await expect(response).rejects.toMatchObject({
             code: -32800,
-            message: "Request cancelled: The prompt ended before Codex recorded the user message",
+            message: "Request cancelled: The prompt ended before nuwax-harness recorded the user message",
         });
         const transcript = client.transcript.slice(start);
         expect(transcript.some(entry => "sessionUpdate" in entry && entry.sessionUpdate.sessionUpdate === "user_message_chunk"))

@@ -2,7 +2,7 @@
   "protocolVersion": 2,
   "info": {
     "name": "@nuwax-ai/nuwax-harness-acp-ts",
-    "title": "Codex",
+    "title": "nuwax-harness",
     "version": "<version>"
   },
   "capabilities": {

@@ -67,7 +67,7 @@ function printHelp() {
 async function login(options: LoginOptions): Promise<boolean> {
     const codexPath = resolveEnvAlias("NUWAX_PATH", "CODEX_PATH").value ?? resolveCodexBinaryPath();
 
-    logger.log("Starting Codex connection...");
+    logger.log("Starting nuwax-harness connection...");
     const codexConnection = startCodexConnection(codexPath, childProcessEnv());
 
     const appServerClient = new CodexAppServerClient(codexConnection.connection);

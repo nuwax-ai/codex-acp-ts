@@ -1056,7 +1056,7 @@ export class CodexAcpClient {
             // and an ACP session id that is not a Codex thread id at all --
             // ACP session ids are opaque strings, Codex thread ids are UUIDs.
             if (!isUnknownThreadError(err)) throw err;
-            logger.log("Delete request for a session Codex has no persisted thread for; treating as deleted", {
+            logger.log("Delete request for a session nuwax-harness has no persisted thread for; treating as deleted", {
                 sessionId,
                 reason: err instanceof Error ? err.message : String(err),
             });
@@ -1199,7 +1199,7 @@ export class CodexAcpClient {
             .filter(mcp => !serversToConfigure.includes(mcp))
             .map(mcp => mcp.name);
         if (skippedMcpServers.length > 0) {
-            logger.log("Skipping requested MCP servers that the Codex config already defines", {
+            logger.log("Skipping requested MCP servers that the nuwax-harness config already defines", {
                 projectPath,
                 skippedMcpServers,
             });
@@ -1455,7 +1455,7 @@ export class CodexAcpClient {
             try {
                 await operation();
             } catch (error) {
-                logger.error("Error handling Codex session notification", error);
+                logger.error("Error handling nuwax-harness session notification", error);
             }
         };
 

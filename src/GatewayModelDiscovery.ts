@@ -109,7 +109,7 @@ export function isListedModelId(modelId: string, listed: GatewayModelIds): boole
 export function narrowToListedModels(models: Model[], listed: GatewayModelIds): Model[] {
     const narrowed = models.filter(model => isListedModel(model, listed));
     if (narrowed.length === 0) {
-        logger.log("[WARN] The gateway lists none of the Codex models; no model is available", {
+        logger.log("[WARN] The gateway lists none of the known models; no model is available", {
             codexModels: models.map(model => model.id),
         });
         return [];

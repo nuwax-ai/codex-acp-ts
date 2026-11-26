@@ -51,7 +51,7 @@ export function permissionProfileContent(
                 lines.push(`${entry.access} filesystem pattern ${entry.path.pattern}`);
                 break;
             case "special":
-                lines.push(`${entry.access} Codex filesystem scope ${JSON.stringify(entry.path.value)}`);
+                lines.push(`${entry.access} nuwax-harness filesystem scope ${JSON.stringify(entry.path.value)}`);
                 break;
             case "path":
                 break;

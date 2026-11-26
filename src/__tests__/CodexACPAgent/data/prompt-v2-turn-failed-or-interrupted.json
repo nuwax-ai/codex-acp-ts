@@ -71,7 +71,7 @@
         "sessionUpdate": {
           "error": {
             "code": -32603,
-            "message": "Codex turn failed."
+            "message": "nuwax-harness turn failed."
           },
           "stopReason": "error",
           "_meta": {

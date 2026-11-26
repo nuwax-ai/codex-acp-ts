@@ -1236,7 +1236,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         });
     });
 
-    it('does not wait for the startup of MCP servers that the Codex config already defines', async () => {
+    it('does not wait for the startup of MCP servers that the nuwax-harness config already defines', async () => {
         const mockFixture = createCodexMockTestFixture();
         const codexAcpAgent = mockFixture.getCodexAcpAgent();
         const codexAcpClient = mockFixture.getCodexAcpClient();
@@ -1268,7 +1268,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         expect(awaitMcpStartupSpy).toHaveBeenCalledWith(["new-mcp"], expect.any(Number), {threadId: "new-id", signal: expect.any(AbortSignal)});
     });
 
-    it('reports the MCP servers that the Codex config already defines', async () => {
+    it('reports the MCP servers that the nuwax-harness config already defines', async () => {
         const mockFixture = createCodexMockTestFixture();
         const codexAcpAgent = mockFixture.getCodexAcpAgent();
         const codexAcpClient = mockFixture.getCodexAcpClient();
@@ -1296,7 +1296,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
             const dump = mockFixture.getAcpConnectionDump([]);
             expect(dump).toMatch(/"toolCallId": "mcp_startup\.codex-mcp\.[0-9a-f-]{36}"/);
             expect(dump).toContain('"title": "mcp__codex-mcp__startup"');
-            expect(dump).toContain("MCP server `codex-mcp` was not started, because the Codex config already defines an MCP server with this name.");
+            expect(dump).toContain("MCP server `codex-mcp` was not started, because the nuwax-harness config already defines an MCP server with this name.");
         });
     });
 

@@ -49,7 +49,7 @@ const deletedWorkingDirectory: ExplanationRule = ({message}) => {
     if (!configLoadFailure || !message.includes("No such file or directory") || !workingDirectoryDeleted()) {
         return null;
     }
-    return `Codex cannot read its configuration: its working directory ${workingDirectory} `
+    return `nuwax-harness cannot read its configuration: its working directory ${workingDirectory} `
         + "was deleted or replaced after the agent started. Restart the agent.";
 };
 
@@ -60,7 +60,7 @@ const configFiles: ExplanationRule = (err, {codexHome}) => {
         ? CONFIG_LOAD_FAILURE_PREFIX + err.message.slice(FEATURE_OVERRIDE_PRECEDENCE_PREFIX.length)
         : err.message;
     if (!message.includes("load config")) return null;
-    return `${message}\n\nCheck ${codexHome ?? "global"} and project .codex directories, `
+    return `${message}\n\nCheck ${codexHome ?? "global"} and project .nuwax-harness directories, `
         + "especially their config.toml files, or any CODEX_CONFIG override.";
 };
 

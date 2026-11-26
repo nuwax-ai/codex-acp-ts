@@ -864,7 +864,7 @@ export class CodexAcpServer {
             protocolVersion: acp.PROTOCOL_VERSION,
             agentInfo: {
                 name: packageJson.name,
-                title: "Codex",
+                title: "nuwax-harness",
                 version: packageJson.version,
             },
             agentCapabilities: {
@@ -917,7 +917,7 @@ export class CodexAcpServer {
             protocolVersion: 2,
             info: {
                 name: packageJson.name,
-                title: "Codex",
+                title: "nuwax-harness",
                 version: packageJson.version,
             },
             capabilities: {
@@ -2430,7 +2430,7 @@ export class CodexAcpServer {
                 await Promise.all(activePrompts);
             }
 
-            logger.log("Restarting Codex app-server for provider update", {sessionCount: this.sessions.size});
+            logger.log("Restarting nuwax-harness app-server for provider update", {sessionCount: this.sessions.size});
             for (const session of this.sessions.values()) {
                 session.asyncTasks.prepareForAppServerReplacement();
             }
@@ -2446,7 +2446,7 @@ export class CodexAcpServer {
             }
             apply(replacement);
             if (this.initializeRequest === null) {
-                throw new Error("Cannot restart Codex app-server before ACP initialization");
+                throw new Error("Cannot restart nuwax-harness app-server before ACP initialization");
             }
             await replacement.initialize(this.initializeRequest);
             this.codexAcpClient = replacement;
@@ -2575,7 +2575,7 @@ export class CodexAcpServer {
 
     private async restartCodexClient(): Promise<CodexAcpClient> {
         if (this.recovery === null) {
-            throw new Error("Codex process state is unavailable");
+            throw new Error("nuwax-harness process state is unavailable");
         }
         return await this.recovery.beginReplacement();
     }
@@ -2644,7 +2644,7 @@ export class CodexAcpServer {
                         session.subagents = this.createSubagentRouter(session.sessionId);
                     }
                     session.asyncTasks.finishAll("failed").catch(error => {
-                        logger.error("Failed to finish background terminal tasks after the Codex process exited", error);
+                        logger.error("Failed to finish background terminal tasks after the nuwax-harness process exited", error);
                     });
                 }
             },
@@ -4964,7 +4964,7 @@ export class CodexAcpServer {
                 async (response) => {
                     this.v2PromptsInFlight.delete(sessionId);
                     if (!inserted) {
-                        const notInsertedMessage = "The prompt ended before Codex recorded the user message";
+                        const notInsertedMessage = "The prompt ended before nuwax-harness recorded the user message";
                         // A `cancelled` v1 stop reason means the adopted turn was interrupted
                         // (e.g. by `session/cancel`) before this prompt's input landed: it was
                         // never inserted, so it is dropped with `-32800` like a queued prompt.
@@ -5907,7 +5907,7 @@ export class CodexAcpServer {
                 throw new RequestError(requestErrorCode, `VC++ redistributable should be installed`);
             }
             if (exitCode !== null) {
-                await this.finishAllAsyncTasks("failed", "after the Codex process exited");
+                await this.finishAllAsyncTasks("failed", "after the nuwax-harness process exited");
                 const stderr = this.getRecentStderr().trim();
                 const detail = stderr ? `:\n${stderr}` : "";
                 throw new RequestError(requestErrorCode, `nuwax-harness process has exited with code ${exitCode}${detail}`);

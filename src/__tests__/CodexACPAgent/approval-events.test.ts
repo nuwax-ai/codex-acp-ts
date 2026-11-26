@@ -823,7 +823,7 @@ describe("Approval Events", () => {
                         content: [{type: "content", content: {type: "text", text: [
                             "Disable network access",
                             "deny filesystem pattern /workspace/**/*.key",
-                            'write Codex filesystem scope {"kind":"project_roots","subpath":"build"}',
+                            'write nuwax-harness filesystem scope {"kind":"project_roots","subpath":"build"}',
                         ].join("\n")}}],
                     },
                     _meta: {jetbrains: {air: {version: 1, permission: {

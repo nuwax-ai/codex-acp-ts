@@ -69,7 +69,7 @@ describe("typed session failures over ACP transport", () => {
                         sessionFailure: {
                             category: "connection",
                             severity: "error",
-                            title: "Connection to Codex was lost.",
+                            title: "Connection to nuwax-harness was lost.",
                             actions: ["retry", "new_session"],
                         },
                     },
@@ -589,7 +589,7 @@ describe("typed session failures over ACP transport", () => {
     it("updates one late retry incident from warning attempts to terminal error", async () => {
         const fixture = await createIdleFixture("wire-late-retry-chain");
         const error = {
-            message: "Connection to Codex was lost.",
+            message: "Connection to nuwax-harness was lost.",
             codexErrorInfo: {responseStreamDisconnected: {httpStatusCode: null}},
             additionalDetails: null,
         };

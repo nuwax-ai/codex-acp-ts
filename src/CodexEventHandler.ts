@@ -150,8 +150,8 @@ const SESSION_FAILURE_POLICY: Record<CodexFailureKind, SessionFailurePolicy> = {
 };
 
 const SYNTHETIC_FAILURE_TITLE: Record<"transport_lost" | "internal_error", string> = {
-    transport_lost: "Connection to Codex was lost.",
-    internal_error: "Codex encountered an internal error.",
+    transport_lost: "Connection to nuwax-harness was lost.",
+    internal_error: "nuwax-harness encountered an internal error.",
 };
 
 /**
@@ -305,7 +305,7 @@ export class CodexEventHandler {
         if (this.isAuthenticationRequiredError(error?.codexErrorInfo ?? null)) {
             return {code: -32000, message: "Authentication required"};
         }
-        return {code: -32603, message: readableServiceErrorMessage(error?.message ?? "Codex turn failed.")};
+        return {code: -32603, message: readableServiceErrorMessage(error?.message ?? "nuwax-harness turn failed.")};
     }
 
     private recordTerminalTurnError(notification: ServerNotification): void {
@@ -977,11 +977,11 @@ export class CodexEventHandler {
             // the built-in catalog does not know (third-party gateways serve
             // dated snapshot slugs). Not user-actionable; log it instead of
             // rendering engine internals into the chat stream.
-            console.warn(`[codex] suppressed engine warning: ${event.message.trim()}`);
+            console.warn(`[nuwax-harness] suppressed engine warning: ${event.message.trim()}`);
             return null;
         }
         if (this.supportsNotices) {
-            return createSessionNotice("warning", event.message.trim() || "Codex warning");
+            return createSessionNotice("warning", event.message.trim() || "nuwax-harness warning");
         }
         if (this.supportsTypedSessionFailures) {
             return this.createSessionFailureUpdate(this.recordSessionNotice(event.message));

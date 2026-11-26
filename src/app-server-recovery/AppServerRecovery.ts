@@ -802,7 +802,7 @@ const CONNECTION_DEATH_MESSAGES = [
     "Connection is disposed",
     "Connection is closed",
     "Pending response rejected since connection got disposed",
-    "Codex connection closed",
+    "nuwax-harness connection closed",
     "nuwax-harness connection closed",
 ];
 

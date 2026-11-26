@@ -131,7 +131,7 @@ describe("paginated thread history", () => {
             vi.spyOn(appServer, "threadItemsList").mockReturnValue(new Promise(() => {}));
 
             const pages = appServer.threadItemPages("history")[Symbol.asyncIterator]();
-            const next = expect(pages.next()).rejects.toThrow("Codex did not answer thread/items/list for thread history within 60 s");
+            const next = expect(pages.next()).rejects.toThrow("nuwax-harness did not answer thread/items/list for thread history within 60 s");
             await vi.advanceTimersByTimeAsync(60_000);
             await next;
         } finally {
@@ -149,7 +149,7 @@ describe("paginated thread history", () => {
             // Only the first ascending page is lost.
             vi.spyOn(appServer, "threadTurnsList").mockImplementation(params =>
                 params.sortDirection === "asc" ? new Promise(() => {}) : store(params));
-            const error = "Codex did not answer thread/turns/list for thread history within 60 s";
+            const error = "nuwax-harness did not answer thread/turns/list for thread history within 60 s";
 
             const history = expect(appServer.threadReadWithHistory("history")).rejects.toThrow(error);
             const turnItems = expect(fixture.getCodexAcpClient().readSessionTurnItems("history", 0)).rejects.toThrow(error);
@@ -273,7 +273,7 @@ describe("paginated thread history", () => {
         }
 
         await expect(fixture.getCodexAppServerClient().threadReadWithHistory("history"))
-            .rejects.toThrow("Codex returned a repeated thread history cursor");
+            .rejects.toThrow("nuwax-harness returned a repeated thread history cursor");
         expect(pages).toHaveBeenCalledTimes(cursors.length + 1);
     });
 

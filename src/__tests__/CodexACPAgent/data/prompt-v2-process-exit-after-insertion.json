@@ -166,7 +166,7 @@
                   "revision": 1,
                   "category": "connection",
                   "severity": "error",
-                  "title": "Connection to Codex was lost.",
+                  "title": "Connection to nuwax-harness was lost.",
                   "actions": [
                     "retry",
                     "new_session"

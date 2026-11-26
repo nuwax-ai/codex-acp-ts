@@ -76,7 +76,7 @@ export class SessionReplacedError extends AppServerUnavailableError {
 export class UnpersistedSessionLostError extends AppServerUnavailableError {
     constructor(sessionId: string) {
         super(
-            `Session ${sessionId} had no messages yet and was lost when the Codex app-server restarted. Start a new session.`,
+            `Session ${sessionId} had no messages yet and was lost when the nuwax-harness app-server restarted. Start a new session.`,
             {exitCode: null, signal: null, restartable: false},
         );
         this.name = "UnpersistedSessionLostError";

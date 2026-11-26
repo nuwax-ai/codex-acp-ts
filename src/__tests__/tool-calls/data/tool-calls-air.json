@@ -359,7 +359,7 @@
           "type": "content",
           "content": {
             "type": "text",
-            "text": "[nuwax-codex-acp forwarded startup error] MCP server `db` failed to start: boom"
+            "text": "[nuwax-harness-acp forwarded startup error] MCP server `db` failed to start: boom"
           }
         }
       ]
@@ -377,7 +377,7 @@
           "type": "content",
           "content": {
             "type": "text",
-            "text": "[nuwax-codex-acp] MCP server `docs` was not started, because the Codex config already defines an MCP server with this name. Codex uses its own entry, or no server if that entry is disabled."
+            "text": "[nuwax-harness-acp] MCP server `docs` was not started, because the nuwax-harness config already defines an MCP server with this name. nuwax-harness uses its own entry, or no server if that entry is disabled."
           }
         }
       ]

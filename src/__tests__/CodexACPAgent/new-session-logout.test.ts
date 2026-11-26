@@ -60,7 +60,7 @@ describe("New session logout handling", () => {
 
         await expect(codexAcpAgent.newSession({cwd: "", mcpServers: []}))
             .rejects.toMatchObject({
-                message: expect.stringContaining(`Check global and project .codex directories`),
+                message: expect.stringContaining(`Check global and project .nuwax-harness directories`),
             });
         expect(logoutSpy).toHaveBeenCalledTimes(0);
     });

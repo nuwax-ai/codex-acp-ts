@@ -720,7 +720,7 @@ export class CodexAppServerClient {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const deadline = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error(
-                `Codex did not confirm the service tier for thread ${threadId}`,
+                `nuwax-harness did not confirm the service tier for thread ${threadId}`,
             )), THREAD_SERVICE_TIER_TIMEOUT_MS);
         });
         try {
@@ -890,7 +890,7 @@ export class CodexAppServerClient {
             yield response.data;
             cursor = response.nextCursor;
             if (cursor !== null) {
-                if (seen.has(cursor)) throw new Error("Codex returned a repeated background terminal cursor");
+                if (seen.has(cursor)) throw new Error("nuwax-harness returned a repeated background terminal cursor");
                 seen.add(cursor);
             }
         } while (cursor !== null);
@@ -1602,7 +1602,7 @@ async function* historyPages<T>(
         }
         yield page.data;
         if (repeated) {
-            throw new Error("Codex returned a repeated thread history cursor");
+            throw new Error("nuwax-harness returned a repeated thread history cursor");
         }
     } while (cursor !== null);
 }
@@ -1612,7 +1612,7 @@ async function withHistoryTimeout<T>(page: Promise<T>, method: string, threadId:
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error(
-            `Codex did not answer ${method} for thread ${threadId} within ${HISTORY_PAGE_TIMEOUT_MS / 1000} s`,
+            `nuwax-harness did not answer ${method} for thread ${threadId} within ${HISTORY_PAGE_TIMEOUT_MS / 1000} s`,
         )), HISTORY_PAGE_TIMEOUT_MS);
     });
     try {

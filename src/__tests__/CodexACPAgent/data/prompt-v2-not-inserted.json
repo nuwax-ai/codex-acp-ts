@@ -56,7 +56,7 @@
   {
     "promptError": {
       "code": -32603,
-      "message": "Internal error: The prompt ended before Codex recorded the user message"
+      "message": "Internal error: The prompt ended before nuwax-harness recorded the user message"
     }
   }
 ]

@@ -50,7 +50,7 @@ export async function runAccountLogin(
     } finally {
         if (!finished && response && "loginId" in response) {
             await client.accountLoginCancel({loginId: response.loginId}).catch(error => {
-                logger.error("Failed to cancel Codex account login", error);
+                logger.error("Failed to cancel nuwax-harness account login", error);
             });
         } else if (signal?.aborted && response && expectedId === null) {
             // API-key completions have no ID. Drain this one before another login can start.

@@ -255,7 +255,7 @@ describe("app-server recovery", () => {
 
         const response = await prompt;
         expect(response.stopReason).toBe("end_turn");
-        expect(JSON.stringify(response._meta)).toContain("Connection to Codex was lost.");
+        expect(JSON.stringify(response._meta)).toContain("Connection to nuwax-harness was lost.");
     });
 
     it("answers cancelled when the client cancelled before the app-server died", async () => {
@@ -394,7 +394,7 @@ describe("app-server recovery", () => {
 
         await expect(fixture.agent.prompt({sessionId, prompt: [{type: "text", text: "hi"}]})).rejects.toMatchObject({
             code: 1001,
-            message: `Session ${sessionId} had no messages yet and was lost when the Codex app-server restarted. Start a new session.`,
+            message: `Session ${sessionId} had no messages yet and was lost when the nuwax-harness app-server restarted. Start a new session.`,
         });
     });
 
@@ -510,7 +510,7 @@ describe("app-server recovery", () => {
         ]));
         await expect(fixture.agent.prompt({sessionId: empty, prompt: [{type: "text", text: "hi"}]})).rejects.toMatchObject({
             code: 1001,
-            message: `Session ${empty} had no messages yet and was lost when the Codex app-server restarted. Start a new session.`,
+            message: `Session ${empty} had no messages yet and was lost when the nuwax-harness app-server restarted. Start a new session.`,
         });
         const {prompt} = await startTurn(fixture, "persisted");
         completeTurn(fixture, "persisted");
