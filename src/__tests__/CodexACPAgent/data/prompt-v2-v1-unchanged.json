@@ -21,8 +21,7 @@
       },
       "summary": "auto",
       "effort": "medium",
-      "model": "gpt-5",
-      "serviceTier": null
+      "model": "gpt-5"
     }
   },
   {

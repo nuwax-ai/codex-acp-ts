@@ -155,8 +155,9 @@ import {
     FAST_MODE_CONFIG_ID,
     FAST_MODE_OFF,
     FAST_MODE_ON,
+    isFastServiceTier,
     modelSupportsFast,
-    resolveFastServiceTier,
+    resolveTurnServiceTier,
 } from "./FastModeConfig";
 import packageJson from "../package.json";
 import {isJetBrains2026_1Client} from "./JBUtils";
@@ -291,6 +292,13 @@ export interface SessionState extends SessionIndexTitleState {
     additionalDirectories: string[];
     mcpServers?: Array<AcpMcpServer>;
     fastModeEnabled: boolean;
+    /**
+     * The user turned Fast mode off in this session. Only then does the next
+     * turn ask the engine for standard speed explicitly (`serviceTier: null`,
+     * which clears the thread's tier); while Fast mode is merely off, a turn
+     * leaves the thread's tier alone. See `resolveTurnServiceTier`.
+     */
+    fastModeExplicitlyOff: boolean;
     currentModelSupportsFast: boolean;
     sessionMcpServers?: Array<string>;
     /** The capability choices of the client for tool call and plan reports. */
@@ -1430,7 +1438,8 @@ export class CodexAcpServer {
             cwd: request.cwd,
             additionalDirectories: sessionMetadata.additionalDirectories,
             mcpServers: requestedMcpServers,
-            fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+            fastModeEnabled: isFastServiceTier(sessionMetadata.currentServiceTier),
+            fastModeExplicitlyOff: false,
             currentModelSupportsFast: currentModelSupportsFast,
             sessionMcpServers: sessionMcpServers,
             clientCapabilities: this.capabilities,
@@ -2922,14 +2931,19 @@ export class CodexAcpServer {
 
     private applyFastModeChange(sessionState: SessionState, params: acp.SetSessionConfigOptionRequest): void {
         const value = params.value;
-        if (typeof value === "boolean") {
-            sessionState.fastModeEnabled = value;
-            return;
-        }
-        if (value !== FAST_MODE_ON && value !== FAST_MODE_OFF) {
+        if (typeof value !== "boolean" && value !== FAST_MODE_ON && value !== FAST_MODE_OFF) {
             throw RequestError.invalidParams();
         }
-        sessionState.fastModeEnabled = value === FAST_MODE_ON;
+        const enabled = typeof value === "boolean" ? value : value === FAST_MODE_ON;
+        // Only a real turn-off asks the engine for standard speed on the next
+        // turn. Turning off what was already off changes nothing: the thread
+        // keeps whatever tier it has.
+        if (enabled) {
+            sessionState.fastModeExplicitlyOff = false;
+        } else if (sessionState.fastModeEnabled) {
+            sessionState.fastModeExplicitlyOff = true;
+        }
+        sessionState.fastModeEnabled = enabled;
     }
 
     private stringConfigValue(params: acp.SetSessionConfigOptionRequest): string {
@@ -3689,7 +3703,8 @@ export class CodexAcpServer {
             cwd: request.cwd,
             additionalDirectories: sessionMetadata.additionalDirectories,
             mcpServers: requestedMcpServers,
-            fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+            fastModeEnabled: isFastServiceTier(sessionMetadata.currentServiceTier),
+            fastModeExplicitlyOff: false,
             currentModelSupportsFast: currentModelSupportsFast,
             sessionMcpServers: sessionMcpServers,
             clientCapabilities: this.capabilities,
@@ -5297,8 +5312,9 @@ export class CodexAcpServer {
                 throw RequestError.invalidRequest("The current model does not support image input");
             }
             const agentMode = sessionState.agentMode;
-            const serviceTier = resolveFastServiceTier(
+            const serviceTier = resolveTurnServiceTier(
                 sessionState.fastModeEnabled,
+                sessionState.fastModeExplicitlyOff,
                 sessionState.currentModelSupportsFast,
             );
             this.beginPromptTokenUsage(sessionState);

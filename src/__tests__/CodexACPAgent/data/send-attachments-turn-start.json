@@ -44,8 +44,7 @@
     },
     "summary": "auto",
     "effort": "effort",
-    "model": "model",
-    "serviceTier": null
+    "model": "model"
   }
 }
 {

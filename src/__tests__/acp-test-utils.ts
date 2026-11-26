@@ -444,6 +444,7 @@ export function createTestSessionState(overrides?: Partial<SessionState>): Sessi
         agentMode: AgentMode.DEFAULT_AGENT_MODE,
         collaborationMode: DEFAULT_COLLABORATION_MODE,
         fastModeEnabled: false,
+        fastModeExplicitlyOff: false,
         currentModelSupportsFast: false,
         clientCapabilities: ClientCapabilities.from({_meta: {terminal_output_delta: true, jetbrains: {air: {version: 1}}}}),
         goalRevision: 0,

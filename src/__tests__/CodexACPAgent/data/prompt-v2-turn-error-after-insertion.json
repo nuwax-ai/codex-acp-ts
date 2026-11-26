@@ -25,7 +25,6 @@
           "summary": "auto",
           "effort": "medium",
           "model": "gpt-5",
-          "serviceTier": null,
           "clientUserMessageId": "<messageId>"
         }
       },
@@ -120,7 +119,6 @@
           "summary": "auto",
           "effort": "medium",
           "model": "gpt-5",
-          "serviceTier": null,
           "clientUserMessageId": "<messageId>"
         }
       },
