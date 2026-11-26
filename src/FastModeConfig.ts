@@ -11,24 +11,31 @@ const FAST_MODE_DESCRIPTION = "1.5x speed, increased usage";
 
 /**
  * The tier the adapter requests when Fast mode is on. The engine accepts this
- * alias (`ServiceTier::from_request_value`), but reports the tier under its
- * canonical id `"priority"`, so both have to be recognised when reading one back.
+ * alias (`ServiceTier::from_request_value`) but names the tier under its
+ * canonical id, {@link FAST_TIER_REPORTED_ID}: it reports a thread's tier that
+ * way and lists the tier that way in a model's `serviceTiers`.
  */
 export const FAST_SERVICE_TIER = "fast";
+export const FAST_TIER_REPORTED_ID = "priority";
 
-/** Whether a tier id the engine reported is the Fast mode tier. */
+/**
+ * Whether a tier id the engine reported for a thread is the Fast mode tier.
+ * Both ids count: the engine reports `priority`, and a thread persisted by an
+ * older engine may still say `fast`.
+ */
 export function isFastServiceTier(tier: string | null | undefined): boolean {
-    return tier === FAST_SERVICE_TIER || tier === "priority";
+    return tier === FAST_SERVICE_TIER || tier === FAST_TIER_REPORTED_ID;
 }
 
 /**
  * The model offers the Fast mode tier. Mirrors the engine's
- * `ModelPreset::supports_fast_mode`: `additionalSpeedTiers` is deprecated in
- * favour of `serviceTiers`, and a catalog may fill in either.
+ * `ModelPreset::supports_fast_mode` field by field: the deprecated
+ * `additionalSpeedTiers` names the tier `fast`, `serviceTiers` lists it as
+ * `priority`, and a `fast` id under `serviceTiers` is not one the engine honours.
  */
 export function modelSupportsFast(model: Model | undefined): boolean {
     return model?.additionalSpeedTiers?.includes(FAST_SERVICE_TIER)
-        || model?.serviceTiers?.some(tier => isFastServiceTier(tier.id))
+        || model?.serviceTiers?.some(tier => tier.id === FAST_TIER_REPORTED_ID)
         || false;
 }
 
@@ -43,6 +50,10 @@ export function modelSupportsFast(model: Model | undefined): boolean {
  * - `undefined` — the field is omitted: the engine leaves the thread's tier
  *   unchanged. Sent when Fast mode is off and the user did not turn it off, so
  *   a tier this adapter does not manage (or none) is never cleared by accident.
+ *
+ * A toggle is also applied to the thread itself right away
+ * (`CodexAcpClient.setThreadFastMode`), so the choice survives a close and
+ * resume; what a turn carries only has to agree with that.
  */
 export type TurnServiceTier = "fast" | null | undefined;
 

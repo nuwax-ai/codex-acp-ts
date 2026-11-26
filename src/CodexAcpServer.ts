@@ -2907,7 +2907,7 @@ export class CodexAcpServer {
         await this.updateSessionConfig(sessionState, async () => {
             switch (params.configId) {
                 case FAST_MODE_CONFIG_ID:
-                    this.applyFastModeChange(sessionState, params);
+                    await this.applyFastModeChange(sessionState, params);
                     break;
                 case MODE_CONFIG_ID:
                     this.applyModeChange(sessionState, this.stringConfigValue(params));
@@ -2940,21 +2940,22 @@ export class CodexAcpServer {
         }
     }
 
-    private applyFastModeChange(sessionState: SessionState, params: acp.SetSessionConfigOptionRequest): void {
+    private async applyFastModeChange(sessionState: SessionState, params: acp.SetSessionConfigOptionRequest): Promise<void> {
         const value = params.value;
         if (typeof value !== "boolean" && value !== FAST_MODE_ON && value !== FAST_MODE_OFF) {
             throw RequestError.invalidParams();
         }
         const enabled = typeof value === "boolean" ? value : value === FAST_MODE_ON;
-        // Only a real turn-off asks the engine for standard speed on the next
-        // turn. Turning off what was already off changes nothing: the thread
-        // keeps whatever tier it has.
-        if (enabled) {
-            sessionState.fastModeExplicitlyOff = false;
-        } else if (sessionState.fastModeEnabled) {
-            sessionState.fastModeExplicitlyOff = true;
-        }
+        // Not a change: in particular, turning off what is already off must not
+        // clear a tier the thread has on its own.
+        if (enabled === sessionState.fastModeEnabled) return;
+        // The thread is told first. Once this resolves the choice lives in the engine,
+        // so it survives a close and resume before the next turn; a rejected update
+        // leaves the session exactly as it was.
+        await this.codexAcpClient.setThreadFastMode(sessionState.sessionId, enabled);
         sessionState.fastModeEnabled = enabled;
+        // Only a real turn-off asks for standard speed on the next turn as well.
+        sessionState.fastModeExplicitlyOff = !enabled;
     }
 
     private stringConfigValue(params: acp.SetSessionConfigOptionRequest): string {

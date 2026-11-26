@@ -5,6 +5,7 @@ import {
     createTestModel,
     mockPromptTurn,
     setupPromptTestSession,
+    type CodexMockTestFixture,
 } from "../acp-test-utils";
 import {
     createFastModeConfigOption,
@@ -33,6 +34,7 @@ describe("Fast mode session config", () => {
         const fixture = createCodexMockTestFixture();
         const codexAcpAgent = fixture.getCodexAcpAgent();
         const codexAcpClient = fixture.getCodexAcpClient();
+        const threadFastMode = allowThreadFastMode(codexAcpClient);
         const fastModel = createTestModel({
             id: "fast-model",
             additionalSpeedTiers: ["fast"],
@@ -57,7 +59,12 @@ describe("Fast mode session config", () => {
         });
 
         const response = await codexAcpAgent.newSession({cwd: "/test/cwd", mcpServers: []});
-        return {fixture, codexAcpAgent, codexAcpClient, response};
+        return {fixture, codexAcpAgent, codexAcpClient, threadFastMode, response};
+    }
+
+    /** The engine call a toggle makes (`thread/settings/update`); resolved unless a test decides otherwise. */
+    function allowThreadFastMode(client: ReturnType<CodexMockTestFixture["getCodexAcpClient"]>) {
+        return vi.spyOn(client, "setThreadFastMode").mockResolvedValue(undefined);
     }
 
     function setupPromptSession(fastModeEnabled: boolean, currentModelSupportsFast: boolean) {
@@ -67,7 +74,8 @@ describe("Fast mode session config", () => {
             fastModeEnabled,
             currentModelSupportsFast,
         });
-        return {codexAcpAgent: mockFixture.getCodexAcpAgent(), sessionState, turnStartSpy};
+        const threadFastMode = allowThreadFastMode(mockFixture.getCodexAcpClient());
+        return {codexAcpAgent: mockFixture.getCodexAcpAgent(), sessionState, turnStartSpy, threadFastMode};
     }
 
     it("returns the Fast mode config option defaulted to Off for new sessions", async () => {
@@ -182,7 +190,7 @@ describe("Fast mode session config", () => {
     });
 
     it("toggles Fast mode through session config options", async () => {
-        const {codexAcpAgent} = await createSession();
+        const {codexAcpAgent, threadFastMode} = await createSession();
 
         const onResponse = await codexAcpAgent.setSessionConfigOption({
             sessionId: "session-id",
@@ -199,10 +207,13 @@ describe("Fast mode session config", () => {
         });
         expect(offResponse.configOptions).toContainEqual(createFastModeConfigOption(false));
         expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(false);
+
+        // Each change is applied to the thread itself, so it survives a close and resume.
+        expect(threadFastMode.mock.calls).toEqual([["session-id", true], ["session-id", false]]);
     });
 
     it("toggles Fast mode through boolean session config options", async () => {
-        const {codexAcpAgent} = await createSession(null, null, booleanConfigCapabilities);
+        const {codexAcpAgent, threadFastMode} = await createSession(null, null, booleanConfigCapabilities);
 
         const onResponse = await codexAcpAgent.setSessionConfigOption({
             sessionId: "session-id",
@@ -221,6 +232,7 @@ describe("Fast mode session config", () => {
         });
         expect(offResponse.configOptions).toContainEqual(createFastModeConfigOption(false, true));
         expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(false);
+        expect(threadFastMode.mock.calls).toEqual([["session-id", true], ["session-id", false]]);
     });
 
     it("rejects unknown Fast mode config ids and values", async () => {
@@ -262,23 +274,25 @@ describe("Fast mode session config", () => {
     });
 
     it("still leaves the tier alone when the user turns off an already-off Fast mode", async () => {
-        const {codexAcpAgent, turnStartSpy, sessionState} = setupPromptSession(false, true);
+        const {codexAcpAgent, turnStartSpy, sessionState, threadFastMode} = setupPromptSession(false, true);
 
         await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF});
         expect(sessionState.fastModeExplicitlyOff).toBe(false);
+        expect(threadFastMode).not.toHaveBeenCalled();
         await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "test"}]});
 
         expect(turnStartSpy.mock.calls[0]![0]).not.toHaveProperty("serviceTier");
     });
 
     it("explicitly clears the tier on every turn once the user has turned Fast mode off", async () => {
-        const {codexAcpAgent, turnStartSpy, sessionState} = setupPromptSession(true, true);
+        const {codexAcpAgent, turnStartSpy, sessionState, threadFastMode} = setupPromptSession(true, true);
 
         await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF});
         expect(sessionState.fastModeExplicitlyOff).toBe(true);
         // Turning off what is already off must not undo the explicit clear.
         await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF});
         expect(sessionState.fastModeExplicitlyOff).toBe(true);
+        expect(threadFastMode.mock.calls).toEqual([["session-id", false]]);
         await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "test"}]});
 
         expect(turnStartSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -287,11 +301,12 @@ describe("Fast mode session config", () => {
     });
 
     it("asks for the fast tier again after the user turns Fast mode back on", async () => {
-        const {codexAcpAgent, turnStartSpy, sessionState} = setupPromptSession(true, true);
+        const {codexAcpAgent, turnStartSpy, sessionState, threadFastMode} = setupPromptSession(true, true);
 
         await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF});
         await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_ON});
         expect(sessionState.fastModeExplicitlyOff).toBe(false);
+        expect(threadFastMode.mock.calls).toEqual([["session-id", false], ["session-id", true]]);
         await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "test"}]});
 
         expect(turnStartSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -349,6 +364,42 @@ describe("Fast mode session config", () => {
             serviceTier: null,
         }));
     });
+
+    // Fast mode and the thread's own tier: a change is applied to the thread at once.
+    it("does not bother the engine when the choice does not change", async () => {
+        const on = await createSession("priority");
+        await on.codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_ON});
+        const off = await createSession();
+        await off.codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF});
+
+        expect(on.threadFastMode).not.toHaveBeenCalled();
+        expect(off.threadFastMode).not.toHaveBeenCalled();
+    });
+
+    it("leaves the session as it was when the engine rejects the thread update", async () => {
+        const {codexAcpAgent, threadFastMode} = await createSession();
+        threadFastMode.mockRejectedValueOnce(new Error("thread is busy"));
+
+        await expect(codexAcpAgent.setSessionConfigOption({
+            sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_ON,
+        })).rejects.toThrow("thread is busy");
+
+        const sessionState = codexAcpAgent.getSessionState("session-id");
+        expect(sessionState.fastModeEnabled).toBe(false);
+        expect(sessionState.fastModeExplicitlyOff).toBe(false);
+    });
+
+    // The engine answers a thread whose tier was cleared with its "default" sentinel, so a
+    // session resumed after a turn-off starts out Off, and its first turn must not undo that.
+    it("shows Fast mode as Off for a thread the engine reports as cleared, and leaves it so", async () => {
+        const {codexAcpAgent, fixture} = await createSession("default");
+        const turnStartSpy = mockPromptTurn(fixture, "session-id");
+        expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(false);
+
+        await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "test"}]});
+
+        expect(turnStartSpy.mock.calls[0]![0]).not.toHaveProperty("serviceTier");
+    });
 });
 
 describe("fast mode tier helpers", () => {
@@ -360,13 +411,15 @@ describe("fast mode tier helpers", () => {
         }
     });
 
-    // Same rule as the engine's `ModelPreset::supports_fast_mode`: the deprecated
-    // `additionalSpeedTiers` names the tier `fast`, `serviceTiers` uses the id `priority`.
-    it("finds the fast tier in either model field", () => {
+    // Same rule as the engine's `ModelPreset::supports_fast_mode`, field by field: the deprecated
+    // `additionalSpeedTiers` names the tier `fast`, `serviceTiers` lists it as `priority`.
+    it("finds the fast tier in either model field, under the id that field uses", () => {
         const tier = (id: string) => ({id, name: id, description: ""});
         expect(modelSupportsFast(createTestModel({additionalSpeedTiers: ["fast"]}))).toBe(true);
         expect(modelSupportsFast(createTestModel({serviceTiers: [tier("priority")]}))).toBe(true);
         expect(modelSupportsFast(createTestModel({additionalSpeedTiers: ["fast"], serviceTiers: [tier("flex")]}))).toBe(true);
+        // A `fast` id under `serviceTiers` is not one the engine honours, so it is not offered.
+        expect(modelSupportsFast(createTestModel({serviceTiers: [tier("fast")]}))).toBe(false);
         expect(modelSupportsFast(createTestModel({serviceTiers: [tier("flex"), tier("default")]}))).toBe(false);
         expect(modelSupportsFast(createTestModel())).toBe(false);
         expect(modelSupportsFast(undefined)).toBe(false);

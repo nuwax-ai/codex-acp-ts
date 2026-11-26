@@ -24,7 +24,7 @@ import type {
     ReasoningEffort,
     ServerNotification
 } from "./app-server";
-import type {TurnServiceTier} from "./FastModeConfig";
+import {FAST_SERVICE_TIER, type TurnServiceTier} from "./FastModeConfig";
 import type {JsonValue} from "./app-server/serde_json/JsonValue";
 import {ModelId} from "./ModelId";
 import {AgentMode} from "./AgentMode";
@@ -1507,6 +1507,18 @@ export class CodexAcpClient {
             ...(serviceTier !== undefined ? {serviceTier} : {}),
             ...(clientUserMessageId !== undefined ? {clientUserMessageId} : {}),
         }, onTurnStarted);
+    }
+
+    /**
+     * Applies a Fast mode choice to the thread itself, so that it holds until the
+     * user changes it again: `thread/resume` then reports the thread as it was
+     * left (the engine answers a cleared tier with its `"default"` sentinel).
+     */
+    async setThreadFastMode(sessionId: string, enabled: boolean): Promise<void> {
+        await this.codexClient.threadSettingsUpdate({
+            threadId: sessionId,
+            serviceTier: enabled ? FAST_SERVICE_TIER : null,
+        });
     }
 
     async setCollaborationMode(sessionId: string, mode: ModeKind, currentModelId: string): Promise<void> {

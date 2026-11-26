@@ -1437,7 +1437,8 @@ type DistributiveOmit<T, K extends keyof any> = T extends any
 
 export interface ExperimentalThreadSettingsUpdateParams {
     threadId: string;
-    collaborationMode: {
+    /** Omit every other field to leave that setting unchanged. */
+    collaborationMode?: {
         mode: "default" | "plan";
         settings: {
             model: string;
@@ -1445,6 +1446,12 @@ export interface ExperimentalThreadSettingsUpdateParams {
             developer_instructions: string | null;
         };
     };
+    /**
+     * The engine reads this as a double option: `null` clears the thread's
+     * service tier, an omitted field leaves it unchanged. It applies to
+     * subsequent turns and is what `thread/resume` reports back.
+     */
+    serviceTier?: "fast" | null;
 }
 
 function isMcpServerStatusUpdatedNotification(notification: ServerNotification): notification is {
