@@ -342,6 +342,77 @@ env-seeded one. `ci.yml` still runs that suite on `main`.
   `src/__tests__/integration/integration-fixture.ts` explains the failure where
   it happens.
 
+## Generated protocol types (`src/app-server/`)
+
+`src/app-server/` is the engine's app-server protocol as TypeScript, one file
+per type, written by `npm run generate-types`
+(`nuwax-harness app-server generate-ts --out src/app-server`). Every file says
+"GENERATED CODE! DO NOT MODIFY BY HAND!"; about 70 adapter source files import
+from it. It is compile-time knowledge only — at runtime the JSON passes through
+untyped — so a stale copy keeps compiling and the published package keeps
+working, while the adapter silently stops knowing what the engine sends.
+
+**Regenerate on every engine bump, in the same commit.** The generator only
+adds and overwrites; it never deletes, so a clean refresh is:
+
+```bash
+rm -rf src/app-server && npm run generate-types   # uses the pinned engine in node_modules
+npx tsc --noEmit                                   # then fix what the new surface breaks
+```
+
+`npm run typecheck` chains four `tsc` runs with `&&`; when the root project
+fails the other three never run, so check them one by one before concluding
+they are clean.
+
+Why this is a rule (2026-11-26): the types had last been generated at v1.2.19
+(engine 0.18.17) and 33 later releases bumped the engine without regenerating.
+By 0.18.65 the engine's protocol had moved under the adapter — 40 upstream
+commits and 7 fork ones touch the protocol crate in that range — leaving 24
+types the adapter did not have, 29 whose definition had changed (15 of them in
+use) and 288 files from an older generator that nothing produced any more.
+Refreshing them cost 45 type errors (13 in source, 32 in test fixtures). The
+`codex-update.yml` bot does regenerate, but it opens PRs against `main` while
+releases are cut from `dev` by hand, so it does not cover the release path.
+
+### Adapter-owned types
+
+Two names the adapter imports are no longer protocol types; they now live in
+the adapter and must not be recreated under `src/app-server/`:
+
+- **`src/ServiceTier.ts`** — the adapter's service-tier vocabulary
+  (`"fast" | "flex"`). The engine types the field as a free string, because
+  tiers are configured per model, and still accepts both ids; `"fast"` is the
+  only one the adapter selects (`resolveFastServiceTier`).
+- **`McpStartupResult`** (`src/mcp/McpStartupTracker.ts`) — `McpStartupReporter`
+  used to borrow the shape of the protocol's `mcpStartupComplete` event, which
+  later engines no longer publish. The reporter itself is live: it turns MCP
+  servers that failed or were cancelled at session start into failed tool
+  calls, from the tracker's result.
+
+### Decisions for new protocol surface (0.18.65)
+
+- **A new notification with no ACP counterpart** goes on the ignored list of
+  `createUpdateEvent` (`src/CodexEventHandler.ts`), which keeps that switch
+  exhaustive. `thread/section/changed` (a thread moved into, within or out of
+  a section) is handled this way.
+- **`Account` variant `gcp`** (Google Cloud Vertex AI with externally managed
+  credentials) maps like Bedrock: `kind: "external"`, label
+  `"Google Cloud Vertex AI"`; `getAuthenticationStatus` reports it as gateway
+  `"gcp"`.
+- **`Account.workspaceName`** is required on ChatGPT accounts. `fromAccount`
+  does not surface it yet; `accountFromUpdated` keeps the previous value
+  across an `account/updated` push, the same rule the email already follows.
+- **An `audio` user input** carries either `url` or `fileId`, like an image;
+  history replay renders `fileId` as `audio:<id>`.
+
+Test fixtures that build a ChatGPT `Account` need `workspaceName`, and an
+`imageGeneration` `ThreadItem` needs `generationId` — both `null` where the
+fixture does not care.
+
+Verification for a refresh: `npm run typecheck`, `npm test`, then
+`scripts/acp-validation/run-all-wires.sh <path-to-nuwax-harness>` (real
+engine, three wires).
+
 ## Merge playbook
 
 1. Sync upstream into `main`: `git fetch upstream && git checkout main && git merge upstream/main`.
@@ -351,6 +422,8 @@ env-seeded one. `ci.yml` still runs that suite on `main`.
    - 30 `.jsonl` fixtures: `git checkout --theirs <file>` for each, then verify tests.
    - `package.json`: manual merge (keep upstream deps, keep fork identity).
    - `package-lock.json`: after `package.json` is resolved, run `npm install`.
+   - `src/app-server/`: never merge by hand — regenerate it from the pinned
+     engine once `package.json` is settled (see "Generated protocol types").
    - `publish.yml`: `git checkout --ours .github/workflows/publish.yml`.
    - Core source files: resolve manually, keeping fork hooks minimal.
 5. Run `npm run typecheck && npm test`.

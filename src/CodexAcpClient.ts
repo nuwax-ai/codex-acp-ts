@@ -24,7 +24,7 @@ import type {
     ReasoningEffort,
     ServerNotification
 } from "./app-server";
-import type {ServiceTier} from "./app-server/ServiceTier";
+import type {ServiceTier} from "./ServiceTier";
 import type {JsonValue} from "./app-server/serde_json/JsonValue";
 import {ModelId} from "./ModelId";
 import {AgentMode} from "./AgentMode";
@@ -409,6 +409,13 @@ export class CodexAcpClient {
                 return {
                     type: "gateway",
                     name: "amazonBedrock",
+                };
+            // Google Cloud Vertex AI with externally managed credentials: a
+            // built-in provider like Bedrock, reported the same way.
+            case "gcp":
+                return {
+                    type: "gateway",
+                    name: "gcp",
                 };
         }
     }

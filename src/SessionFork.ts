@@ -4,7 +4,7 @@ import {RequestError} from "@agentclientprotocol/sdk/unstable";
 import type {SessionConfig} from "./CodexAcpClient";
 import type {CodexAppServerClient} from "./CodexAppServerClient";
 import type {ModeKind} from "./app-server/ModeKind";
-import type {ServiceTier} from "./app-server/ServiceTier";
+import type {ServiceTier} from "./ServiceTier";
 import type {Model} from "./app-server/v2";
 import type {SessionMetadata} from "./SessionMetadata";
 import type {AcpMcpServer, WithAcpMcpServers} from "./McpServerConfig";

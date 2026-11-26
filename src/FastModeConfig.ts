@@ -1,6 +1,6 @@
 import type {SessionConfigOption} from "@agentclientprotocol/sdk/unstable";
 import type * as acp from "@agentclientprotocol/sdk/unstable";
-import type {ServiceTier} from "./app-server/ServiceTier";
+import type {ServiceTier} from "./ServiceTier";
 import type {Model} from "./app-server/v2";
 
 export const FAST_MODE_CONFIG_ID = "fast-mode";

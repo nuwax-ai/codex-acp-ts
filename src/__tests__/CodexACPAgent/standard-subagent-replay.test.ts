@@ -312,7 +312,7 @@ describe.each([1, 2] as const)("ACP v%s recorded child replay", version => {
     it.each([false, true])("does not infer completion from an open-ended image status (paginated: %s)", async paginated => {
         await connect();
         const image: ThreadItem = {type: "imageGeneration", id: "unfinished-image",
-            status: "provider-specific-running", revisedPrompt: null, failure: null, result: ""};
+            status: "provider-specific-running", revisedPrompt: null, failure: null, result: "", generationId: null};
         history(h, {[sessionId]: {items: [activity()]}, [worker]: {items: [image], status: "inProgress", paginated}});
         if (paginated) h.setCodexResponse("thread/items/list", async () => ({
             data: [{item: image, turnId: "image-turn", startedAtMs: 0, completedAtMs: null}],

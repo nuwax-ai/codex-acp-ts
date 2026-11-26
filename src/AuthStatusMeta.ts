@@ -180,6 +180,13 @@ export function fromAccount(account: Account | null): AuthStatus {
                 kind: "external",
                 label: "AWS Bedrock",
             };
+        // Google Cloud Vertex AI with externally managed credentials; the
+        // engine sends no detail for it, so like Bedrock it is only a label.
+        case "gcp":
+            return {
+                kind: "external",
+                label: "Google Cloud Vertex AI",
+            };
     }
 }
 
@@ -259,6 +266,9 @@ export function accountFromUpdated(notification: AccountUpdatedNotification, pre
                 type: "chatgpt",
                 email: previousChatGpt?.email ?? null,
                 planType: notification.planType ?? previousChatGpt?.planType ?? "unknown",
+                // The push carries no workspace name either, so it follows the
+                // email rule above: kept while the account stays a ChatGPT one.
+                workspaceName: previousChatGpt?.workspaceName ?? null,
             };
         }
         case "apikey":

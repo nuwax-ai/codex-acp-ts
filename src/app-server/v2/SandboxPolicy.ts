@@ -4,4 +4,9 @@
 import type { AbsolutePathBuf } from "../AbsolutePathBuf";
 import type { NetworkAccess } from "./NetworkAccess";
 
-export type SandboxPolicy = { "type": "dangerFullAccess" } | { "type": "readOnly", networkAccess: boolean, } | { "type": "externalSandbox", networkAccess: NetworkAccess, } | { "type": "workspaceWrite", writableRoots: Array<AbsolutePathBuf>, networkAccess: boolean, excludeTmpdirEnvVar: boolean, excludeSlashTmp: boolean, };
+export type SandboxPolicy = { "type": "dangerFullAccess" } | { "type": "readOnly", networkAccess: boolean, } | { "type": "externalSandbox", networkAccess: NetworkAccess, } | { "type": "workspaceWrite", writableRoots: Array<AbsolutePathBuf>,
+/**
+ * Fork (nuwax-codex): missing key defaults to `true`; an explicit
+ * `false` still restricts. Matches `codex_protocol::SandboxPolicy`.
+ */
+networkAccess: boolean, excludeTmpdirEnvVar: boolean, excludeSlashTmp: boolean, };

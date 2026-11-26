@@ -11,6 +11,7 @@ describe("CodexACPAgent - loadSession", () => {
             {input: {type: "image", fileId: "saved-image"}, content: {type: "text", text: "image:saved-image"}},
             {input: {type: "localImage", path: "/workspace/image #1.png"}, content: {type: "resource_link", name: "image #1.png", uri: "file:///workspace/image%20%231.png"}},
             {input: {type: "audio", url: "https://example.com/audio.wav"}, content: {type: "text", text: "[@audio](https://example.com/audio.wav)"}},
+            {input: {type: "audio", fileId: "saved-audio"}, content: {type: "text", text: "audio:saved-audio"}},
             {input: {type: "localAudio", path: "/workspace/audio.wav"}, content: {type: "resource_link", name: "audio.wav", uri: "file:///workspace/audio.wav"}},
             {input: {type: "mention", name: "Document", path: "/workspace/document.pdf"}, content: {type: "resource_link", name: "Document", uri: "file:///workspace/document.pdf"}},
             {input: {type: "mention", name: "", path: "/workspace/document.pdf"}, content: {type: "resource_link", name: "document.pdf", uri: "file:///workspace/document.pdf"}},
@@ -751,6 +752,7 @@ describe("CodexACPAgent - loadSession", () => {
                         },
                         {
                             type: "imageGeneration",
+                            generationId: null,
                             id: "item-image-generation-1",
                             status: "completed",
                             revisedPrompt: "A tiny blue square",

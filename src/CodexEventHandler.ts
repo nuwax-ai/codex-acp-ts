@@ -879,6 +879,9 @@ export class CodexEventHandler {
             case "externalAgentConfig/import/progress":
             case "process/outputDelta":
             case "process/exited":
+            // A thread moved into, within or out of a section: thread
+            // organization, with no ACP session update counterpart.
+            case "thread/section/changed":
             case "autoApprovalReview/strictReviewRequired":
                 return null;
         }

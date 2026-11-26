@@ -29,6 +29,7 @@ describe("CodexEventHandler - image events", () => {
                     startedAtMs: 0,
                     item: {
                         type: "imageGeneration",
+                        generationId: null,
                         id: "image-generation-1",
                         status: "generating",
                         revisedPrompt: null,
@@ -45,6 +46,7 @@ describe("CodexEventHandler - image events", () => {
                     completedAtMs: 0,
                     item: {
                         type: "imageGeneration",
+                        generationId: null,
                         id: "image-generation-1",
                         status: "generating",
                         revisedPrompt: "A tiny blue square",
@@ -72,6 +74,7 @@ describe("CodexEventHandler - image events", () => {
                 completedAtMs: 0,
                 item: {
                     type: "imageGeneration",
+                    generationId: null,
                     id: "image-generation-completed-only",
                     status: "generating",
                     revisedPrompt: null,
@@ -132,6 +135,7 @@ describe("CodexEventHandler - image events", () => {
                     startedAtMs: 0,
                     item: {
                         type: "imageGeneration",
+                        generationId: null,
                         id: "image-generation-failure",
                         status: "in_progress",
                         revisedPrompt: null,
@@ -148,6 +152,7 @@ describe("CodexEventHandler - image events", () => {
                     completedAtMs: 0,
                     item: {
                         type: "imageGeneration",
+                        generationId: null,
                         id: "image-generation-failure",
                         status: "failed",
                         revisedPrompt: "A tiny blue square",
@@ -201,6 +206,7 @@ describe("CodexEventHandler - image events", () => {
                 completedAtMs: 0,
                 item: {
                     type: "imageGeneration",
+                    generationId: null,
                     id: "image-generation-failure-completed-only",
                     status: "failed",
                     revisedPrompt: null,
