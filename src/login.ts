@@ -48,10 +48,10 @@ function parseArgs(args: string[]): LoginOptions | null {
 
 function printHelp() {
     console.log(`
-    nuwax-codex-acp login - Initialize and login to Nuwax Codex with client context
+    nuwax-harness-acp-ts login - Initialize and login to Nuwax Codex with client context
 
     Usage:
-      nuwax-codex-acp login [options]
+      nuwax-harness-acp-ts login [options]
 
     Options:
       --client-name <name>       Client application name (default: "nuwax-codex-acp")
@@ -60,7 +60,7 @@ function printHelp() {
       --help, -h                 Show this help message
 
     Example:
-      nuwax-codex-acp login --client-name="AIA Plugin" --client-title="AI Assistant" --client-version="1.0.0"
+      nuwax-harness-acp-ts login --client-name="AIA Plugin" --client-title="AI Assistant" --client-version="1.0.0"
     `);
 }
 

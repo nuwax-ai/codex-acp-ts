@@ -10,7 +10,7 @@ export class McpStartupReporter {
     static skipped(serverNames: string[]): ToolFacts[] {
         return serverNames.map(server => failure(
             server,
-            `[nuwax-codex-acp] MCP server \`${server}\` was not started, because the Codex config already defines an MCP server with this name. Codex uses its own entry, or no server if that entry is disabled.`,
+            `[nuwax-harness-acp] MCP server \`${server}\` was not started, because the Codex config already defines an MCP server with this name. Codex uses its own entry, or no server if that entry is disabled.`,
         ));
     }
 
@@ -18,11 +18,11 @@ export class McpStartupReporter {
         return [
             ...event.failed.map(server => failure(
                 server.server,
-                `[nuwax-codex-acp forwarded startup error] MCP server \`${server.server}\` failed to start: ${server.error}`,
+                `[nuwax-harness-acp forwarded startup error] MCP server \`${server.server}\` failed to start: ${server.error}`,
             )),
             ...event.cancelled.map(server => failure(
                 server,
-                `[nuwax-codex-acp forwarded startup error] MCP server \`${server}\` startup was cancelled.`,
+                `[nuwax-harness-acp forwarded startup error] MCP server \`${server}\` startup was cancelled.`,
             )),
         ];
     }
