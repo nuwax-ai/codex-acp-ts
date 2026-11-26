@@ -63,6 +63,9 @@ nuwax-harness --version
 install-scripts 安全门拦截,或提示 binary 未安装,执行一次 `nuwax-harness --version`
 即可补下。
 
+容器等运行期 `HOME` 与安装期不一致的场景,用绝对路径 `NUWAX_HARNESS_CACHE_DIR`
+指定缓存根目录(默认仍是 `~/.nuwax-harness-cache`);适配器与 npm 包读同一个变量。
+
 ## 1.2 快速开始(30 秒验证)
 
 **4 个必填变量** + **1 个建议显式配置**(推理力度),以 OpenAI Chat 协议为例:
@@ -549,6 +552,7 @@ MiMo 的 `https://token-plan-cn.xiaomimimo.com/anthropic`),不要自行拼接
 | 变量 | 说明 |
 | --- | --- |
 | `NUWAX_PATH` | 指定其他 harness 可执行文件的绝对路径;默认用包内依赖。不能带子命令 |
+| `NUWAX_HARNESS_CACHE_DIR` | harness 二进制缓存根目录(绝对路径);默认 `~/.nuwax-harness-cache` |
 | `NUWAX_CONFIG` | JSON 对象,合并进会话配置(高级用法) |
 | `MODEL_PROVIDER` | 无活动网关时的 provider 选择;**不要**与环境网关同时表达矛盾选择 |
 | `INITIAL_AGENT_MODE` | 初始模式:`read-only` / `workspace-write` / `agent` / `agent-full-access` |
@@ -701,7 +705,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | 现象 | 原因与处理 |
 | --- | --- |
 | `session/new` 返回 Authentication required | base URL 变量没有进入适配器进程的环境;检查宿主的 env 配置 |
-| 提示 binary is not installed | 运行一次 `nuwax-harness --version` 触发下载,或设 `NUWAX_PATH` 指向已有二进制 |
+| 提示 binary is not installed | 运行一次 `nuwax-harness --version` 触发下载,或设 `NUWAX_PATH` 指向已有二进制;或设 `NUWAX_HARNESS_CACHE_DIR` 指向实际缓存根目录 |
 | 平台报 effort 取值不支持 / 不支持关闭思考 | **1.2.37 起,什么都不设时请求不带 effort 字段**(由模型侧走自身默认;早期版本这里硬编码 `medium`,导致 GLM-5.3 等只收 `low,high,max` 的网关全量拒单——即"medium 事故",已修复)。需要固定档位时设 `NUWAX_MODEL_REASONING_EFFORT`;**更推荐设 `NUWAX_REASONING_EFFORT_LEVELS`**(如 `'low,high,max'`)声明该网关模型真实接受的档位:档位不匹配会在**请求发出前**报错(点名缺哪个档位),不再被网关静默映射(直连官方端点也可能不校验,实测对 `medium`/`minimal`/`ultra` 一律 200,所以 200 不代表档位被采纳)。若显式给了 `NUWAX_MODEL_REASONING_EFFORT` 而它不在档位表里,适配器**不代为替换**,按你给的值发出去,由引擎拒绝并说明——静默改写比报错更糟。"关思考"走 `NUWAX_DISABLE_THINKING`(发 `thinking:{type:"disabled"}`),始终思考的平台会拒,这时也改给显式档位 |
 | 401 / 鉴权失败 | Key 与基址不属于同一平台或套餐;只设一把 Key,避免串用 |
 | unknown model / 模型不存在 | 模型变量拼写与平台不一致(注意大小写) |
@@ -774,6 +778,7 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | `NUWAX_OPENAI_EGRESS` | 引擎 | `=1` 才允许 OpenAI 第一方出站 | 关闭 |
 | `NUWAX_HOME` | 引擎 | 会话与状态目录 | `~/.nuwax-harness` |
 | `NUWAX_PATH` | ACP | 指定 harness 可执行文件 | 包内依赖 |
+| `NUWAX_HARNESS_CACHE_DIR` | ACP | harness 二进制缓存根目录(绝对路径) | `~/.nuwax-harness-cache` |
 | `NUWAX_CONFIG` | ACP | 额外会话配置(JSON) | 无 |
 | `NUWAX_LOG_DIR` | ACP | 适配器日志目录 | 关闭 |
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` / `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | ACP | 引擎 app-server 崩溃重启上限 / 窗口 | 5 / 300000 |

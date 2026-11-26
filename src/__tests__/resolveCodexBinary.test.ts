@@ -21,12 +21,18 @@ vi.mock("node:os", async () => {
 
 const {resolveCodexBinaryPath} = await import("../resolveCodexBinary");
 
-function cacheFile(version: string, triple: string): string {
-    const directory = join(fakeHome, ".nuwax-harness-cache", version, triple);
+const CACHE_DIR_ENV = "NUWAX_HARNESS_CACHE_DIR";
+
+function cacheFileAt(root: string, version: string, triple: string): string {
+    const directory = join(root, version, triple);
     mkdirSync(directory, {recursive: true});
     const binary = join(directory, process.platform === "win32" ? "nuwax-harness.exe" : "nuwax-harness");
     writeFileSync(binary, "");
     return binary;
+}
+
+function cacheFile(version: string, triple: string): string {
+    return cacheFileAt(join(fakeHome, ".nuwax-harness-cache"), version, triple);
 }
 
 /** The triple this test host would resolve first. */
@@ -55,9 +61,11 @@ function installedVersion(): string {
 describe("resolveCodexBinaryPath", () => {
     beforeEach(() => {
         fakeHome = mkdtempSync(join(tmpdir(), "acp-resolve-"));
+        delete process.env[CACHE_DIR_ENV];
     });
 
     afterEach(() => {
+        delete process.env[CACHE_DIR_ENV];
         vi.restoreAllMocks();
     });
 
@@ -83,6 +91,32 @@ describe("resolveCodexBinaryPath", () => {
     it("names the installed version when nothing is cached", () => {
         expect(() => resolveCodexBinaryPath()).toThrowError(
             new RegExp(`The nuwax-harness ${installedVersion().replaceAll(".", "\\.")} binary is not installed`),
+        );
+    });
+
+    it("searches the override cache root instead of the home cache", () => {
+        const root = mkdtempSync(join(tmpdir(), "acp-cache-root-"));
+        const binary = cacheFileAt(root, installedVersion(), hostTriple());
+        process.env[CACHE_DIR_ENV] = root;
+        expect(resolveCodexBinaryPath()).toBe(binary);
+    });
+
+    it("treats a blank override as unset", () => {
+        const binary = cacheFile(installedVersion(), hostTriple());
+        process.env[CACHE_DIR_ENV] = "   ";
+        expect(resolveCodexBinaryPath()).toBe(binary);
+    });
+
+    it("rejects a relative override", () => {
+        process.env[CACHE_DIR_ENV] = "relative/cache";
+        expect(() => resolveCodexBinaryPath()).toThrowError(/must be an absolute path/);
+    });
+
+    it("names the override root when nothing is cached", () => {
+        const root = mkdtempSync(join(tmpdir(), "acp-empty-root-"));
+        process.env[CACHE_DIR_ENV] = root;
+        expect(() => resolveCodexBinaryPath()).toThrowError(
+            new RegExp(`binary is not installed under ${root.replaceAll(".", "\\.")}`),
         );
     });
 });

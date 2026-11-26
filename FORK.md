@@ -43,7 +43,7 @@ These files do not exist upstream. They never conflict on merge.
 | `src/SystemPromptMeta.ts` | Reads `_meta.systemPrompt` from ACP requests (append mode). |
 | `src/RestoredTokenUsageTracker.ts` | Captures and replays restored `thread/tokenUsage/updated` snapshots on resume. |
 | `src/SessionOpenQueue.ts` | Serialises concurrent session open/resume calls per session. |
-| `src/resolveCodexBinary.ts` | Locates the harness binary inside `~/.nuwax-harness-cache`. |
+| `src/resolveCodexBinary.ts` | Locates the harness binary inside `~/.nuwax-harness-cache`; an absolute `NUWAX_HARNESS_CACHE_DIR` overrides the cache root. |
 | `src/BuiltInExternalProviders.ts` | The engine's built-in external provider ids (Bedrock, Google Cloud); a session on one is described by the provider, since `account/read` cannot describe it. |
 | `vitest.config.mjs` | Test runner config. Upstream's file with one fork delta: `scripts/acp-validation/` and `scripts/live-validation/` are in the exclude list because they run on node:test, not Vitest. The old fork-owned `vitest.config.ts` was dropped because the `.mjs` extension wins Vitest's resolution order and would shadow it. |
 | `scripts/acp-validation/` | Mock-wire validation scripts. |

@@ -52,6 +52,18 @@ export const NUWAX_MODEL_REASONING_EFFORT_ENV_VAR = "NUWAX_MODEL_REASONING_EFFOR
 export const NUWAX_REASONING_EFFORT_LEVELS_ENV_VAR = "NUWAX_REASONING_EFFORT_LEVELS";
 
 /**
+ * Cache root for the `@nuwax-ai/nuwax-harness` native bundle.
+ *
+ * The adapter and the npm launcher both default to `~/.nuwax-harness-cache`.
+ * Deployments whose runtime HOME differs from the install HOME (for example,
+ * an image built as root but run with HOME=/home/user) set this to the
+ * directory both sides should share. The value must be absolute; blank counts
+ * as unset. It has no `CODEX_*` spelling: the cache is a fork-only concept
+ * with no legacy name to stay compatible with.
+ */
+export const NUWAX_HARNESS_CACHE_DIR_ENV_VAR = "NUWAX_HARNESS_CACHE_DIR";
+
+/**
  * One NUWAX_-prefixed / CODEX_-prefixed alias pair, resolved with the same
  * rules as the Rust binary's `utils/home-dir/src/env_alias.rs`:
  *

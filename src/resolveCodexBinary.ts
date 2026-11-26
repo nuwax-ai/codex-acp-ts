@@ -1,8 +1,9 @@
 import {existsSync, readdirSync, readFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import {homedir} from "node:os";
-import {join} from "node:path";
+import {isAbsolute, join} from "node:path";
 import harnessPackage from "@nuwax-ai/nuwax-harness/package.json";
+import {NUWAX_HARNESS_CACHE_DIR_ENV_VAR} from "./CodexEnvConfig";
 
 /**
  * Resolves the native `nuwax-harness` binary that the adapter spawns as its app-server.
@@ -19,6 +20,27 @@ import harnessPackage from "@nuwax-ai/nuwax-harness/package.json";
 
 /** Where the nuwax-harness package caches the bundle it installed. */
 const CACHE_DIRECTORY = ".nuwax-harness-cache";
+
+/**
+ * The root directory the adapter searches for downloaded bundles.
+ *
+ * `@nuwax-ai/nuwax-harness` installs into `$HOME/.nuwax-harness-cache` by
+ * default. Deployments whose runtime HOME differs from the install HOME — an
+ * image built as root but run with another HOME, for example — point both
+ * sides at the same directory with `NUWAX_HARNESS_CACHE_DIR`.
+ */
+function cacheRoot(): string {
+    const override = process.env[NUWAX_HARNESS_CACHE_DIR_ENV_VAR]?.trim();
+    if (override === undefined || override === "") {
+        return join(homedir(), CACHE_DIRECTORY);
+    }
+    if (!isAbsolute(override)) {
+        throw new Error(
+            `${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} must be an absolute path, got "${override}".`,
+        );
+    }
+    return override;
+}
 
 /** The platform targets the harness names its bundle archives after, most likely first. */
 function targetTriples(): string[] {
@@ -74,7 +96,7 @@ function harnessVersion(): string {
 /** Versions present in the bundle cache, newest-looking first. */
 function cachedVersions(): string[] {
     try {
-        return readdirSync(join(homedir(), CACHE_DIRECTORY), {withFileTypes: true})
+        return readdirSync(cacheRoot(), {withFileTypes: true})
             .filter(entry => entry.isDirectory() && /^\d+\.\d+\.\d+/.test(entry.name))
             .map(entry => entry.name)
             .sort((left, right) =>
@@ -89,16 +111,18 @@ export function resolveCodexBinaryPath(): string {
     // Installed version first, then whatever else the cache holds; the triple
     // order inside `targetTriples()` already expresses musl-before-gnu.
     const versions = [...new Set([harnessVersion(), ...cachedVersions()])];
+    const root = cacheRoot();
     const cached = targetTriples()
         .flatMap(triple =>
             versions.map(version =>
-                join(homedir(), CACHE_DIRECTORY, version, triple, binaryName()),
+                join(root, version, triple, binaryName()),
             ),
         )
         .find(candidate => existsSync(candidate));
     if (cached !== undefined) return cached;
     throw new Error(
-        `The nuwax-harness ${versions[0]} binary is not installed. Run \`nuwax-harness --version\` to ` +
+        `The nuwax-harness ${versions[0]} binary is not installed under ${root}. ` +
+        `Run \`nuwax-harness --version\` with the same ${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} to ` +
         "download it, or set CODEX_PATH to an absolute path.",
     );
 }
