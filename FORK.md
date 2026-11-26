@@ -317,6 +317,31 @@ Tests: `src/__tests__/CodexACPAgent/env-bridge.test.ts` (default wire per bridge
 `src/__tests__/CodexACPAgent/providers.test.ts` and `providers-v2.test.ts`
 (chat/responses selection, `providers/list` round-trip).
 
+### Consequence for upstream's `src/__tests__/integration` (2026-11-26)
+
+The `gateway` **`authenticate`** method is a third spot. Its request carries only
+`baseUrl` / `headers` / `providerName`, so the adapter installs the protocol the
+agent advertises for the method (`GatewayAuthMethod._meta.gateway.protocol` =
+`openai`) — which is **chat** here.
+
+Upstream's integration suite (`npm run test:integration`) assumes `openai` means
+Responses: its fixture authenticates against `mock-responses-server.ts`, which
+only answers `POST …/responses`, so every model call gets a 404 and 18 of 19
+tests fail before their assertions run. That is independent of the engine
+version (identical on nuwax-harness 0.18.64 and 0.18.65), and `NUWAX_WIRE_API`
+does not help because the gateway installed by `authenticate` replaces the
+env-seeded one. `ci.yml` still runs that suite on `main`.
+
+- The fork's own acceptance suite covers the same path the fork's way:
+  `scripts/acp-validation/run-all-wires.sh <path-to-nuwax-harness>` — real
+  engine, tri-wire mock vendor, 7 steps on each of chat / responses / anthropic.
+  Green on 0.18.65, with step results identical to 0.18.64.
+- Reviving upstream's suite needs a deliberate change — an env-seeded gateway
+  without the `authenticate` step, or a mock that also speaks Chat Completions.
+  It is not a one-line fixture fix; the comment at `connectAndLogin` in
+  `src/__tests__/integration/integration-fixture.ts` explains the failure where
+  it happens.
+
 ## Merge playbook
 
 1. Sync upstream into `main`: `git fetch upstream && git checkout main && git merge upstream/main`.

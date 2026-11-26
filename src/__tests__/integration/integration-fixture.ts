@@ -29,7 +29,28 @@ export async function spawnAgent(mode: AgentMode = AgentMode.ReadOnly): Promise<
     return await createSpawnedAgentFixture(async () => {}, {INITIAL_AGENT_MODE: mode.id});
 }
 
-/** ACP `initialize` + `authenticate` over the agent's stdin/stdout; `gateway` points Codex's model calls at the mock. */
+/**
+ * ACP `initialize` + `authenticate` over the agent's stdin/stdout; `gateway` points Codex's model calls at the mock.
+ *
+ * Fork note (2026-11-26): the suite built on this fixture does not pass in this
+ * fork, and not because of any recent engine change — 18 of 19 tests fail the
+ * same way on nuwax-harness 0.18.64 and 0.18.65. `_meta.gateway` carries no
+ * protocol, so `authenticate` installs the protocol the agent advertises for
+ * this method (`GatewayAuthMethod`), and this fork maps `openai` to Chat
+ * Completions (`SUPPORTED_GATEWAY_PROTOCOLS` in `src/CodexAcpClient.ts`;
+ * FORK.md, "Provider wire selection"). Every model call then goes to
+ * `/v1/chat/completions`, while `mock-responses-server.ts` only answers
+ * `POST …/responses` and returns 404 for anything else, so each turn fails
+ * before its assertions run. `NUWAX_WIRE_API` cannot change that here: the
+ * gateway installed by `authenticate` replaces the env-seeded one.
+ *
+ * The fork's equivalent coverage — real engine, tri-wire mock vendor, seven
+ * steps on each of chat / responses / anthropic — is
+ * `scripts/acp-validation/run-all-wires.sh <path-to-nuwax-harness>`. Making
+ * THIS suite runnable again is not a one-line change: the fixture would have to
+ * drop the `authenticate` step for an env-seeded gateway, or the mock would
+ * have to speak Chat Completions as well.
+ */
 export async function connectAndLogin(agent: SpawnedAgentFixture, mockBaseUrl: string): Promise<void> {
     await agent.connection.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
