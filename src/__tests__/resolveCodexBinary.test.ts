@@ -112,11 +112,24 @@ describe("resolveCodexBinaryPath", () => {
         expect(() => resolveCodexBinaryPath()).toThrowError(/must be an absolute path/);
     });
 
-    it("names the override root when nothing is cached", () => {
+    it("names the override root when nothing is cached, and asks for the same variable", () => {
         const root = mkdtempSync(join(tmpdir(), "acp-empty-root-"));
         process.env[CACHE_DIR_ENV] = root;
         expect(() => resolveCodexBinaryPath()).toThrowError(
             new RegExp(`binary is not installed under ${root.replaceAll(".", "\\.")}`),
         );
+        expect(() => resolveCodexBinaryPath()).toThrowError(/with the same NUWAX_HARNESS_CACHE_DIR/);
+    });
+
+    it("does not tell a deployment that never set the variable to match its value", () => {
+        let message = "";
+        try {
+            resolveCodexBinaryPath();
+        } catch (error) {
+            message = String(error);
+        }
+        expect(message).toContain("not installed under");
+        expect(message).toContain("set NUWAX_HARNESS_CACHE_DIR to a directory");
+        expect(message).not.toContain("the same NUWAX_HARNESS_CACHE_DIR");
     });
 });

@@ -12,7 +12,7 @@ naming both variables). Variables without the codex namespace (`OPENAI_API_KEY`,
 - `CODEX_API_KEY` - API key used when the API-key auth method is selected. Key chain: `NUWAX_API_KEY` > `CODEX_API_KEY` > `OPENAI_API_KEY`.
 - `OPENAI_API_KEY` - fallback API key used when the API-key auth method is selected.
 - `CODEX_PATH` - run a specific nuwax-harness executable instead of the bundled package dependency. Alias `NUWAX_PATH`.
-- `NUWAX_HARNESS_CACHE_DIR` - absolute cache root for the downloaded `nuwax-harness` bundle. Defaults to `~/.nuwax-harness-cache`; blank counts as unset. Set it to the directory the npm package installed into when the runtime HOME differs from the install HOME (for example in a container).
+- `NUWAX_HARNESS_CACHE_DIR` - absolute cache root for the downloaded `nuwax-harness` bundle. Defaults to `~/.nuwax-harness-cache`; blank counts as unset. Set it to the directory the npm package installed into when the runtime HOME differs from the install HOME (for example in a container). The value must be set when the package is installed too: the postinstall writes the cache, and the npm wrapper reads the same variable.
 - `CODEX_CONFIG` - JSON object merged into the Codex session config. `hooks` move to App Server startup (`-c hooks=...`) for AIR review; Codex rejects malformed hooks at startup and `initialize` reports its error. Alias `NUWAX_CONFIG`.
 - `MODEL_PROVIDER` - model provider to pass to Codex for new sessions.
 - `DEFAULT_AUTH_REQUEST` - ACP auth request JSON used when Codex requires authentication.

@@ -22,6 +22,23 @@ import {NUWAX_HARNESS_CACHE_DIR_ENV_VAR} from "./CodexEnvConfig";
 const CACHE_DIRECTORY = ".nuwax-harness-cache";
 
 /**
+ * The `NUWAX_HARNESS_CACHE_DIR` override, or `undefined` when it is unset or blank.
+ * A relative value is rejected rather than resolved: the installer and this
+ * process must agree on one directory, and a relative path is relative to
+ * whichever process resolves it.
+ */
+function cacheRootOverride(): string | undefined {
+    const override = process.env[NUWAX_HARNESS_CACHE_DIR_ENV_VAR]?.trim();
+    if (override === undefined || override === "") return undefined;
+    if (!isAbsolute(override)) {
+        throw new Error(
+            `${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} must be an absolute path, got "${override}".`,
+        );
+    }
+    return override;
+}
+
+/**
  * The root directory the adapter searches for downloaded bundles.
  *
  * `@nuwax-ai/nuwax-harness` installs into `$HOME/.nuwax-harness-cache` by
@@ -30,16 +47,7 @@ const CACHE_DIRECTORY = ".nuwax-harness-cache";
  * sides at the same directory with `NUWAX_HARNESS_CACHE_DIR`.
  */
 function cacheRoot(): string {
-    const override = process.env[NUWAX_HARNESS_CACHE_DIR_ENV_VAR]?.trim();
-    if (override === undefined || override === "") {
-        return join(homedir(), CACHE_DIRECTORY);
-    }
-    if (!isAbsolute(override)) {
-        throw new Error(
-            `${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} must be an absolute path, got "${override}".`,
-        );
-    }
-    return override;
+    return cacheRootOverride() ?? join(homedir(), CACHE_DIRECTORY);
 }
 
 /** The platform targets the harness names its bundle archives after, most likely first. */
@@ -120,9 +128,15 @@ export function resolveCodexBinaryPath(): string {
         )
         .find(candidate => existsSync(candidate));
     if (cached !== undefined) return cached;
+    // Only mention "the same" variable when one is set: otherwise there is no
+    // value to match, and the advice is simply to download or to point at a
+    // directory both the installer and this process share.
+    const advice = cacheRootOverride() === undefined
+        ? "Run `nuwax-harness --version` to download it, or set CODEX_PATH to an absolute path, " +
+          `or set ${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} to a directory the installer and this process share.`
+        : `Run \`nuwax-harness --version\` with the same ${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} to download it, ` +
+          "or set CODEX_PATH to an absolute path.";
     throw new Error(
-        `The nuwax-harness ${versions[0]} binary is not installed under ${root}. ` +
-        `Run \`nuwax-harness --version\` with the same ${NUWAX_HARNESS_CACHE_DIR_ENV_VAR} to ` +
-        "download it, or set CODEX_PATH to an absolute path.",
+        `The nuwax-harness ${versions[0]} binary is not installed under ${root}. ${advice}`,
     );
 }
