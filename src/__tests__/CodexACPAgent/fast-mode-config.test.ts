@@ -427,6 +427,32 @@ describe("Fast mode session config", () => {
         }
     });
 
+    // The engine sends no `thread/settings/updated` when the tier did not change. If it already
+    // reported that tier, the cached settings confirm the request; otherwise nothing would.
+    it("accepts an already reported tier when the engine suppresses the duplicate notification", async () => {
+        const {codexAcpAgent, codexAcpClient, fixture} = await createSession();
+        vi.mocked(codexAcpClient.setThreadFastMode).mockRestore();
+        const app = fixture.getCodexAppServerClient();
+        const queued = vi.spyOn(app, "threadSettingsUpdate").mockResolvedValue(undefined);
+        // The adapter believes Fast mode is off, but the engine already reported the thread on fast.
+        fixture.sendServerNotification({method: "thread/settings/updated", params: {
+            threadId: "session-id", threadSettings: {serviceTier: "priority"},
+        }});
+        expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(false);
+
+        const on = codexAcpAgent.setSessionConfigOption({
+            sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_ON,
+        });
+        const completed = vi.fn();
+        void on.then(completed, completed);
+        await vi.waitFor(() => expect(queued).toHaveBeenCalledWith({threadId: "session-id", serviceTier: "fast"}));
+        // No second notification arrives: this resolves on the cached settings alone.
+        await vi.waitFor(() => expect(completed).toHaveBeenCalled());
+
+        expect((await on).configOptions).toContainEqual(createFastModeConfigOption(true));
+        expect(app.getThreadSettings("session-id")?.serviceTier).toBe("priority");
+    });
+
     it("leaves the session as it was when the engine rejects the thread update", async () => {
         const {codexAcpAgent, threadFastMode} = await createSession();
         threadFastMode.mockRejectedValueOnce(new Error("thread is busy"));
