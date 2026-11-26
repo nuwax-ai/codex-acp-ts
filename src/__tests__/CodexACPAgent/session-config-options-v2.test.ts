@@ -39,6 +39,14 @@ function createSessionState() {
  */
 async function connectV2Client() {
     const mocks = createMockConnections();
+    mocks.mockCodexConnection.sendRequest.mockImplementation(async (method: string, params?: {threadId: string; serviceTier?: string | null}) => {
+        if (method === "thread/settings/update" && params?.serviceTier !== undefined) {
+            mocks.getUnhandledNotificationHandler()?.({method: "thread/settings/updated", params: {
+                threadId: params.threadId,
+                threadSettings: {serviceTier: params.serviceTier === null ? "default" : "priority"},
+            }});
+        }
+    });
     let agent: CodexAcpServer | null = null;
     let agentConnection: unknown = null;
     const router = createAcpAgentRouter((connection) => {

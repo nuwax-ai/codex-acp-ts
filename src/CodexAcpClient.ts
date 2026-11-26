@@ -700,7 +700,7 @@ export class CodexAcpClient {
                 model: response.thread.model,
                 modelProvider: response.thread.modelProvider,
                 reasoningEffort: response.thread.reasoningEffort,
-                serviceTier: null,
+                serviceTier: this.codexClient.getThreadSettings(params.threadId)?.serviceTier ?? null,
                 // An unmaterialized thread has no persisted history to hydrate:
                 // `thread/turns/list` rejects it outright ("not materialized
                 // yet"), and there is nothing to list either way.
@@ -1515,10 +1515,7 @@ export class CodexAcpClient {
      * left (the engine answers a cleared tier with its `"default"` sentinel).
      */
     async setThreadFastMode(sessionId: string, enabled: boolean): Promise<void> {
-        await this.codexClient.threadSettingsUpdate({
-            threadId: sessionId,
-            serviceTier: enabled ? FAST_SERVICE_TIER : null,
-        });
+        await this.codexClient.setThreadServiceTier(sessionId, enabled ? FAST_SERVICE_TIER : null);
     }
 
     async setCollaborationMode(sessionId: string, mode: ModeKind, currentModelId: string): Promise<void> {

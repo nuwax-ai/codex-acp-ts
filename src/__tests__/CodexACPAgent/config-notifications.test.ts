@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import type {AnyMessage} from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import {LEGACY_SET_SESSION_MODEL_METHOD} from "../../AcpExtensions";
 import {createTestModel} from "../acp-test-utils";
+import type {ThreadSettings} from "../../app-server/v2";
 import {codexResponse, connectSession, sessionId, type PromptSession} from "./v2-prompt-harness";
 
 async function connect(version: 1 | 2) {
@@ -12,13 +13,23 @@ async function connect(version: 1 | 2) {
         ]});
     const slow = createTestModel({id: "slow-model", isDefault: false, defaultReasoningEffort: "low",
         supportedReasoningEfforts: [{reasoningEffort: "low", description: "Fast"}]});
-    return connectSession(version, {
+    const connection = await connectSession(version, {
         codexResponses: {
             "thread/start": async () => ({...codexResponse("thread/start") as object, model: fast.id}),
             "thread/resume": async () => ({...codexResponse("thread/resume") as object, model: fast.id}),
             "model/list": async () => ({data: [fast, slow], nextCursor: null}),
         },
     });
+    connection.setCodexResponse("thread/settings/update", async params => {
+        const {threadId, serviceTier} = params as {threadId: string; serviceTier?: string | null};
+        if (serviceTier !== undefined) {
+            connection.emit({method: "thread/settings/updated", params: {
+                threadId, threadSettings: {serviceTier: serviceTier === null ? "default" : "priority"} as ThreadSettings,
+            }});
+        }
+        return {};
+    });
+    return connection;
 }
 
 function configUpdates(frames: AnyMessage[]) {

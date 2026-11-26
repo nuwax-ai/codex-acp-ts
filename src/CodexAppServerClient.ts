@@ -154,6 +154,7 @@ const ToolRequestUserInputRequest = new RequestType<
 >('item/tool/requestUserInput');
 
 const GOAL_RUNTIME_EFFECTS_GRACE_MS = 1_000;
+const THREAD_SERVICE_TIER_TIMEOUT_MS = 10_000;
 
 /** The number of turns in one page of a full history read. */
 const HISTORY_PAGE_TURNS = 5;
@@ -697,6 +698,45 @@ export class CodexAppServerClient {
 
     async threadSettingsUpdate(params: ExperimentalThreadSettingsUpdateParams): Promise<void> {
         await this.connection.sendRequest("thread/settings/update", params);
+    }
+
+    /** The RPC acknowledges queueing. The settings notification confirms the effective tier. */
+    async setThreadServiceTier(threadId: string, serviceTier: "fast" | null): Promise<void> {
+        const matches = (tier: string | null | undefined) => serviceTier === "fast"
+            ? tier === "priority" || tier === "fast"
+            : tier === "default";
+        let finish: (error?: Error) => void = () => {};
+        const applied = new Promise<Error | undefined>(resolve => {finish = resolve;});
+        const unsubscribe = this.onClientTransportEvent(event => {
+            if (event.eventType !== "notification") return;
+            if (event.method === "thread/settings/updated" && event.params.threadId === threadId
+                && matches(event.params.threadSettings.serviceTier)) {
+                finish();
+            } else if (event.method === "error" && event.params.threadId === threadId
+                && event.params.error.message.startsWith("invalid thread settings override:")) {
+                finish(new Error(event.params.error.message));
+            }
+        });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(
+                `Codex did not confirm the service tier for thread ${threadId}`,
+            )), THREAD_SERVICE_TIER_TIMEOUT_MS);
+        });
+        try {
+            const queued = this.threadSettingsUpdate({threadId, serviceTier}).then(() => {
+                // Codex suppresses notifications when the effective settings did not change.
+                if (matches(this.getThreadSettings(threadId)?.serviceTier)) finish();
+            });
+            const [, failure] = await this.waitWhileConnected("the thread service tier update", Promise.race([
+                Promise.all([queued, applied]),
+                deadline,
+            ]));
+            if (failure) throw failure;
+        } finally {
+            clearTimeout(timer);
+            unsubscribe();
+        }
     }
 
     async threadList(params: ThreadListParams): Promise<ThreadListResponse> {

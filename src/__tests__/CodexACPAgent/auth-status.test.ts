@@ -604,6 +604,45 @@ describe("authStatus extension", () => {
             expect(await statusAccountLine(fixture, sessionId)).toBe(`**Account:** ${label}`);
         });
 
+        it.each(["gcp", "openai"])("uses the saved %s provider when the default account is signed out", async providerId => {
+            const fixture = createCodexMockTestFixture();
+            const app = fixture.getCodexAppServerClient();
+            const client = fixture.getCodexAcpClient();
+            const model = createTestModel();
+            vi.spyOn(app, "accountRead").mockResolvedValue({account: null, requiresOpenaiAuth: true});
+            vi.spyOn(app, "threadRead").mockResolvedValue({thread: {id: "saved-thread", modelProvider: providerId}} as Awaited<ReturnType<typeof app.threadRead>>);
+            vi.spyOn(client, "listSkills").mockResolvedValue({data: []});
+            const resume = vi.spyOn(client, "resumeSession").mockResolvedValue({
+                sessionId: "saved-thread", currentModelId: ModelId.create(model.id, model.defaultReasoningEffort).toString(),
+                models: [model], collaborationMode: "default", modelProvider: providerId, additionalDirectories: [],
+            });
+            await initializeAndAwaitFirstPush(fixture);
+            const result = fixture.getCodexAcpAgent().resumeSession({sessionId: "saved-thread", cwd: "/workspace"});
+            if (providerId === "gcp") {
+                await expect(result).resolves.toBeDefined();
+                expect(resume).toHaveBeenCalledOnce();
+                expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label: "Google Cloud Vertex AI"});
+            } else {
+                await expect(result).rejects.toThrow("Authentication required");
+                expect(resume).not.toHaveBeenCalled();
+            }
+        });
+
+        it("keeps the provider status published while the initial account read was pending", async () => {
+            const fixture = createCodexMockTestFixture();
+            const agent = fixture.getCodexAcpAgent();
+            const client = fixture.getCodexAcpClient();
+            givenDefaultAccountAndSession(fixture, apiKey, "gcp");
+            let finishRead!: (response: Awaited<ReturnType<typeof client.getAccount>>) => void;
+            const read = vi.mocked(client.getAccount).mockReturnValueOnce(new Promise(resolve => {finishRead = resolve;}));
+            await agent.initialize({protocolVersion: PROTOCOL_VERSION});
+            await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+            await openSession(fixture);
+            finishRead({account: apiKey, requiresOpenaiAuth: false});
+            await drainScheduledWork();
+            expect(authStatusUpdates(fixture)).toEqual([{kind: "external", label: "Google Cloud Vertex AI"}]);
+        });
+
         it("still reports the Codex account of a session on the OpenAI provider", async () => {
             const fixture = createCodexMockTestFixture();
             givenDefaultAccountAndSession(fixture, chatGpt, "openai");

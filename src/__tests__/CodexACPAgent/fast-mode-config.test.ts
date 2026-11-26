@@ -376,6 +376,57 @@ describe("Fast mode session config", () => {
         expect(off.threadFastMode).not.toHaveBeenCalled();
     });
 
+    it("applies the last toggle when a previous toggle is in flight", async () => {
+        const {codexAcpAgent, threadFastMode} = await createSession("priority");
+        let confirmOff!: () => void;
+        threadFastMode.mockReturnValueOnce(new Promise<void>(resolve => {confirmOff = resolve;}));
+        const toggle = (value: string) => codexAcpAgent.setSessionConfigOption({
+            sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value,
+        });
+
+        const off = toggle(FAST_MODE_OFF);
+        await vi.waitFor(() => expect(threadFastMode).toHaveBeenCalledWith("session-id", false));
+        const on = toggle(FAST_MODE_ON);
+        confirmOff();
+        await off;
+        expect((await on).configOptions).toContainEqual(createFastModeConfigOption(true));
+        expect(threadFastMode.mock.calls).toEqual([["session-id", false], ["session-id", true]]);
+    });
+
+    it.each(["applied", "rejected"])("waits for the engine's %s result after queue acknowledgement", async outcome => {
+        const {codexAcpAgent, codexAcpClient, fixture} = await createSession("priority");
+        vi.mocked(codexAcpClient.setThreadFastMode).mockRestore();
+        const app = fixture.getCodexAppServerClient();
+        const queued = vi.spyOn(app, "threadSettingsUpdate").mockResolvedValue(undefined);
+        const off = codexAcpAgent.setSessionConfigOption({
+            sessionId: "session-id", configId: FAST_MODE_CONFIG_ID, value: FAST_MODE_OFF,
+        });
+        const completed = vi.fn();
+        void off.then(completed, completed);
+        await vi.waitFor(() => expect(queued).toHaveBeenCalledWith({threadId: "session-id", serviceTier: null}));
+        expect(completed).not.toHaveBeenCalled();
+        expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(true);
+
+        if (outcome === "applied") {
+            fixture.sendServerNotification({method: "thread/settings/updated", params: {
+                threadId: "different-thread", threadSettings: {serviceTier: "default"},
+            }});
+            await Promise.resolve();
+            expect(completed).not.toHaveBeenCalled();
+            fixture.sendServerNotification({method: "thread/settings/updated", params: {
+                threadId: "session-id", threadSettings: {serviceTier: "default"},
+            }});
+            expect((await off).configOptions).toContainEqual(createFastModeConfigOption(false));
+        } else {
+            fixture.sendServerNotification({method: "error", params: {
+                threadId: "session-id", turnId: "settings-operation", willRetry: false,
+                error: {message: "invalid thread settings override: test rejection", codexErrorInfo: "badRequest"},
+            }});
+            await expect(off).rejects.toThrow("invalid thread settings override: test rejection");
+            expect(codexAcpAgent.getSessionState("session-id").fastModeEnabled).toBe(true);
+        }
+    });
+
     it("leaves the session as it was when the engine rejects the thread update", async () => {
         const {codexAcpAgent, threadFastMode} = await createSession();
         threadFastMode.mockRejectedValueOnce(new Error("thread is busy"));

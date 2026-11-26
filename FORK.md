@@ -471,16 +471,17 @@ Both are fixed in `src/FastModeConfig.ts`:
   | off, turned off by the user | — | `null` (the user asked for it) |
   | off, never turned on | — | omitted (the thread keeps its own tier) |
 
-**A toggle is applied to the thread at the same time.** `CodexAcpClient.setThreadFastMode`
-sends `thread/settings/update` with `serviceTier`, whose `null` clears the
-thread's tier. The engine answers a cleared tier with its `"default"`
-sentinel. The choice therefore lives in the engine and survives closing and
-resuming the session before the next turn; rebuilding the session state from
-the reported tier gives the user's choice back. Upstream applied a turn-off
-only on the next turn, so a resume in between restored the old tier. A toggle
-that changes nothing does not call the engine — turning off what is already
-off must not clear a tier the thread has on its own — and a rejected update
-rejects the request and leaves the session as it was.
+**A toggle updates the thread.** `CodexAcpClient.setThreadFastMode` sends
+`thread/settings/update`. The RPC acknowledges the queue entry. The adapter
+waits for the same thread to report the requested tier in
+`thread/settings/updated` before changing its local state. If the engine already
+reported the requested tier, it may suppress the duplicate notification.
+Disabling reports the `"default"` sentinel. Updates are serialized per thread,
+and a repeated choice only skips the RPC after any earlier choice has settled.
+Rejection, connection loss, or a missing confirmation leaves the local setting
+unchanged. A timeout leaves the engine outcome unconfirmed, since the queued
+update can still apply. Settings reported by the engine are used on resume,
+including the live-state fallback for a thread without a rollout.
 
 The received tier is kept as `string | null`; the `as ServiceTier` casts are
 gone together with the type. The wire snapshots under
@@ -515,6 +516,15 @@ whether the connection-level status was derived from the Codex account, and
 Upstream guarded by kind (`kind === "gateway"`); the `external` status of these
 sessions slipped past it, and a Codex logout turned `Google Cloud Vertex AI`
 into `Not logged in`.
+An account read publishes only if its connection and auth status version still
+match the ones it started with. A slow initialization read cannot replace a
+later session status or overwrite the cached account.
+
+When the default account requires a login, session resume, load and fork check
+the saved thread's provider before asking for that login. A thread with its own
+provider can open and lets that provider report its credential errors. If the
+thread's provider is unknown, the normal login check still applies.
+
 
 `fromAccount` and `builtInExternalProviderStatus` name the providers the same
 way, so the Codex-account and the session-provider paths agree; `/status` says

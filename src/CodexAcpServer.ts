@@ -106,6 +106,7 @@ import type {TokenCount} from "./TokenCount";
 import {PromptTokenUsage, toPromptUsage, toTokenCount, ZERO_TOKEN_COUNT} from "./TokenCount";
 import {CodexCommands} from "./CodexCommands";
 import {SessionOpenQueue} from "./SessionOpenQueue";
+import {SessionWriteQueue} from "./SessionWriteQueue";
 import {SteeringQueue} from "./SteeringQueue";
 import type {QuotaMeta} from "./QuotaMeta";
 import {logger} from "./Logger";
@@ -580,6 +581,7 @@ export class CodexAcpServer {
     private readonly sessionGenerations: Map<string, number>;
     private readonly sessionOpenGenerations: Map<string, number>;
     private readonly sessionOpenQueue = new SessionOpenQueue();
+    private readonly fastModeWrites = new SessionWriteQueue();
     private readonly permissionLifecycleContexts: WeakMap<SessionState, PermissionLifecycleContext>;
     private readonly codexProcessState: CodexProcessState | null;
     /** Brings the app-server back after a crash; `null` without a process state (tests). */
@@ -1117,11 +1119,19 @@ export class CodexAcpServer {
      * {@link isAccountReadUnavailableError}. The session open then continues: a missing login fails the
      * resume or the first turn with the real error.
      */
-    async checkAuthorization(): Promise<KnownAccount> {
-        const requirement = await this.readAccountOrUnavailable(() => this.codexAcpClient.readAuthRequirement());
+    async checkAuthorization(sessionId?: string): Promise<KnownAccount> {
+        let requirement;
+        try {
+            requirement = await this.readAccountOrUnavailable(() => this.codexAcpClient.readAuthRequirement());
+        } catch (error) {
+            if ((isAuthRequiredError(error) || isAccountReadAuthFailureError(error))
+                && await this.sessionUsesIndependentAuth(sessionId)) return null;
+            throw error;
+        }
         if (requirement === "unavailable") return "unavailable";
         logger.log("Auth requirement checked", {authRequired: requirement.required});
         if (requirement.required) {
+            if (await this.sessionUsesIndependentAuth(sessionId)) return null;
             if (this.defaultAuthRequest) {
                 logger.log("Authenticating with default auth request...", {
                     methodId: this.defaultAuthRequest.methodId
@@ -1135,6 +1145,23 @@ export class CodexAcpServer {
             return null;
         }
         return requirement.account;
+    }
+
+    /** A default OpenAI login requirement does not govern a saved thread on another provider. */
+    private async sessionUsesIndependentAuth(sessionId: string | undefined): Promise<boolean> {
+        if (sessionId === undefined) return false;
+        const session = this.sessions.get(sessionId);
+        if (session) return !this.authProviderUsesOpenAiAccount(session.authProvider);
+        try {
+            const response = await this.runWithProcessCheck(() =>
+                this.codexAcpClient.appServerClient.threadRead({threadId: sessionId}));
+            const provider = response?.thread?.id === sessionId ? response.thread.modelProvider : undefined;
+            return typeof provider === "string" && provider.trim() !== ""
+                && !this.authProviderUsesOpenAiAccount(provider);
+        } catch (error) {
+            logger.log("Could not determine the saved thread's auth provider", {sessionId, error: String(error)});
+            return false;
+        }
     }
 
     async getOrCreateSession(
@@ -1332,7 +1359,7 @@ export class CodexAcpServer {
         const requestedSessionGeneration = operation === "resume"
             ? await this.beginSessionOpen(existingSessionRequest.sessionId)
             : null;
-        const knownAccount = await this.checkAuthorization();
+        const knownAccount = await this.checkAuthorization("sessionId" in request ? request.sessionId : undefined);
         const requestedMcpServers = request.mcpServers ?? [];
         const readMcpServerStartupVersion = () => requestedMcpServers.length > 0
             ? this.codexAcpClient.getMcpServerStartupVersion()
@@ -2728,10 +2755,14 @@ export class CodexAcpServer {
      * {@link isAccountReadAuthFailureError}.
      */
     private async publishAuthStatusRead(): Promise<void> {
-        let authStatus: {status: AuthStatus, fromAccount: boolean};
+        const version = this.authStatusVersion;
+        const client = this.codexAcpClient;
+        const isCurrent = () => version === this.authStatusVersion && client === this.codexAcpClient;
+        let authStatus: {status: AuthStatus, fromAccount: boolean, account?: Account | null};
         try {
             authStatus = await this.readAgentAuthIdentity();
         } catch (error) {
+            if (!isCurrent()) return;
             if (isAccountReadAuthFailureError(error)) {
                 logger.log("The account read found that the agent needs a login", {error: String(error)});
                 this.lastReadAccount = null;
@@ -2741,6 +2772,8 @@ export class CodexAcpServer {
             logger.log("Cannot determine auth status", {error: String(error)});
             return;
         }
+        if (!isCurrent()) return;
+        if (authStatus.account !== undefined) this.lastReadAccount = authStatus.account;
         await this.setAuthStatus(authStatus.status, authStatus.fromAccount);
     }
 
@@ -2751,7 +2784,7 @@ export class CodexAcpServer {
      * agent-owned gateway state — the `gateway` auth method, or a provider the
      * user configured in Codex's own config.
      */
-    private async readAgentAuthIdentity(): Promise<{status: AuthStatus, fromAccount: boolean}> {
+    private async readAgentAuthIdentity(): Promise<{status: AuthStatus, fromAccount: boolean, account?: Account | null}> {
         const authGatewayName = this.codexAcpClient.getAuthGatewayProviderName();
         if (authGatewayName !== null) {
             return {status: gatewayStatus(authGatewayName), fromAccount: false};
@@ -2764,8 +2797,7 @@ export class CodexAcpServer {
             return {status: agentConfiguredProviderStatus(modelProvider), fromAccount: false};
         }
         const accountResponse = await this.runWithProcessCheck(() => this.codexAcpClient.getAccount());
-        this.lastReadAccount = accountResponse.account;
-        return {status: fromAccount(accountResponse.account), fromAccount: true};
+        return {status: fromAccount(accountResponse.account), fromAccount: true, account: accountResponse.account};
     }
 
     /**
@@ -2892,9 +2924,12 @@ export class CodexAcpServer {
             sessionId: params.sessionId,
             configId: params.configId,
         });
-        const sessionState = this.getSessionState(params.sessionId);
-
-        await this.applySessionConfigOption(sessionState, params);
+        const apply = () => this.applySessionConfigOption(this.getSessionState(params.sessionId), params);
+        if (params.configId === FAST_MODE_CONFIG_ID) {
+            await this.fastModeWrites.run(params.sessionId, apply);
+        } else {
+            await apply();
+        }
 
         return {
             configOptions: this.createSessionConfigOptions(this.getSessionState(params.sessionId)),
@@ -2959,10 +2994,13 @@ export class CodexAcpServer {
         // Not a change: in particular, turning off what is already off must not
         // clear a tier the thread has on its own.
         if (enabled === sessionState.fastModeEnabled) return;
-        // The thread is told first. Once this resolves the choice lives in the engine,
-        // so it survives a close and resume before the next turn; a rejected update
-        // leaves the session exactly as it was.
-        await this.codexAcpClient.setThreadFastMode(sessionState.sessionId, enabled);
+        // Wait for the applied settings, not just the RPC's queue acknowledgement.
+        const ready = this.ensureSessionReady(sessionState);
+        if (ready) await ready;
+        if (this.getSessionState(sessionState.sessionId) !== sessionState) {
+            throw RequestError.invalidRequest(undefined, "Session changed while updating Fast mode");
+        }
+        await this.runWithProcessCheck(() => this.codexAcpClient.setThreadFastMode(sessionState.sessionId, enabled));
         sessionState.fastModeEnabled = enabled;
         // Only a real turn-off asks for standard speed on the next turn as well.
         sessionState.fastModeExplicitlyOff = !enabled;
@@ -3630,8 +3668,8 @@ export class CodexAcpServer {
         // `thread/resume` reads the rollout. A login with the default auth request can change
         // the provider of the resume, so the login keeps the order.
         const authorization = this.defaultAuthRequest
-            ? Promise.resolve(await this.checkAuthorization())
-            : this.checkAuthorization();
+            ? Promise.resolve(await this.checkAuthorization(request.sessionId))
+            : this.checkAuthorization(request.sessionId);
         // The load awaits the result below. This stops an unhandled rejection while `thread/resume` runs.
         authorization.catch(() => {});
         const requestedMcpServers = request.mcpServers ?? [];
