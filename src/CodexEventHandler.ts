@@ -168,6 +168,10 @@ type StructuredCodexErrorKind = KeysOfUnion<StructuredCodexErrorInfo>;
 
 /**
  * Known error codes map to ACP categories; extensible upstream codes fall back to provider_error.
+ *
+ * The `satisfies` below documents the intent but enforces nothing: `CodexErrorInfo`
+ * ends in `| string`, so the key type is plain `string`. A new kind that is not
+ * added here silently takes the fallback (`sessionFailureKind`).
  */
 const STRING_CODEX_ERROR_CATEGORIES: Partial<Record<StringCodexErrorInfo, CodexFailureKind>> = {
     contextWindowExceeded: "context_exhausted",
@@ -184,6 +188,10 @@ const STRING_CODEX_ERROR_CATEGORIES: Partial<Record<StringCodexErrorInfo, CodexF
     internalServerError: "internal_error",
     unauthorized: "auth_required",
     badRequest: "bad_request",
+    // The engine does not retry a model it cannot find (`CodexErr::retry_delay`),
+    // so the user must not be offered one either: it is a request to correct,
+    // not a service to wait for.
+    modelNotFound: "bad_request",
     threadRollbackFailed: "provider_error",
     sandboxError: "provider_error",
     other: "provider_error",

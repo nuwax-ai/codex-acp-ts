@@ -44,6 +44,7 @@ These files do not exist upstream. They never conflict on merge.
 | `src/RestoredTokenUsageTracker.ts` | Captures and replays restored `thread/tokenUsage/updated` snapshots on resume. |
 | `src/SessionOpenQueue.ts` | Serialises concurrent session open/resume calls per session. |
 | `src/resolveCodexBinary.ts` | Locates the harness binary inside `~/.nuwax-harness-cache`. |
+| `src/BuiltInExternalProviders.ts` | The engine's built-in external provider ids (Bedrock, Google Cloud), whose sessions are described by the engine's account. |
 | `vitest.config.mjs` | Test runner config. Upstream's file with one fork delta: `scripts/acp-validation/` and `scripts/live-validation/` are in the exclude list because they run on node:test, not Vitest. The old fork-owned `vitest.config.ts` was dropped because the `.mjs` extension wins Vitest's resolution order and would shadow it. |
 | `scripts/acp-validation/` | Mock-wire validation scripts. |
 | `scripts/live-validation/` | Live engine validation scripts. |
@@ -376,18 +377,19 @@ releases are cut from `dev` by hand, so it does not cover the release path.
 
 ### Adapter-owned types
 
-Two names the adapter imports are no longer protocol types; they now live in
-the adapter and must not be recreated under `src/app-server/`:
+One name the adapter imports is no longer a protocol type; it lives in the
+adapter and must not be recreated under `src/app-server/`:
 
-- **`src/ServiceTier.ts`** — the adapter's service-tier vocabulary
-  (`"fast" | "flex"`). The engine types the field as a free string, because
-  tiers are configured per model, and still accepts both ids; `"fast"` is the
-  only one the adapter selects (`resolveFastServiceTier`).
 - **`McpStartupResult`** (`src/mcp/McpStartupTracker.ts`) — `McpStartupReporter`
   used to borrow the shape of the protocol's `mcpStartupComplete` event, which
   later engines no longer publish. The reporter itself is live: it turns MCP
   servers that failed or were cancelled at session start into failed tool
   calls, from the tracker's result.
+
+The service tier needs no type of its own: the engine's field is a free
+string, so the adapter keeps what it receives as `string | null` and
+recognises the Fast mode ids with `isFastServiceTier` — see "Fast mode service
+tier".
 
 ### Decisions for new protocol surface (0.18.65)
 
@@ -400,7 +402,9 @@ the adapter and must not be recreated under `src/app-server/`:
   `"Google Cloud Vertex AI"`; `getAuthenticationStatus` reports it as gateway
   `"gcp"` (the engine's `GCP_PROVIDER_ID`), and `/status` names it the same.
   `formatAccountInfo` is a `switch` on purpose: as an if-chain with a trailing
-  `"unknown"` it compiled fine while showing GCP users "unknown".
+  `"unknown"` it compiled fine while showing GCP users "unknown". A session on
+  such a provider is described by the engine's account — see "Built-in external
+  providers use the engine's account".
 - **`Account.workspaceName`** is required on ChatGPT accounts. `fromAccount`
   does not surface it yet; `accountFromUpdated` keeps the previous value
   across an `account/updated` push, the same rule the email already follows.
@@ -411,10 +415,13 @@ the adapter and must not be recreated under `src/app-server/`:
   `Extract<CodexErrorInfo, string>` is plain `string`: the
   `satisfies Record<…>` on `STRING_CODEX_ERROR_CATEGORIES`
   (`src/CodexEventHandler.ts`) accepts any set of keys. A kind missing from the
-  table — `modelNotFound` and `policyCapacityUnavailable` arrived in 0.18.65 —
-  falls back to `provider_error` in `sessionFailureKind`, which is the intended
-  behaviour for kinds this build does not know. Add an entry only when a kind
-  deserves an ACP category of its own; nothing will remind you.
+  table falls back to `provider_error` in `sessionFailureKind`, which is the
+  intended behaviour for kinds this build does not know. Nothing will remind
+  you of a new kind. Of the two that arrived in 0.18.65, `modelNotFound` is
+  mapped to `bad_request` — the engine does not retry it
+  (`CodexErr::retry_delay`), so the user is not offered a retry either — and
+  `policyCapacityUnavailable` keeps the fallback, since the engine does retry
+  it.
 - **`ReviewDelivery` lost `detached`** (reviews run inline on the given
   thread). The adapter already sends `delivery: "inline"`.
 
@@ -425,6 +432,76 @@ fixture does not care.
 Verification for a refresh: `npm run typecheck`, `npm test`, then
 `scripts/acp-validation/run-all-wires.sh <path-to-nuwax-harness>` (real
 engine, three wires).
+
+## Fast mode service tier (fork behaviour, 2026-11-26)
+
+The engine accepts `fast` as a request value but names the tier `priority`:
+`ServiceTier::Fast.request_value()` is `"priority"`, config normalises `fast`
+to it, and a thread started with `serviceTier: "fast"` is reported back with
+`"priority"` (checked against nuwax-harness 0.18.65). The protocol types the
+field as a free string, because a model catalog can define tiers of its own.
+
+Upstream's adapter compared the reported tier with `"fast"` only, and sent
+`serviceTier: null` whenever Fast mode was off. The engine reads that field as
+a double option — `null` clears the thread's tier for this and every later
+turn, an omitted field leaves it unchanged — so the combination had two
+effects:
+
+- A thread on the fast tier was shown as **Off**, and its first turn sent
+  `null` and cleared the tier the user had configured.
+- A thread on any tier the adapter does not describe (`flex`, a catalog tier)
+  had that tier cleared on its first turn as well.
+
+Both are fixed in `src/FastModeConfig.ts`:
+
+- `isFastServiceTier` recognises `fast` and `priority`. The session's Fast mode
+  state and `modelSupportsFast` (which also reads the deprecated
+  `additionalSpeedTiers` and `serviceTiers`, like the engine's
+  `ModelPreset::supports_fast_mode`) no longer look at a typed enum.
+- `resolveTurnServiceTier` decides what a turn carries, and
+  `SessionState.fastModeExplicitlyOff` records whether the user turned Fast
+  mode off in this session:
+
+  | Fast mode | Model has the tier | `serviceTier` on the turn |
+  |---|---|---|
+  | on | yes | `"fast"` |
+  | on | no | `null` (explicit standard speed, as before) |
+  | off, turned off by the user | — | `null` (the user asked for it) |
+  | off, never turned on | — | omitted (the thread keeps its own tier) |
+
+  Turning off what is already off does not make the next turn clear anything,
+  and does not undo an earlier explicit turn-off.
+
+The received tier is kept as `string | null`; the `as ServiceTier` casts are
+gone together with the type. The wire snapshots under
+`src/__tests__/CodexACPAgent/data/` therefore no longer contain
+`"serviceTier": null` on a `turn/start`.
+
+Tests: `src/__tests__/CodexACPAgent/fast-mode-config.test.ts`.
+
+## Built-in external providers use the engine's account (fork behaviour, 2026-11-26)
+
+The engine reports the credentials of its built-in external providers through
+its own account: `account/read` answers `{type: "amazonBedrock"}` or
+`{type: "gcp"}`. Upstream's adapter treated every provider but `openai` as "a
+gateway of its own" and set the session's account to `null`, so a Bedrock or
+Vertex AI session showed `not logged in` in `/status` and a bare provider name
+as its auth status.
+
+`authProviderUsesEngineAccount` (`src/CodexAcpServer.ts`) keeps the account
+read for these providers, so such a session is described the way an OpenAI one
+is: `fromAccount` for the status push, the account in the session state, and
+`/status` naming the provider. `authProviderUsesOpenAiAccount` is still the
+rule for "these two providers are the same login" (`authProvidersMatch`).
+
+The provider ids live in `src/BuiltInExternalProviders.ts` (fork-only). They
+are the engine's constants and differ from the account type names: the Bedrock
+account is `"amazonBedrock"`, its provider ids are `"amazon-bedrock"` and
+`"amazon-bedrock-runtime"`.
+
+Tests: "sessions on built-in external providers" in
+`src/__tests__/CodexACPAgent/auth-status.test.ts`, which opens a real
+`session/new`.
 
 ## Merge playbook
 

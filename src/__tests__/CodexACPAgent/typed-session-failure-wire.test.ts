@@ -259,6 +259,61 @@ describe("typed session failures over ACP transport", () => {
         });
     });
 
+    // Two kinds the engine added by 0.18.65. A model it cannot find is a request
+    // error: the engine does not retry it (`CodexErr::retry_delay`), so the user
+    // is not offered one either. An unavailable policy capacity is a service
+    // condition the engine does retry.
+    // Typed session failures have to be negotiated: `initialize()` takes the
+    // fixture's default capabilities, while `initialize({})` is a legacy client
+    // that only ever gets the error text.
+    async function promptFailingWith(codexErrorInfo: string, message: string): Promise<unknown> {
+        const fixture = createWireFixture();
+        await fixture.initialize();
+        const sessionState = createTestSessionState({
+            sessionId: `wire-${codexErrorInfo}`,
+            account: {type: "apiKey"},
+        });
+        vi.spyOn(fixture.server, "getSessionState").mockReturnValue(sessionState);
+        vi.spyOn(fixture.appServer, "turnStart").mockResolvedValue({
+            turn: createTurn("inProgress"),
+        });
+        vi.spyOn(fixture.appServer, "awaitTurnCompleted").mockImplementation(async () => {
+            fixture.sendServerNotification({
+                method: "error",
+                params: {
+                    threadId: sessionState.sessionId,
+                    turnId: "turn-id",
+                    willRetry: false,
+                    error: {message, codexErrorInfo, additionalDetails: null},
+                },
+            });
+            return {
+                threadId: sessionState.sessionId,
+                turn: createTurn("completed"),
+            };
+        });
+
+        const response = await fixture.client.request(acp.methods.agent.session.prompt, {
+            sessionId: sessionState.sessionId,
+            prompt: [{type: "text", text: "hello"}],
+        });
+        await fixture.codexClient.waitForSessionNotifications(sessionState.sessionId);
+        return response._meta;
+    }
+
+    // The wire carries the category and the actions, not the internal kind.
+    it("offers no retry for a model the engine cannot find", async () => {
+        expect(await promptFailingWith("modelNotFound", "The requested model does not exist.")).toMatchObject({
+            jetbrains: {air: {sessionFailure: {category: "request", actions: []}}},
+        });
+    });
+
+    it("keeps the retry for an unavailable policy capacity", async () => {
+        expect(await promptFailingWith("policyCapacityUnavailable", "Policy capacity is unavailable.")).toMatchObject({
+            jetbrains: {air: {sessionFailure: {category: "service", actions: ["retry"]}}},
+        });
+    });
+
     it("delivers an idle terminal error as a decoded session update", async () => {
         const fixture = createWireFixture();
         await fixture.initialize();
