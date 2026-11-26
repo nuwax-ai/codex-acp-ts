@@ -10,17 +10,17 @@
         "title": "mcp.ijproxy.read_file",
         "status": "in_progress",
         "rawInput": {
-          "server": "ijproxy",
-          "tool": "read_file",
-          "arguments": {
-            "file_path": ".ai/local.md",
-            "mode": "slice",
-            "start_line": 1,
-            "max_lines": 200
-          }
+          "file_path": ".ai/local.md",
+          "mode": "slice",
+          "start_line": 1,
+          "max_lines": 200
         },
         "_meta": {
-          "is_mcp_tool_call": true
+          "is_mcp_tool_call": true,
+          "mcp": {
+            "server": "ijproxy",
+            "tool": "read_file"
+          }
         }
       }
     }

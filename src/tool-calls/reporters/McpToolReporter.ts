@@ -19,7 +19,7 @@ export class McpToolReporter {
             status: toToolStatus(item.status),
             input: mcpInput(item),
             ...resultFacts(item),
-            mcp: true,
+            mcp: {server: item.server, tool: item.tool},
         };
     }
 
@@ -39,8 +39,15 @@ export class McpToolReporter {
     }
 }
 
-function mcpInput(item: McpToolCallItem): Record<string, unknown> {
-    return {server: item.server, tool: item.tool, arguments: item.arguments};
+/**
+ * `rawInput` is "raw input parameters sent to the tool" (ACP), i.e. the tool's own
+ * arguments — the flat shape Claude Code and opencode emit. Wrapping them as
+ * `{server, tool, arguments}` made the platform's `parseMcpAskToolInput` give up
+ * (it reads `requestId`/`ui` at the top level), so `ask_question` never rendered.
+ * The server/tool identity moved to `_meta.mcp` (see `mcpMeta`).
+ */
+function mcpInput(item: McpToolCallItem): unknown {
+    return item.arguments;
 }
 
 function resultFacts(item: McpToolCallItem): Pick<ToolFacts, "opaqueResult"> {

@@ -21,8 +21,8 @@ export type ToolFacts = {
      * In a report, an empty list clears the locations. A permission request omits an empty list.
      */
     locations?: string[];
-    /** The tool parameters. */
-    input?: Record<string, unknown>;
+    /** Raw input sent to the tool (ACP `rawInput`): any JSON value, not only an object. */
+    input?: unknown;
     /**
      * Input that the user reads, for example a subagent prompt or a question.
      * A client without the AIR `rawInputRendering` capability gets one display copy in `content`.
@@ -40,7 +40,13 @@ export type ToolFacts = {
     terminalInput?: string;
     /** The command ended. */
     terminalExit?: {exitCode: number | null};
-    mcp?: boolean;
+    /**
+     * The MCP server and tool behind this call. The identity lives here, not in
+     * `rawInput`, because `rawInput` is the tool's own parameters: the platform
+     * parses them flat (`requestId`, `ui`, …) exactly as it does for Claude Code
+     * and opencode.
+     */
+    mcp?: {server: string; tool: string};
     subagent?: boolean;
     contextCompaction?: ContextCompactionMetadata;
     /** The fields of a client that is not AIR, where they differ from the fields above. */

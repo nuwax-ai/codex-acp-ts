@@ -157,7 +157,7 @@ function terminalExit(terminalId: string, exitCode: number | null): Record<strin
 }
 
 function mcpMeta(facts: ToolFacts): Record<string, unknown> {
-    return facts.mcp ? {is_mcp_tool_call: true} : {};
+    return facts.mcp === undefined ? {} : {is_mcp_tool_call: true, mcp: facts.mcp};
 }
 
 /** Applies the fields of a client that is not AIR. `null` removes a field. */

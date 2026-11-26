@@ -273,13 +273,13 @@
         "kind": "execute",
         "title": "mcp.github.search",
         "status": "completed",
-        "rawInput": {
-          "server": "github",
-          "tool": "search",
-          "arguments": {}
-        },
+        "rawInput": {},
         "_meta": {
-          "is_mcp_tool_call": true
+          "is_mcp_tool_call": true,
+          "mcp": {
+            "server": "github",
+            "tool": "search"
+          }
         }
       }
     }

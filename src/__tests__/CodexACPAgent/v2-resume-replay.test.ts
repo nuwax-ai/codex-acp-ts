@@ -356,7 +356,7 @@ describe('ACP v2 resume replay: review-mode ids, reviewer-prompt hiding, primers
             expect(metadata(update => acpV2.SessionUpdate.isTerminalUpdate(update) && update.terminalId === "command")).toEqual([null]);
             expect(metadata(update => acpV2.SessionUpdate.isToolCallUpdate(update) && update.toolCallId === "command")).toEqual([null]);
             expect(metadata(update => acpV2.SessionUpdate.isToolCallUpdate(update) && update.toolCallId === "mcp"))
-                .toEqual([null, {is_mcp_tool_call: true}]);
+                .toEqual([null, {is_mcp_tool_call: true, mcp: {server: "docs", tool: "lookup"}}]);
             expect(metadata(update => acpV2.SessionUpdate.isCompactionUpdate(update) && update.compactionId === "compaction")).toEqual([null]);
         }
     });

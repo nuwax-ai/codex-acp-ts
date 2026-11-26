@@ -701,7 +701,7 @@ describe("Zed", () => {
 
     it("keeps is_mcp_tool_call and the trimmed progress text in mcp_output_delta", () => {
         const mcp = updates("zed", "mcp-tool", "mcp-1");
-        expect(mcp[0]!["_meta"]).toEqual({is_mcp_tool_call: true});
+        expect(mcp[0]!["_meta"]).toEqual({is_mcp_tool_call: true, mcp: {server: "docs", tool: "search"}});
         expect(mcp[1]!["_meta"]).toEqual({mcp_output_delta: {data: "fetching page 1"}});
         expect(mcp[2]!["_meta"]).toEqual({mcp_output_delta: {data: "fetching page 2"}});
     });

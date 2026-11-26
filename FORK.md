@@ -158,6 +158,22 @@ readable English result text.
   announced id and closes that entry instead of opening a second one; a compaction that never completes is
   ended at turn end with `Context compaction completed.` / `failed.` / `cancelled.`.
 
+## MCP tool calls carry the tool's own parameters in `rawInput` (fork behaviour, 2026-11-26)
+
+`rawInput` is ACP's "raw input parameters sent to the tool", so an MCP tool call now reports the tool's
+own arguments flat — `{requestId, ui, …}` — instead of the adapter's wrapper
+`{server, tool, arguments}`. That wrapper matched neither Claude Code nor opencode, and the platform's
+`parseMcpAskToolInput` reads `requestId`/`ui` at the top level, so it returned `null` and the
+`ask_question` form never rendered even though the tool call had completed.
+
+The server/tool identity did not disappear: `_meta.mcp = {server, tool}` accompanies the start update
+(`title` already reads `mcp.<server>.<tool>`), and `_meta.is_mcp_tool_call` still marks the call.
+`completed` updates keep `_meta` unchanged, so only the start update carries the identity.
+
+This is an outward contract change: clients that displayed `rawInput.server`/`rawInput.tool` must read
+`_meta.mcp` (none do in this repo, in the desktop shell's `agent-kit`, or in the platform Java/web code —
+the desktop shell accepts both shapes through `normalizeMcpAskToolUpdate`).
+
 ## Resume replay: compaction events are not sent to the client (fork behaviour, 2026-11-17)
 
 Resuming a session replays the durable history, and the engine re-emits historical

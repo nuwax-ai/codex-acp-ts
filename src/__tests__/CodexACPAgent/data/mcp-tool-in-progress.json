@@ -10,14 +10,14 @@
         "title": "mcp.server-name.tool-name",
         "status": "in_progress",
         "rawInput": {
-          "server": "server-name",
-          "tool": "tool-name",
-          "arguments": {
-            "argument": "example"
-          }
+          "argument": "example"
         },
         "_meta": {
-          "is_mcp_tool_call": true
+          "is_mcp_tool_call": true,
+          "mcp": {
+            "server": "server-name",
+            "tool": "tool-name"
+          }
         }
       }
     }

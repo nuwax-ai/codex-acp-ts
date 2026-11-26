@@ -83,14 +83,14 @@
       "title": "mcp.docs.search",
       "status": "in_progress",
       "rawInput": {
-        "server": "docs",
-        "tool": "search",
-        "arguments": {
-          "q": "acp"
-        }
+        "q": "acp"
       },
       "_meta": {
-        "is_mcp_tool_call": true
+        "is_mcp_tool_call": true,
+        "mcp": {
+          "server": "docs",
+          "tool": "search"
+        }
       }
     },
     {
@@ -102,11 +102,7 @@
       "toolCallId": "mcp",
       "status": "completed",
       "rawInput": {
-        "server": "docs",
-        "tool": "search",
-        "arguments": {
-          "q": "acp"
-        }
+        "q": "acp"
       },
       "rawOutput": {
         "result": {
