@@ -1,4 +1,5 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable";
+import {builtInExternalProviderStatus, isBuiltInExternalProvider} from "./BuiltInExternalProviders";
 import type {AvailableCommand} from "@agentclientprotocol/sdk/unstable";
 import {ACPSessionConnection, type AcpClientConnection} from "./ACPSessionConnection";
 import {AIR_COMMAND_ACTION_KEY, AIR_SKILL_PATH_KEY, airOnlyMeta} from "./AirExtension";
@@ -577,7 +578,7 @@ export class CodexCommands {
 
     private buildStatusMessage(sessionState: SessionState): string {
         const agentMode = sessionState.agentMode;
-        const accountText = this.formatAccountInfo(sessionState.account);
+        const accountText = this.formatAccountInfo(sessionState.account, sessionState.authProvider);
         const tokenUsageText = this.formatTokenUsage(sessionState.totalTokenUsage);
         const contextWindowText = this.formatContextWindow(
             sessionState.lastTokenUsage,
@@ -611,9 +612,17 @@ export class CodexCommands {
         }
     }
 
-    private formatAccountInfo(account: SessionState["account"]): string {
+    /**
+     * `authProvider` is the session's model provider. A session on a built-in
+     * external provider (Bedrock, Vertex AI) carries no Codex account: the
+     * provider is its auth source, so it is named instead of "not logged in".
+     * The labels are the auth status labels, so the two never disagree.
+     */
+    private formatAccountInfo(account: SessionState["account"], authProvider: string | null): string {
         if (!account) {
-            return "not logged in";
+            return isBuiltInExternalProvider(authProvider)
+                ? builtInExternalProviderStatus(authProvider).label
+                : "not logged in";
         }
         // A switch rather than an if-chain with a trailing "unknown": a new
         // account variant that was never mapped here must fail typecheck, not
@@ -624,9 +633,9 @@ export class CodexCommands {
             case "chatgpt":
                 return `ChatGPT ${account.planType} (${account.email})`;
             case "amazonBedrock":
-                return "Amazon Bedrock";
+                return builtInExternalProviderStatus("amazon-bedrock").label;
             case "gcp":
-                return "Google Cloud Vertex AI";
+                return builtInExternalProviderStatus("gcp").label;
         }
     }
 

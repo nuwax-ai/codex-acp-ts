@@ -458,9 +458,10 @@ describe('ACP server test', { timeout: 40_000 }, () => {
 
     it('names every built-in provider account in /status', async () => {
         // `/status` is answered locally from the session state; no model call is involved.
+        // The wording is the auth status label, so the two never disagree.
         const cases: Array<[Account, string]> = [
             [{ type: "gcp" }, "**Account:** Google Cloud Vertex AI"],
-            [{ type: "amazonBedrock", usesCodexManagedCredentials: false }, "**Account:** Amazon Bedrock"],
+            [{ type: "amazonBedrock", usesCodexManagedCredentials: false }, "**Account:** AWS Bedrock"],
         ];
         for (const [account, expected] of cases) {
             const fixture = createCodexMockTestFixture();

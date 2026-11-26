@@ -11,11 +11,13 @@ import {
 } from "../acp-test-utils";
 import {
     accountFromUpdated,
+    fromAccount,
     AUTH_STATUS_META_KEY,
     AUTH_STATUS_UPDATE_METHOD,
     type AuthStatus,
 } from "../../AuthStatusMeta";
 import {ModelId} from "../../ModelId";
+import {builtInExternalProviderStatus} from "../../BuiltInExternalProviders";
 import {PROTOCOL_VERSION} from "@agentclientprotocol/sdk/unstable";
 import type {AcpClientConnection} from "../../ACPSessionConnection";
 import type {Account, AccountUpdatedNotification, Config, ConfigReadResponse} from "../../app-server/v2";
@@ -521,20 +523,23 @@ describe("authStatus extension", () => {
         });
     });
 
-    // The engine reports the credentials of its built-in external providers through its
-    // own account (`{type: "gcp"}`, `{type: "amazonBedrock"}`). A session on such a
-    // provider is therefore described by `account/read`, like an OpenAI one — not hidden
-    // behind "not logged in", which is for providers with a gateway of their own.
+    // A session on a built-in external provider (Amazon Bedrock, Google Cloud Vertex AI) is
+    // described by the provider alone. `account/read` cannot describe it: the call takes no
+    // thread id and always answers for the engine's default configuration.
     describe("sessions on built-in external providers", () => {
-        const bedrock: Account = {type: "amazonBedrock", usesCodexManagedCredentials: false};
-        const vertex: Account = {type: "gcp"};
+        const chatGpt: Account = {type: "chatgpt", email: "user@example.com", planType: "plus", workspaceName: null};
+        const apiKey: Account = {type: "apiKey"};
 
-        /** Installs what a session on `providerId` reads: the engine's account and the session itself. */
-        function givenProviderSession(fixture: CodexMockTestFixture, providerId: string, account: Account): void {
-            const model = createTestModel();
+        /** What the engine answers for its default configuration, plus the session the test opens on `providerId`. */
+        function givenDefaultAccountAndSession(
+            fixture: CodexMockTestFixture,
+            defaultAccount: Account,
+            providerId: string | null,
+        ): void {
             vi.spyOn(fixture.getCodexAppServerClient(), "accountRead")
-                .mockResolvedValue({account, requiresOpenaiAuth: false});
-            mockAccount(fixture, account);
+                .mockResolvedValue({account: defaultAccount, requiresOpenaiAuth: defaultAccount === null});
+            mockAccount(fixture, defaultAccount);
+            const model = createTestModel();
             vi.spyOn(fixture.getCodexAcpClient(), "listSkills").mockResolvedValue({data: []});
             vi.spyOn(fixture.getCodexAcpClient(), "newSession").mockResolvedValue({
                 sessionId: "provider-session",
@@ -560,60 +565,90 @@ describe("authStatus extension", () => {
             return dump.slice(dump.indexOf("**Account:**")).split("\\n")[0]!.trimEnd();
         }
 
-        // The auth status and `/status` keep their own wording, which differs for Bedrock.
         it.each([
-            ["gcp", vertex, "Google Cloud Vertex AI", "Google Cloud Vertex AI"],
-            ["amazon-bedrock", bedrock, "AWS Bedrock", "Amazon Bedrock"],
-        ] as const)("is described by the engine's account on %s", async (providerId, account, label, statusLine) => {
+            ["gcp", apiKey, "Google Cloud Vertex AI"],
+            ["gcp", chatGpt, "Google Cloud Vertex AI"],
+            ["amazon-bedrock", apiKey, "AWS Bedrock"],
+        ])("is described by its provider, not by the default account (%s with %j behind it)", async (providerId, defaultAccount, label) => {
             const fixture = createCodexMockTestFixture();
-            givenProviderSession(fixture, providerId, account);
+            givenDefaultAccountAndSession(fixture, defaultAccount, providerId);
             await initializeAndAwaitFirstPush(fixture);
             const sessionId = await openSession(fixture);
 
-            expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toEqual(account);
+            // The login gate still asks the engine once, as for any session, but the answer
+            // describes the default configuration and is not used for this one.
+            expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toBeNull();
             expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label});
-            expect(await statusAccountLine(fixture, sessionId)).toBe(`**Account:** ${statusLine}`);
+            expect(await statusAccountLine(fixture, sessionId)).toBe(`**Account:** ${label}`);
+        });
+
+        it.each([
+            ["gcp", "Google Cloud Vertex AI"],
+            ["amazon-bedrock", "AWS Bedrock"],
+        ])("keeps the %s status through a Codex login and logout", async (providerId, label) => {
+            const fixture = createCodexMockTestFixture();
+            givenDefaultAccountAndSession(fixture, apiKey, providerId);
+            await initializeAndAwaitFirstPush(fixture);
+            const agent = fixture.getCodexAcpAgent();
+            const sessionId = await openSession(fixture);
+            expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label});
+            const pushesBefore = authStatusUpdates(fixture).length;
+
+            // `account/updated` describes the Codex account only.
+            agent.handleAccountUpdated({authMode: null, planType: null});
+            agent.handleAccountUpdated({authMode: "chatgpt", planType: "pro"});
+            await drainScheduledWork();
+
+            expect(authStatusUpdates(fixture)).toHaveLength(pushesBefore);
+            expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label});
+            expect(await statusAccountLine(fixture, sessionId)).toBe(`**Account:** ${label}`);
+        });
+
+        it("still reports the Codex account of a session on the OpenAI provider", async () => {
+            const fixture = createCodexMockTestFixture();
+            givenDefaultAccountAndSession(fixture, chatGpt, "openai");
+            await initializeAndAwaitFirstPush(fixture);
+            const sessionId = await openSession(fixture);
+
+            expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toEqual(chatGpt);
+            expect(await statusAccountLine(fixture, sessionId)).toBe("**Account:** ChatGPT plus (user@example.com)");
+        });
+
+        it("returns to the Codex account once a session on the OpenAI provider follows", async () => {
+            const fixture = createCodexMockTestFixture();
+            givenDefaultAccountAndSession(fixture, chatGpt, "gcp");
+            await initializeAndAwaitFirstPush(fixture);
+            await openSession(fixture);
+            expect(authStatusUpdates(fixture).at(-1)).toEqual({kind: "external", label: "Google Cloud Vertex AI"});
+
+            const model = createTestModel();
+            vi.spyOn(fixture.getCodexAcpClient(), "newSession").mockResolvedValue({
+                sessionId: "openai-session",
+                currentModelId: ModelId.create(model.id, model.defaultReasoningEffort).toString(),
+                models: [model],
+                collaborationMode: "default",
+                modelProvider: "openai",
+                additionalDirectories: [],
+            });
+            await openSession(fixture);
+
+            expect(authStatusUpdates(fixture).at(-1)).toEqual(CHAT_GPT_PLUS);
         });
 
         it("keeps hiding the account for a session on a provider with a gateway of its own", async () => {
             const fixture = createCodexMockTestFixture();
-            givenProviderSession(fixture, "my-gateway", {
-                type: "chatgpt", email: "unused@example.com", planType: "plus", workspaceName: null,
-            });
+            givenDefaultAccountAndSession(fixture, chatGpt, "my-gateway");
             await initializeAndAwaitFirstPush(fixture);
             const sessionId = await openSession(fixture);
 
             expect(fixture.getCodexAcpAgent().getSessionState(sessionId).account).toBeNull();
             expect(await statusAccountLine(fixture, sessionId)).toBe("**Account:** not logged in");
         });
-    });
-});
 
-describe("accountFromUpdated", () => {
-    const chatGpt: Account = {type: "chatgpt", email: "user@example.com", planType: "plus", workspaceName: null};
-
-    it("clears the account on a logout", () => {
-        expect(accountFromUpdated({authMode: null, planType: null}, chatGpt)).toBeNull();
-    });
-
-    it("keeps the email of a ChatGPT account and takes the new plan", () => {
-        expect(accountFromUpdated({authMode: "chatgpt", planType: "pro"}, chatGpt))
-            .toEqual({type: "chatgpt", email: "user@example.com", planType: "pro", workspaceName: null});
-        expect(accountFromUpdated({authMode: "chatgpt", planType: null}, {type: "apiKey"}))
-            .toEqual({type: "chatgpt", email: null, planType: "unknown", workspaceName: null});
-    });
-
-    it("keeps the workspace name of a ChatGPT account, like the email", () => {
-        const scoped: Account = {type: "chatgpt", email: "user@example.com", planType: "plus", workspaceName: "Acme"};
-        expect(accountFromUpdated({authMode: "chatgpt", planType: "pro"}, scoped))
-            .toEqual({type: "chatgpt", email: "user@example.com", planType: "pro", workspaceName: "Acme"});
-        // A different account kind has no workspace to carry over.
-        expect(accountFromUpdated({authMode: "chatgpt", planType: "pro"}, {type: "apiKey"}))
-            .toEqual({type: "chatgpt", email: null, planType: "pro", workspaceName: null});
-    });
-
-    it("maps an API key and keeps the account for a mode with no account shape", () => {
-        expect(accountFromUpdated({authMode: "apikey", planType: null}, chatGpt)).toEqual({type: "apiKey"});
-        expect(accountFromUpdated({authMode: "headers", planType: null}, chatGpt)).toBe(chatGpt);
+        it("names a provider the same way whether it comes from its account or from the session", () => {
+            expect(fromAccount({type: "gcp"})).toEqual(builtInExternalProviderStatus("gcp"));
+            expect(fromAccount({type: "amazonBedrock", usesCodexManagedCredentials: false}))
+                .toEqual(builtInExternalProviderStatus("amazon-bedrock"));
+        });
     });
 });

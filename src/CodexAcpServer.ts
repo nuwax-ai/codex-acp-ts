@@ -161,7 +161,7 @@ import {
 } from "./FastModeConfig";
 import packageJson from "../package.json";
 import {isJetBrains2026_1Client} from "./JBUtils";
-import {isBuiltInExternalProvider} from "./BuiltInExternalProviders";
+import {builtInExternalProviderStatus, isBuiltInExternalProvider} from "./BuiltInExternalProviders";
 import {clientSupportsNotices} from "./SessionNotice";
 import {AsyncQuestionClient, AsyncQuestionElicitations, renderAsyncQuestionReply} from "./CodexAsyncQuestions";
 import {
@@ -532,6 +532,12 @@ export class CodexAcpServer {
     /** Last `authStatus` pushed to the client; used to suppress duplicates. */
     private currentAuthStatus: AuthStatus | null;
     /**
+     * Whether {@link currentAuthStatus} was derived from the Codex account. A status that
+     * describes a provider's own credentials (a gateway, Bedrock, Vertex AI) is not: a Codex
+     * login or logout says nothing about it.
+     */
+    private authStatusFromAccount = false;
+    /**
      * The last known account of the agent. Every successful account read and every `account/updated` sets it,
      * and a logout clears it. A session open takes it when the account read is unavailable.
      */
@@ -665,6 +671,7 @@ export class CodexAcpServer {
         this.capabilities = ClientCapabilities.DEFAULT;
         this.booleanConfigOptionsSupported = false;
         this.currentAuthStatus = null;
+        this.authStatusFromAccount = false;
         this.availableCommands = this.createAvailableCommands(codexAcpClient);
         this.recovery = this.createRecovery();
     }
@@ -1531,7 +1538,7 @@ export class CodexAcpServer {
         authProvider: string | null,
         knownAccount: KnownAccount = null,
     ): Promise<ActiveAuthState> {
-        if (!this.authProviderUsesEngineAccount(authProvider)) {
+        if (!this.authProviderUsesOpenAiAccount(authProvider)) {
             await this.publishAuthStatus(authProvider, null);
             return {
                 account: null,
@@ -1640,16 +1647,6 @@ export class CodexAcpServer {
 
     private authProviderUsesOpenAiAccount(authProvider: string | null): boolean {
         return authProvider === null || authProvider === "openai";
-    }
-
-    /**
-     * Whether the session's provider authenticates with an account the engine
-     * itself reports: the Codex account, or the credentials of a built-in
-     * external provider (Bedrock, Google Cloud). Such a session is described
-     * by `account/read`; any other provider is not.
-     */
-    private authProviderUsesEngineAccount(authProvider: string | null): boolean {
-        return this.authProviderUsesOpenAiAccount(authProvider) || isBuiltInExternalProvider(authProvider);
     }
 
     private authProvidersMatch(a: string | null, b: string | null): boolean {
@@ -2731,20 +2728,20 @@ export class CodexAcpServer {
      * {@link isAccountReadAuthFailureError}.
      */
     private async publishAuthStatusRead(): Promise<void> {
-        let authStatus: AuthStatus;
+        let authStatus: {status: AuthStatus, fromAccount: boolean};
         try {
             authStatus = await this.readAgentAuthIdentity();
         } catch (error) {
             if (isAccountReadAuthFailureError(error)) {
                 logger.log("The account read found that the agent needs a login", {error: String(error)});
                 this.lastReadAccount = null;
-                await this.setAuthStatus(fromAccount(null));
+                await this.setAuthStatus(fromAccount(null), true);
                 return;
             }
             logger.log("Cannot determine auth status", {error: String(error)});
             return;
         }
-        await this.setAuthStatus(authStatus);
+        await this.setAuthStatus(authStatus.status, authStatus.fromAccount);
     }
 
     /**
@@ -2754,18 +2751,21 @@ export class CodexAcpServer {
      * agent-owned gateway state — the `gateway` auth method, or a provider the
      * user configured in Codex's own config.
      */
-    private async readAgentAuthIdentity(): Promise<AuthStatus> {
+    private async readAgentAuthIdentity(): Promise<{status: AuthStatus, fromAccount: boolean}> {
         const authGatewayName = this.codexAcpClient.getAuthGatewayProviderName();
         if (authGatewayName !== null) {
-            return gatewayStatus(authGatewayName);
+            return {status: gatewayStatus(authGatewayName), fromAccount: false};
         }
         const modelProvider = await this.runWithProcessCheck(() => this.codexAcpClient.getAgentConfiguredModelProvider());
-        if (!this.authProviderUsesEngineAccount(modelProvider)) {
-            return agentConfiguredProviderStatus(modelProvider);
+        if (isBuiltInExternalProvider(modelProvider)) {
+            return {status: builtInExternalProviderStatus(modelProvider), fromAccount: false};
+        }
+        if (!this.authProviderUsesOpenAiAccount(modelProvider)) {
+            return {status: agentConfiguredProviderStatus(modelProvider), fromAccount: false};
         }
         const accountResponse = await this.runWithProcessCheck(() => this.codexAcpClient.getAccount());
         this.lastReadAccount = accountResponse.account;
-        return fromAccount(accountResponse.account);
+        return {status: fromAccount(accountResponse.account), fromAccount: true};
     }
 
     /**
@@ -2779,11 +2779,17 @@ export class CodexAcpServer {
     ): Promise<void> {
         const authGatewayName = this.codexAcpClient.getAuthGatewayProviderName();
         if (authGatewayName !== null) {
-            await this.setAuthStatus(gatewayStatus(authGatewayName));
+            await this.setAuthStatus(gatewayStatus(authGatewayName), false);
             return;
         }
-        if (this.authProviderUsesEngineAccount(authProvider)) {
-            await this.setAuthStatus(fromAccount(account));
+        if (this.authProviderUsesOpenAiAccount(authProvider)) {
+            await this.setAuthStatus(fromAccount(account), true);
+            return;
+        }
+        if (isBuiltInExternalProvider(authProvider)) {
+            // `account/read` describes the engine's default configuration, not this
+            // thread's provider, so the provider itself is the only auth source to report.
+            await this.setAuthStatus(builtInExternalProviderStatus(authProvider), false);
             return;
         }
         if (this.codexAcpClient.isClientConfiguredProvider(authProvider)) {
@@ -2794,7 +2800,7 @@ export class CodexAcpServer {
             await this.publishAuthStatusRead();
             return;
         }
-        await this.setAuthStatus(agentConfiguredProviderStatus(authProvider));
+        await this.setAuthStatus(agentConfiguredProviderStatus(authProvider), false);
     }
 
     /**
@@ -2823,10 +2829,13 @@ export class CodexAcpServer {
                 await this.publishAuthStatusRead();
                 return;
             }
-            if (this.currentAuthStatus.kind === "gateway") {
+            if (!this.authStatusFromAccount) {
+                // The status describes a provider's own credentials (a gateway, Bedrock,
+                // Vertex AI), not the Codex account: a Codex login or logout says nothing
+                // about it.
                 return;
             }
-            await this.setAuthStatus(fromAccountUpdated(notification, this.currentAuthStatus));
+            await this.setAuthStatus(fromAccountUpdated(notification, this.currentAuthStatus), true);
         } catch (error) {
             logger.log("Failed to apply account update to auth status", {error: String(error)});
         }
@@ -2844,13 +2853,14 @@ export class CodexAcpServer {
      * The first push of a connection always goes out: nothing was reported yet,
      * so no payload can equal it.
      */
-    private async setAuthStatus(next: AuthStatus): Promise<void> {
+    private async setAuthStatus(next: AuthStatus, fromAccount: boolean): Promise<void> {
         this.authStatusVersion += 1;
         if (this.initializeResponseDelivery === "pending") return;
-        if (sameAuthStatus(this.currentAuthStatus, next)) {
+        if (this.authStatusFromAccount === fromAccount && sameAuthStatus(this.currentAuthStatus, next)) {
             return;
         }
         this.currentAuthStatus = next;
+        this.authStatusFromAccount = fromAccount;
         try {
             await this.connection.notify(AUTH_STATUS_UPDATE_METHOD, {authStatus: next});
         } catch (error) {
