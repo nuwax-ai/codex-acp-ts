@@ -48,13 +48,13 @@ function parseArgs(args: string[]): LoginOptions | null {
 
 function printHelp() {
     console.log(`
-    nuwax-harness-acp-ts login - Initialize and login to Nuwax Codex with client context
+    nuwax-harness-acp-ts login - Initialize and login to Nuwax Harness with client context
 
     Usage:
       nuwax-harness-acp-ts login [options]
 
     Options:
-      --client-name <name>       Client application name (default: "nuwax-codex-acp")
+      --client-name <name>       Client application name (default: "nuwax-harness-acp")
       --client-title <title>     Client application title (default: "Nuwax Harness ACP")
       --client-version <version> Client application version (default: "${packageJson.version}")
       --help, -h                 Show this help message
@@ -74,7 +74,7 @@ async function login(options: LoginOptions): Promise<boolean> {
 
     try {
         const clientInfo: ClientInfo = {
-            name: options.clientName ?? "nuwax-codex-acp",
+            name: options.clientName ?? "nuwax-harness-acp",
                         title: options.clientTitle ?? "Nuwax Harness ACP",
             version: options.clientVersion ?? packageJson.version,
         };

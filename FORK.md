@@ -9,7 +9,7 @@ This document tracks every change this fork makes relative to upstream
 | | upstream | this fork |
 |---|---|---|
 | npm package | `@agentclientprotocol/codex-acp` | `@nuwax-ai/nuwax-harness-acp-ts` |
-| CLI bin | `codex-acp` | `nuwax-harness-acp-ts` + alias `nuwax-codex-acp-ts` |
+| CLI bin | `codex-acp` | `nuwax-harness-acp-ts`（旧别名 `nuwax-codex-acp-ts` 已移除） |
 | engine dependency | `@openai/codex` | `@nuwax-ai/nuwax-harness` |
 | release model | release-please on `main` | tag-driven (`v*`) from `dev` |
 
