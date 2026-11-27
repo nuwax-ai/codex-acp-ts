@@ -210,6 +210,7 @@ export NUWAX_IMAGE_ENTRY_MAX_BYTES=25165824
 | --- | --- | --- |
 | `NUWAX_TOOL_SEARCH` | `false` = MCP 工具在首个请求**全量直出**(不注册 `tool_search`/Deferred)。仅接受大小写不敏感的 `true`/`false`,其他值启动即报错;显式配置 `[tools] tool_search` 优先于它 | **按模型声明**:`supports_search_tool` 的模型(官方目录模型)默认懒加载;**自定义/私有模型(未声明)默认就是全量直出**,一般无需设置 |
 | `NUWAX_OPENAI_EGRESS` | `=1` 才打开 OpenAI 第一方出站总闸。fork 面向经自有网关访问厂商模型的部署,默认**关闭**:app-server 远程控制(会向 `chatgpt.com/backend-api/` 开 websocket,并把 `installation_id` 与本机 hostname 写进日志)、插件目录/已安装态同步(`chatgpt.com/backend-api/plugins/*`)与 curated 同步(`github.com/openai/plugins`)都不自行联网。任何其他非空值按"写错"处理:报一次并保持关闭 | 关闭 |
+| `NUWAX_UPDATE_PLAN` | `true`/`false`(大小写不敏感)播种 `tools.update_plan.enabled`:开启后模型可用 `update_plan` 待办清单。上游自 0.152.0 起把它改为 opt-in,所以**不设等于关闭**;显式 `false` 会压过 `config.toml` 里已开启的配置;其他取值启动即报错并点名该变量。没有 `CODEX_*` 别名 | 关闭(opt-in) |
 
 ### 目录
 
@@ -560,6 +561,7 @@ MiMo 的 `https://token-plan-cn.xiaomimimo.com/anthropic`),不要自行拼接
 | `INITIAL_AGENT_MODE` | 初始模式:`read-only` / `workspace-write` / `agent` / `agent-full-access` |
 | `NO_BROWSER` | 设置后隐藏浏览器登录入口 |
 | `APP_SERVER_LOGS` / `NUWAX_LOG_DIR` | 日志目录(两者同义,`APP_SERVER_LOGS` 优先)。每天两个文件:`app-server.<日期>.log`(适配器收发,只记字节数)与 `engine.<日期>.log`(引擎 tracing 文本)。协议流量不含 Key 原文;引擎日志含工作内容,按敏感数据管理 |
+| `NUWAX_HARNESS_LOG_DIR` | **引擎**自己的日志落点(`logs_2.sqlite` 等),必须是绝对路径;适配器把它作为 `-c log_dir=...` 传给引擎。不设时引擎写 `$CODEX_HOME`——ACP 宿主下每个项目一个隔离目录,排障要逐个项目找 |
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` | 可选运维参数:引擎 app-server 在崩溃窗口内自动重启的次数上限(默认 `5`),超过后停止自动重启 |
 | `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | 可选运维参数:上述崩溃计数的时间窗口,毫秒(默认 `300000`,即 5 分钟) |
 
@@ -576,6 +578,7 @@ MiMo 的 `https://token-plan-cn.xiaomimimo.com/anthropic`),不要自行拼接
 
 | 变量 | 什么时候要设 |
 | --- | --- |
+| `NUWAX_UPDATE_PLAN` | 需要 `update_plan` 待办清单时设 `true`(上游已改为 opt-in,默认关闭);显式 `false` 可压过 `config.toml` 的开启配置 |
 | `NUWAX_TOOL_SEARCH` | 自托管/第三方网关不认识 `tool_search` 线格式,或需要确定性工具表:设 `false` |
 | `NUWAX_REQUEST_IMAGE_MAX_BYTES` | 宿主常把整屏截图塞进上下文,网关 32 MiB 限制被撞:默认 20 MiB,可下调 |
 | `NUWAX_OPENAI_EGRESS` | 默认关闭;确需 OpenAI 第一方插件/远程控制出站时才设 `1` |
@@ -783,6 +786,8 @@ ACP 是 stdio 协议:由宿主负责启动适配器进程。**环境变量必须
 | `NUWAX_HARNESS_CACHE_DIR` | ACP + npm 包 | harness 二进制缓存根目录(绝对路径);安装期与运行期须同值 | `~/.nuwax-harness-cache` |
 | `NUWAX_CONFIG` | ACP | 额外会话配置(JSON) | 无 |
 | `NUWAX_LOG_DIR` | ACP | 适配器日志目录 | 关闭 |
+| `NUWAX_HARNESS_LOG_DIR` | ACP | 引擎日志目录(绝对路径,经 `-c log_dir=` 传给引擎) | `$CODEX_HOME` |
+| `NUWAX_UPDATE_PLAN` | 引擎 | `update_plan` 待办清单开关(`true`/`false`) | 关闭 |
 | `NUWAX_ACP_APP_SERVER_CRASH_LIMIT` / `NUWAX_ACP_APP_SERVER_CRASH_WINDOW_MS` | ACP | 引擎 app-server 崩溃重启上限 / 窗口 | 5 / 300000 |
 | `NUWAX_LOG_ENGINE_STDERR` | ACP | `0`/`false`/`no`/`off` 关闭引擎 stderr 落盘(`engine.<日期>.log`) | 开启 |
 | `MODEL_PROVIDER` / `INITIAL_AGENT_MODE` / `NO_BROWSER` / `APP_SERVER_LOGS` | ACP | 无网关时的 provider、初始模式、隐藏登录、日志目录 | — |
