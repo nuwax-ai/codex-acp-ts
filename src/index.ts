@@ -14,6 +14,7 @@ import {CodexAppServerSupervisor} from "./app-server-recovery/CodexAppServerSupe
 import {runLoginCommand} from "./login";
 import {runCodexCli} from "./CodexCli";
 import {prepareCodexHookConfig} from "./CodexHookConfig";
+import {harnessLogDirArgs} from "./HarnessLogDir";
 import {createAcpAgentRouter} from "./AcpAgentRouter";
 import type {AcpClientConnection, AcpV2Connection} from "./ACPSessionConnection";
 
@@ -58,6 +59,8 @@ async function startAcpServer(): Promise<void> {
     const modelProvider = process.env["MODEL_PROVIDER"];
     const config = configString ? JSON.parse(configString) : undefined;
     const hookConfig = prepareCodexHookConfig(config);
+    // Engine logs follow the host's log directory when it names one (see HarnessLogDir).
+    hookConfig.appServerStartupArgs.push(...harnessLogDirArgs());
     const parsedAuthRequest = authRequestString ? JSON.parse(authRequestString) : undefined;
     const defaultAuthRequest = parsedAuthRequest && isCodexAuthRequest(parsedAuthRequest) ? parsedAuthRequest : undefined;
 
